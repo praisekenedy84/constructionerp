@@ -1,0 +1,54 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Http\Requests\StoreEmployeeRequest;
+use App\Models\Employee;
+use App\Models\PayrollRun;
+use App\Models\Project;
+use App\Support\ListingQuery;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Inertia\Inertia;
+use Inertia\Response;
+
+class EmployeeController extends Controller
+{
+    public function index(Request $request): Response
+    {
+        $this->authorizeRoles($request->user(), ['HR Officer']);
+
+        $projectId = $request->integer('project_id')
+            ?: session('current_project_id')
+            ?: Project::query()->orderByDesc('created_at')->value('id');
+
+        $project = Project::findOrFail($projectId);
+
+        $employeeListing = ListingQuery::for(
+            Employee::query()->where('project_id', $project->id),
+            $request,
+        )
+            ->search(['name', 'employee_no', 'role'])
+            ->dateRange('created_at')
+            ->sort(['name', 'employee_no', 'role', 'created_at']);
+
+        return Inertia::render('Payroll/Index', [
+            'project' => $project,
+            'employees' => $employeeListing->paginate(25),
+            'recent_runs' => PayrollRun::query()
+                ->where('project_id', $project->id)
+                ->orderByDesc('period_end')
+                ->paginate(10),
+            'filters' => $employeeListing->filters(),
+        ]);
+    }
+
+    public function store(StoreEmployeeRequest $request): RedirectResponse
+    {
+        $this->authorizeRoles($request->user(), ['HR Officer']);
+
+        Employee::create($request->validated());
+
+        return back()->with('success', 'Employee created.');
+    }
+}

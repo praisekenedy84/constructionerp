@@ -14,7 +14,7 @@ class CashAllocationService
         private readonly ReportService $reportService,
     ) {}
 
-    public function request(int $projectId, string $amount, User $requester, array $opts = []): CashAllocation
+    public function request(?int $projectId, string $amount, User $requester, array $opts = []): CashAllocation
     {
         return DB::transaction(function () use ($projectId, $amount, $requester, $opts) {
             return CashAllocation::create([

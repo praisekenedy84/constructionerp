@@ -5,12 +5,15 @@ import PaginationLinks from '@/Components/Shared/PaginationLinks';
 import PageHeader from '@/Components/Shared/PageHeader';
 import StatusBadge from '@/Components/Shared/StatusBadge';
 import { Button } from '@/Components/ui/button';
+import { Dialog } from '@/Components/ui/dialog';
+import { confirmDiscardIfDirty, DialogFormActions } from '@/Components/ui/dialog-form';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
 import { formatCurrency, formatDate } from '@/lib/formatters';
 import { Expense, ListingFilters, PageProps, Paginated } from '@/types';
 import { Head, useForm, usePage } from '@inertiajs/react';
-import { FormEvent } from 'react';
+import { Plus } from 'lucide-react';
+import { FormEvent, useState } from 'react';
 
 interface OverheadProps extends PageProps {
     expenses: Paginated<Expense>;
@@ -21,7 +24,8 @@ interface OverheadProps extends PageProps {
 export default function Overhead() {
     const { expenses, filters, total_overhead } = usePage<OverheadProps>().props;
     const rows = expenses.data ?? [];
-    const { data, setData, post, processing, errors, reset } = useForm({
+    const [open, setOpen] = useState(false);
+    const { data, setData, post, processing, errors, reset, clearErrors, isDirty } = useForm({
         category: 'indirect' as const,
         sub_type: '',
         amount: '',
@@ -29,9 +33,28 @@ export default function Overhead() {
         expense_date: new Date().toISOString().split('T')[0],
     });
 
+    function openDialog() {
+        clearErrors();
+        setOpen(true);
+    }
+
+    function closeDialog() {
+        if (!confirmDiscardIfDirty(isDirty)) {
+            return;
+        }
+        setOpen(false);
+        reset();
+        clearErrors();
+    }
+
     function submit(e: FormEvent) {
         e.preventDefault();
-        post('/finance/expenses', { onSuccess: () => reset() });
+        post('/finance/expenses', {
+            onSuccess: () => {
+                reset();
+                setOpen(false);
+            },
+        });
     }
 
     return (
@@ -41,58 +64,18 @@ export default function Overhead() {
                 <PageHeader
                     title="Overhead Expenses"
                     description="Indirect company expenses — no budget transaction, no project."
+                    actions={
+                        <Button onClick={openDialog}>
+                            <Plus className="mr-2 h-4 w-4" />
+                            Record Overhead
+                        </Button>
+                    }
                 />
 
                 <DataPanel title="Total Overhead">
                     <p className="text-3xl font-bold text-slate-900">
                         {formatCurrency(total_overhead)}
                     </p>
-                </DataPanel>
-
-                <DataPanel title="Record Overhead Expense">
-                    <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
-                        <div className="space-y-2">
-                            <Label>Sub Type</Label>
-                            <Input
-                                value={data.sub_type}
-                                onChange={(e) => setData('sub_type', e.target.value)}
-                                required
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Amount (TZS)</Label>
-                            <Input
-                                type="number"
-                                step="0.01"
-                                value={data.amount}
-                                onChange={(e) => setData('amount', e.target.value)}
-                                required
-                            />
-                            {errors.amount && (
-                                <p className="text-sm text-red-600">{errors.amount}</p>
-                            )}
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Date</Label>
-                            <Input
-                                type="date"
-                                value={data.expense_date}
-                                onChange={(e) => setData('expense_date', e.target.value)}
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Description</Label>
-                            <Input
-                                value={data.description}
-                                onChange={(e) => setData('description', e.target.value)}
-                            />
-                        </div>
-                        <div className="sm:col-span-2">
-                            <Button type="submit" disabled={processing}>
-                                Record Overhead
-                            </Button>
-                        </div>
-                    </form>
                 </DataPanel>
 
                 <ListToolbar
@@ -147,6 +130,60 @@ export default function Overhead() {
                     <PaginationLinks paginator={expenses} />
                 </DataPanel>
             </div>
+
+            <Dialog
+                open={open}
+                onOpenChange={(next) => (next ? openDialog() : closeDialog())}
+                title="Record Overhead Expense"
+                description="Log an indirect company expense."
+            >
+                <form onSubmit={submit} className="space-y-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="overhead-sub-type">Sub Type</Label>
+                        <Input
+                            id="overhead-sub-type"
+                            value={data.sub_type}
+                            onChange={(e) => setData('sub_type', e.target.value)}
+                            required
+                        />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="overhead-amount">Amount (TZS)</Label>
+                        <Input
+                            id="overhead-amount"
+                            type="number"
+                            step="0.01"
+                            value={data.amount}
+                            onChange={(e) => setData('amount', e.target.value)}
+                            required
+                        />
+                        {errors.amount && <p className="text-sm text-red-600">{errors.amount}</p>}
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="overhead-date">Date</Label>
+                        <Input
+                            id="overhead-date"
+                            type="date"
+                            value={data.expense_date}
+                            onChange={(e) => setData('expense_date', e.target.value)}
+                        />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="overhead-description">Description</Label>
+                        <Input
+                            id="overhead-description"
+                            value={data.description}
+                            onChange={(e) => setData('description', e.target.value)}
+                        />
+                    </div>
+                    <DialogFormActions
+                        onCancel={closeDialog}
+                        processing={processing}
+                        submitLabel="Record Overhead"
+                        processingLabel="Saving…"
+                    />
+                </form>
+            </Dialog>
         </AppShell>
     );
 }

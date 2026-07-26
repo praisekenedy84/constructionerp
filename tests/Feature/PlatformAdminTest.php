@@ -194,4 +194,53 @@ class PlatformAdminTest extends TestCase
         $this->assertNotNull(session('platform_impersonator_id'));
         $this->assertSame($tenant->id, session('tenant_id'));
     }
+
+    public function test_platform_users_page_works_after_impersonation_with_project_context(): void
+    {
+        $tenant = $this->provisionTenant();
+
+        app(AuthService::class)->createUser($tenant, [
+            'name' => 'Target User',
+            'email' => 'target@acme.local',
+            'password' => 'password',
+            'role' => 'Site Engineer',
+        ]);
+
+        tenancy()->initialize($tenant);
+        $userId = \App\Models\User::where('email', 'target@acme.local')->value('id');
+        $project = \App\Models\Project::create([
+            'code' => 'PRJ-001',
+            'name' => 'Main Site',
+            'client' => 'Client',
+            'location' => 'Dar',
+            'contract_amount' => '1000000',
+            'wht_percentage' => '5',
+            'net_budget' => '950000',
+            'physical_progress_pct' => '0',
+            'start_date' => now()->toDateString(),
+            'end_date' => now()->addYear()->toDateString(),
+            'status' => 'active',
+        ]);
+        tenancy()->end();
+
+        $this->createPlatformAdmin();
+        $this->post('/platform/login', [
+            'email' => 'platform@crf.local',
+            'password' => 'password',
+        ]);
+
+        $this->post("/platform/tenants/{$tenant->id}/users/{$userId}/impersonate")
+            ->assertRedirect('/dashboard');
+
+        session(['current_project_id' => $project->id]);
+
+        // Returning to platform while the web/tenant session still has project
+        // context previously crashed with "Database connection [tenant] not configured".
+        $this->get("/platform/tenants/{$tenant->id}/users")
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Platform/Tenants/Users')
+                ->where('currentProject', null)
+            );
+    }
 }

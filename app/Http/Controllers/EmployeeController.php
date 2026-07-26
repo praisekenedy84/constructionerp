@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreEmployeeRequest;
+use App\Http\Requests\UpdatePayrollEmployeeRequest;
 use App\Models\Employee;
 use App\Models\PayrollRun;
 use App\Models\Project;
@@ -37,6 +38,8 @@ class EmployeeController extends Controller
             'employees' => $employeeListing->paginate(25),
             'recent_runs' => PayrollRun::query()
                 ->where('project_id', $project->id)
+                ->withCount('items')
+                ->withSum('items', 'net_pay')
                 ->orderByDesc('period_end')
                 ->paginate(10),
             'filters' => $employeeListing->filters(),
@@ -50,5 +53,25 @@ class EmployeeController extends Controller
         Employee::create($request->validated());
 
         return back()->with('success', 'Employee created.');
+    }
+
+    public function update(UpdatePayrollEmployeeRequest $request, int $id): RedirectResponse
+    {
+        $this->authorizeRoles($request->user(), ['HR Officer']);
+
+        $employee = Employee::findOrFail($id);
+        $employee->update($request->validated());
+
+        return back()->with('success', 'Employee updated.');
+    }
+
+    public function destroy(Request $request, int $id): RedirectResponse
+    {
+        $this->authorizeRoles($request->user(), ['HR Officer']);
+
+        $employee = Employee::findOrFail($id);
+        $employee->delete();
+
+        return back()->with('success', 'Employee removed.');
     }
 }

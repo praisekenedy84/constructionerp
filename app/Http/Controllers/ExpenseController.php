@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StoreExpenseRequest;
 use App\Models\Project;
 use App\Services\ExpenseService;
+use App\Services\PayrollService;
 use App\Support\ListingQuery;
 use App\Enums\ExpenseCategory;
 use App\Models\Expense;
@@ -15,7 +16,10 @@ use Inertia\Response;
 
 class ExpenseController extends Controller
 {
-    public function __construct(private ExpenseService $expenseService) {}
+    public function __construct(
+        private ExpenseService $expenseService,
+        private PayrollService $payrollService,
+    ) {}
 
     public function store(StoreExpenseRequest $request): RedirectResponse
     {
@@ -60,6 +64,10 @@ class ExpenseController extends Controller
     public function overhead(Request $request): Response
     {
         $this->authorizeRoles($request->user(), ['Finance Manager', 'Accountant']);
+
+        // Posted runs created before salaries moved to overhead still only have PAYROLL
+        // budget txs — migrate them so the ledger stays complete.
+        $this->payrollService->backfillLegacyPayrollOverhead($request->user());
 
         $query = Expense::query()->where('category', ExpenseCategory::Indirect);
 

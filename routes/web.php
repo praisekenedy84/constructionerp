@@ -121,9 +121,13 @@ Route::middleware('auth')->group(function () {
     Route::get('/payroll', [HubController::class, 'payroll'])->name('payroll.hub');
     Route::post('/payroll/generate', [PayrollController::class, 'generate'])->name('payroll.generate');
     Route::get('/payroll/generate', [PayrollController::class, 'generateForm'])->name('payroll.generate.form');
-    Route::post('/payroll/{id}/post', [PayrollController::class, 'post'])->name('payroll.post');
+    Route::get('/payroll/runs', [PayrollController::class, 'runs'])->name('payroll.runs');
+    Route::get('/payroll/runs/{id}', [PayrollController::class, 'show'])->name('payroll.runs.show')->whereNumber('id');
+    Route::post('/payroll/{id}/post', [PayrollController::class, 'post'])->name('payroll.post')->whereNumber('id');
     Route::get('/payroll/employees', [EmployeeController::class, 'index'])->name('payroll.employees.index');
     Route::post('/payroll/employees', [EmployeeController::class, 'store'])->name('payroll.employees.store');
+    Route::patch('/payroll/employees/{id}', [EmployeeController::class, 'update'])->name('payroll.employees.update');
+    Route::delete('/payroll/employees/{id}', [EmployeeController::class, 'destroy'])->name('payroll.employees.destroy');
     Route::get('/payroll/attendance', [AttendanceController::class, 'index'])->name('payroll.attendance.index');
     Route::post('/payroll/attendance', [AttendanceController::class, 'store'])->name('payroll.attendance.store');
 

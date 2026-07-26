@@ -63,8 +63,8 @@ class FundRequestExportService
 
         $rows = $allocations->map(fn (CashAllocation $allocation) => [
             $allocation->id,
-            $allocation->project?->code ?? '—',
-            $allocation->project?->name ?? '—',
+            $allocation->project?->code ?? 'ORG',
+            $allocation->project?->name ?? 'Organization (general)',
             $allocation->requester?->name ?? '—',
             ucfirst($allocation->status->value),
             $this->formatMoney($allocation->requested_amount),

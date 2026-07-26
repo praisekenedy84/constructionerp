@@ -5,21 +5,96 @@ namespace App\Support;
 /**
  * Canonical navigation catalog. Visibility is gated by permissions;
  * tenant admins may hide items per role (presentation only).
+ *
+ * Parents with children use href as the default destination (first sub-feature).
+ * active_path is used for section highlighting and legacy menu-hide overrides.
  */
 class MenuCatalog
 {
-    /** @return list<array{key: string, label: string, href: string, permission: string|null, group: string}> */
+    /**
+     * @return list<array{
+     *     key: string,
+     *     label: string,
+     *     href: string,
+     *     permission: string|null,
+     *     group: string,
+     *     active_path?: string,
+     *     children?: list<array{key: string, label: string, href: string, permission: string|null}>
+     * }>
+     */
     public static function items(): array
     {
         return [
             ['key' => 'dashboard', 'label' => 'Dashboard', 'href' => '/dashboard', 'permission' => null, 'group' => 'Core'],
             ['key' => 'projects', 'label' => 'Projects', 'href' => '/projects', 'permission' => 'projects:read', 'group' => 'Operations'],
             ['key' => 'requisitions', 'label' => 'Requisitions', 'href' => '/requisitions', 'permission' => 'requisitions:read', 'group' => 'Operations'],
-            ['key' => 'finance', 'label' => 'Finance', 'href' => '/finance', 'permission' => 'budgets:read', 'group' => 'Finance'],
-            ['key' => 'procurement', 'label' => 'Procurement', 'href' => '/procurement', 'permission' => 'procurement:read', 'group' => 'Supply Chain'],
-            ['key' => 'inventory', 'label' => 'Inventory', 'href' => '/inventory', 'permission' => 'inventory:read', 'group' => 'Supply Chain'],
-            ['key' => 'payroll', 'label' => 'Payroll', 'href' => '/payroll', 'permission' => 'payroll:read', 'group' => 'HR'],
-            ['key' => 'equipment', 'label' => 'Equipment', 'href' => '/equipment', 'permission' => 'equipment:read', 'group' => 'HR'],
+            [
+                'key' => 'finance',
+                'label' => 'Finance',
+                'href' => '/finance/approvals',
+                'active_path' => '/finance',
+                'permission' => 'budgets:read',
+                'group' => 'Finance',
+                'children' => [
+                    ['key' => 'finance.approvals', 'label' => 'Fund Approvals', 'href' => '/finance/approvals', 'permission' => null],
+                    ['key' => 'finance.expenses', 'label' => 'Expenses', 'href' => '/finance/expenses', 'permission' => null],
+                    ['key' => 'finance.overhead', 'label' => 'Overhead', 'href' => '/finance/overhead', 'permission' => null],
+                ],
+            ],
+            [
+                'key' => 'procurement',
+                'label' => 'Procurement',
+                'href' => '/procurement/suppliers',
+                'active_path' => '/procurement',
+                'permission' => 'procurement:read',
+                'group' => 'Supply Chain',
+                'children' => [
+                    ['key' => 'procurement.suppliers', 'label' => 'Suppliers', 'href' => '/procurement/suppliers', 'permission' => null],
+                    ['key' => 'procurement.purchase_orders', 'label' => 'Purchase Orders', 'href' => '/procurement/purchase-orders', 'permission' => null],
+                    ['key' => 'procurement.goods_receipts', 'label' => 'Goods Receipts', 'href' => '/procurement/goods-receipts', 'permission' => null],
+                ],
+            ],
+            [
+                'key' => 'inventory',
+                'label' => 'Inventory',
+                'href' => '/inventory/balances',
+                'active_path' => '/inventory',
+                'permission' => 'inventory:read',
+                'group' => 'Supply Chain',
+                'children' => [
+                    ['key' => 'inventory.balances', 'label' => 'Stock Balances', 'href' => '/inventory/balances', 'permission' => null],
+                    ['key' => 'inventory.issues', 'label' => 'Issues', 'href' => '/inventory/issues', 'permission' => null],
+                    ['key' => 'inventory.transactions', 'label' => 'Transactions', 'href' => '/inventory/transactions', 'permission' => null],
+                ],
+            ],
+            [
+                'key' => 'payroll',
+                'label' => 'Payroll',
+                'href' => '/payroll/employees',
+                'active_path' => '/payroll',
+                'permission' => 'payroll:read',
+                'group' => 'HR',
+                'children' => [
+                    ['key' => 'payroll.employees', 'label' => 'Employees', 'href' => '/payroll/employees', 'permission' => null],
+                    ['key' => 'payroll.attendance', 'label' => 'Attendance', 'href' => '/payroll/attendance', 'permission' => null],
+                    ['key' => 'payroll.generate', 'label' => 'Generate Payroll', 'href' => '/payroll/generate', 'permission' => null],
+                    ['key' => 'payroll.runs', 'label' => 'Payroll Runs', 'href' => '/payroll/runs', 'permission' => null],
+                ],
+            ],
+            [
+                'key' => 'equipment',
+                'label' => 'Equipment',
+                'href' => '/equipment',
+                'active_path' => '/equipment',
+                'permission' => 'equipment:read',
+                'group' => 'HR',
+                'children' => [
+                    ['key' => 'equipment.registry', 'label' => 'Registry', 'href' => '/equipment', 'permission' => null],
+                    ['key' => 'equipment.assignments', 'label' => 'Assignments', 'href' => '/equipment/assignments', 'permission' => null],
+                    ['key' => 'equipment.maintenance', 'label' => 'Maintenance', 'href' => '/equipment/maintenance', 'permission' => null],
+                    ['key' => 'equipment.fuel', 'label' => 'Fuel Logs', 'href' => '/equipment/fuel', 'permission' => null],
+                ],
+            ],
             ['key' => 'reports', 'label' => 'Reports', 'href' => '/reports', 'permission' => 'reports:read', 'group' => 'Insights'],
             ['key' => 'audit', 'label' => 'Audit', 'href' => '/audit', 'permission' => 'audit:read', 'group' => 'Insights'],
             ['key' => 'admin', 'label' => 'Admin', 'href' => '/admin/users', 'permission' => 'auth:read', 'group' => 'Administration'],
@@ -29,7 +104,21 @@ class MenuCatalog
     /** @return list<string> */
     public static function hrefs(): array
     {
-        return array_column(self::items(), 'href');
+        $hrefs = [];
+
+        foreach (self::items() as $item) {
+            $hrefs[] = $item['href'];
+
+            if (! empty($item['active_path'])) {
+                $hrefs[] = $item['active_path'];
+            }
+
+            foreach ($item['children'] ?? [] as $child) {
+                $hrefs[] = $child['href'];
+            }
+        }
+
+        return array_values(array_unique($hrefs));
     }
 
     /** @return list<string> */

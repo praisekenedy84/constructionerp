@@ -5,16 +5,20 @@ import PaginationLinks from '@/Components/Shared/PaginationLinks';
 import PageHeader from '@/Components/Shared/PageHeader';
 import StatusBadge from '@/Components/Shared/StatusBadge';
 import { Button } from '@/Components/ui/button';
+import { Dialog } from '@/Components/ui/dialog';
+import { confirmDiscardIfDirty, DialogFormActions } from '@/Components/ui/dialog-form';
 import { Input } from '@/Components/ui/input';
+import { Label } from '@/Components/ui/label';
 import { formatCurrency } from '@/lib/formatters';
 import { hasPermission } from '@/lib/permissions';
-import { CashAllocation, ListingFilters, PageProps, Paginated } from '@/types';
-import { Head, Link, router, usePage } from '@inertiajs/react';
-import { Download, FileSpreadsheet } from 'lucide-react';
-import { useState } from 'react';
+import { CashAllocation, ListingFilters, PageProps, Paginated, Project } from '@/types';
+import { Head, router, useForm, usePage } from '@inertiajs/react';
+import { Download, FileSpreadsheet, Plus } from 'lucide-react';
+import { FormEvent, useState } from 'react';
 
 interface FundApprovalsProps extends PageProps {
     allocations: Paginated<CashAllocation>;
+    projects: Pick<Project, 'id' | 'code' | 'name'>[];
     filters: ListingFilters & { status?: string };
     summary: {
         total: number;
@@ -34,8 +38,9 @@ const statusOptions = [
 ];
 
 export default function FundApprovals() {
-    const { allocations, auth, filters, summary } = usePage<FundApprovalsProps>().props;
+    const { allocations, auth, filters, projects, summary } = usePage<FundApprovalsProps>().props;
     const rows = allocations.data ?? [];
+    const [requestOpen, setRequestOpen] = useState(false);
     const [rejectingId, setRejectingId] = useState<number | null>(null);
     const [rejectReason, setRejectReason] = useState('');
     const [receivingId, setReceivingId] = useState<number | null>(null);
@@ -46,6 +51,47 @@ export default function FundApprovals() {
     const canApprove = hasPermission(auth.user, 'budgets', 'approve');
     const canReject = hasPermission(auth.user, 'budgets', 'reject');
     const canReceive = hasPermission(auth.user, 'budgets', 'update');
+    const canRequest = hasPermission(auth.user, 'budgets', 'create');
+
+    const {
+        data: requestData,
+        setData: setRequestData,
+        post: postRequest,
+        processing: requestProcessing,
+        errors: requestErrors,
+        reset: resetRequest,
+        clearErrors: clearRequestErrors,
+        isDirty: requestDirty,
+    } = useForm({
+        project_id: '',
+        requested_amount: '',
+        method: '',
+        reference_no: '',
+    });
+
+    function openRequestDialog() {
+        clearRequestErrors();
+        setRequestOpen(true);
+    }
+
+    function closeRequestDialog() {
+        if (!confirmDiscardIfDirty(requestDirty)) {
+            return;
+        }
+        setRequestOpen(false);
+        resetRequest();
+        clearRequestErrors();
+    }
+
+    function submitRequest(e: FormEvent) {
+        e.preventDefault();
+        postRequest('/finance/cash-requests', {
+            onSuccess: () => {
+                resetRequest();
+                setRequestOpen(false);
+            },
+        });
+    }
 
     function exportReport(format: 'xlsx' | 'pdf') {
         const params = new URLSearchParams({ format });
@@ -102,6 +148,12 @@ export default function FundApprovals() {
                     description="Review all fund requests — pending, approved, received, and rejected — with full audit history."
                     actions={
                         <div className="flex flex-wrap gap-2">
+                            {canRequest && (
+                                <Button onClick={openRequestDialog}>
+                                    <Plus className="mr-2 h-4 w-4" />
+                                    Create New Request
+                                </Button>
+                            )}
                             <Button variant="outline" onClick={() => exportReport('xlsx')}>
                                 <FileSpreadsheet className="mr-2 h-4 w-4" />
                                 Export Excel
@@ -110,9 +162,6 @@ export default function FundApprovals() {
                                 <Download className="mr-2 h-4 w-4" />
                                 Export PDF
                             </Button>
-                            <Link href="/finance">
-                                <Button variant="outline">Back to Finance</Button>
-                            </Link>
                         </div>
                     }
                 />
@@ -186,9 +235,12 @@ export default function FundApprovals() {
                                                 </td>
                                                 <td className="px-4 py-4 text-slate-600">
                                                     <p className="font-medium text-slate-900">
-                                                        {allocation.project?.code ?? '—'}
+                                                        {allocation.project?.code ?? 'ORG'}
                                                     </p>
-                                                    <p className="text-xs">{allocation.project?.name ?? '—'}</p>
+                                                    <p className="text-xs">
+                                                        {allocation.project?.name ??
+                                                            'Organization (general)'}
+                                                    </p>
                                                 </td>
                                                 <td className="px-4 py-4 text-slate-600">
                                                     {allocation.requester?.name ?? '—'}
@@ -344,6 +396,86 @@ export default function FundApprovals() {
                     )}
                 </DataPanel>
             </div>
+
+            {canRequest && (
+                <Dialog
+                    open={requestOpen}
+                    onOpenChange={(open) => {
+                        if (open) {
+                            openRequestDialog();
+                        } else {
+                            closeRequestDialog();
+                        }
+                    }}
+                    title="Create New Fund Request"
+                    description="Select a project or Organization (general). A manager will review the request."
+                >
+                    <form onSubmit={submitRequest} className="space-y-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="request-project">Allocate funds to</Label>
+                            <select
+                                id="request-project"
+                                className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-800"
+                                value={requestData.project_id}
+                                onChange={(e) => setRequestData('project_id', e.target.value)}
+                            >
+                                <option value="">Organization (general)</option>
+                                {(projects ?? []).map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                        {p.code} — {p.name}
+                                    </option>
+                                ))}
+                            </select>
+                            {requestErrors.project_id && (
+                                <p className="text-sm text-red-600">{requestErrors.project_id}</p>
+                            )}
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="request-amount">Amount (TZS)</Label>
+                            <Input
+                                id="request-amount"
+                                type="number"
+                                step="0.01"
+                                value={requestData.requested_amount}
+                                onChange={(e) => setRequestData('requested_amount', e.target.value)}
+                                required
+                            />
+                            {requestErrors.requested_amount && (
+                                <p className="text-sm text-red-600">{requestErrors.requested_amount}</p>
+                            )}
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="request-method">Method</Label>
+                            <Input
+                                id="request-method"
+                                value={requestData.method}
+                                onChange={(e) => setRequestData('method', e.target.value)}
+                                placeholder="Bank transfer"
+                            />
+                            {requestErrors.method && (
+                                <p className="text-sm text-red-600">{requestErrors.method}</p>
+                            )}
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="request-reference">Reference No</Label>
+                            <Input
+                                id="request-reference"
+                                value={requestData.reference_no}
+                                onChange={(e) => setRequestData('reference_no', e.target.value)}
+                            />
+                            {requestErrors.reference_no && (
+                                <p className="text-sm text-red-600">{requestErrors.reference_no}</p>
+                            )}
+                        </div>
+                        <DialogFormActions
+                            onCancel={closeRequestDialog}
+                            processing={requestProcessing}
+                            submitLabel="Submit Request"
+                            processingLabel="Submitting…"
+                        />
+                    </form>
+                </Dialog>
+            )}
         </AppShell>
     );
 }

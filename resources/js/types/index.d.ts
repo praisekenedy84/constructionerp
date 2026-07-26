@@ -30,6 +30,8 @@ export interface NavItem {
     label: string;
     href: string;
     group: string;
+    active_path?: string;
+    children?: NavItem[];
 }
 
 export interface Paginated<T> {
@@ -208,7 +210,7 @@ export type CashAllocationStatus = 'pending' | 'approved' | 'rejected' | 'receiv
 
 export interface CashAllocation {
     id: number;
-    project_id: number;
+    project_id: number | null;
     requested_amount: string;
     received_amount: string;
     utilized_amount: string;
@@ -220,7 +222,7 @@ export interface CashAllocation {
     received_at: string | null;
     decided_at?: string | null;
     rejection_reason?: string | null;
-    project?: Project | Pick<Project, 'id' | 'code' | 'name'>;
+    project?: Project | Pick<Project, 'id' | 'code' | 'name'> | null;
     requester?: { id: number; name: string };
     approver?: { id: number; name: string };
 }
@@ -299,6 +301,7 @@ export interface StockBalance {
     average_cost: string;
     inventory_item?: InventoryItem;
     location?: { id: number; name: string };
+    stock_location?: { id: number; name: string };
 }
 
 export interface InventoryTransaction {
@@ -315,7 +318,7 @@ export interface InventoryTransaction {
 
 export interface InventoryIssue {
     id: number;
-    requisition_id: number;
+    requisition_id: number | null;
     inventory_item_id: number;
     stock_location_id: number;
     quantity: string;
@@ -357,6 +360,10 @@ export interface PayrollRun {
     period_end: string;
     status: 'draft' | 'approved' | 'posted';
     project?: Project;
+    items?: PayrollItem[];
+    items_count?: number;
+    items_sum_net_pay?: string | null;
+    total_net_pay?: string;
 }
 
 export interface PayrollItem {

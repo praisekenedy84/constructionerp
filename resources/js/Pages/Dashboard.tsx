@@ -51,7 +51,7 @@ export default function Dashboard() {
             value: formatCurrency(stats.cash_on_hand),
             sub: `${stats.open_requisitions} open requisitions`,
             icon: Wallet,
-            href: '/finance',
+            href: '/finance/approvals',
             color: 'text-slate-900',
         },
     ];
@@ -59,7 +59,7 @@ export default function Dashboard() {
     const quickLinks = [
         { label: 'New Requisition', href: '/requisitions/create' },
         { label: 'Review Queue', href: '/requisitions/review-queue' },
-        { label: 'Cash Flow', href: '/finance' },
+        { label: 'Fund Approvals', href: '/finance/approvals' },
         { label: 'Reports', href: '/reports' },
     ];
 

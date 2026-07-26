@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\PayrollRunStatus;
 use App\Http\Requests\GeneratePayrollRequest;
 use App\Models\Employee;
 use App\Models\PayrollRun;
@@ -31,7 +32,11 @@ class PayrollController extends Controller
             ->dateRange('created_at')
             ->sort(['name', 'employee_no', 'role', 'created_at']);
 
-        $runsQuery = PayrollRun::query()->where('project_id', $project->id);
+        $runsQuery = PayrollRun::query()
+            ->where('project_id', $project->id)
+            ->withCount('items')
+            ->withSum('items', 'net_pay');
+
         if ($from = $request->input('from')) {
             $runsQuery->whereDate('period_end', '>=', $from);
         }
@@ -44,6 +49,59 @@ class PayrollController extends Controller
             'employees' => $employeeListing->paginate(25),
             'recent_runs' => $runsQuery->orderByDesc('period_end')->paginate(10)->withQueryString(),
             'filters' => $employeeListing->filters(),
+        ]);
+    }
+
+    public function runs(Request $request): Response
+    {
+        $this->authorizeRoles($request->user(), ['HR Officer', 'Finance Manager']);
+
+        $query = PayrollRun::query()
+            ->with('project:id,code,name')
+            ->withCount('items')
+            ->withSum('items', 'net_pay');
+
+        if ($request->filled('project_id')) {
+            $query->where('project_id', $request->integer('project_id'));
+        }
+
+        if ($request->filled('status')) {
+            $query->where('status', $request->input('status'));
+        }
+
+        $listing = ListingQuery::for($query, $request)
+            ->search(['project.code', 'project.name'])
+            ->dateRange('period_end')
+            ->sort(['period_end', 'period_start', 'status', 'created_at'], 'period_end');
+
+        return Inertia::render('Payroll/Runs', [
+            'runs' => $listing->paginate(25),
+            'filters' => $listing->filters([
+                'project_id' => $request->input('project_id'),
+                'status' => $request->input('status'),
+            ]),
+            'projects' => Project::query()->orderBy('name')->get(['id', 'code', 'name']),
+            'status_options' => [
+                ['value' => PayrollRunStatus::Draft->value, 'label' => 'Draft'],
+                ['value' => PayrollRunStatus::Approved->value, 'label' => 'Approved'],
+                ['value' => PayrollRunStatus::Posted->value, 'label' => 'Posted'],
+            ],
+        ]);
+    }
+
+    public function show(Request $request, int $id): Response
+    {
+        $this->authorizeRoles($request->user(), ['HR Officer', 'Finance Manager']);
+
+        $run = PayrollRun::query()
+            ->with(['project:id,code,name', 'items.employee'])
+            ->withCount('items')
+            ->withSum('items', 'net_pay')
+            ->findOrFail($id);
+
+        return Inertia::render('Payroll/Show', [
+            'run' => $run,
+            'total_net_pay' => (string) ($run->items_sum_net_pay ?? '0'),
         ]);
     }
 
@@ -112,6 +170,8 @@ class PayrollController extends Controller
         $run = PayrollRun::findOrFail($id);
         $this->payrollService->post($run, $request->user());
 
-        return back()->with('success', 'Payroll posted and budget transactions created.');
+        return redirect()
+            ->route('payroll.runs.show', $run->id)
+            ->with('success', 'Payroll posted. Salaries recorded as overhead expense.');
     }
 }

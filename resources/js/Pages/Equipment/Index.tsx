@@ -6,11 +6,14 @@ import { LinkButton } from '@/Components/Shared/LinkButton';
 import PageHeader from '@/Components/Shared/PageHeader';
 import StatusBadge from '@/Components/Shared/StatusBadge';
 import { Button } from '@/Components/ui/button';
+import { Dialog } from '@/Components/ui/dialog';
+import { confirmDiscardIfDirty, DialogFormActions } from '@/Components/ui/dialog-form';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
 import { Equipment, ListingFilters, PageProps, Paginated } from '@/types';
 import { Head, useForm, usePage } from '@inertiajs/react';
-import { FormEvent } from 'react';
+import { Plus } from 'lucide-react';
+import { FormEvent, useState } from 'react';
 
 interface EquipmentIndexProps extends PageProps {
     equipment: Paginated<Equipment>;
@@ -20,14 +23,34 @@ interface EquipmentIndexProps extends PageProps {
 export default function EquipmentIndex() {
     const { equipment, filters } = usePage<EquipmentIndexProps>().props;
     const rows = equipment.data ?? [];
-    const { data, setData, post, processing, errors, reset } = useForm({
+    const [open, setOpen] = useState(false);
+    const { data, setData, post, processing, errors, reset, clearErrors, isDirty } = useForm({
         name: '',
         type: '',
     });
 
+    function openDialog() {
+        clearErrors();
+        setOpen(true);
+    }
+
+    function closeDialog() {
+        if (!confirmDiscardIfDirty(isDirty)) {
+            return;
+        }
+        setOpen(false);
+        reset();
+        clearErrors();
+    }
+
     function submit(e: FormEvent) {
         e.preventDefault();
-        post('/equipment', { onSuccess: () => reset() });
+        post('/equipment', {
+            onSuccess: () => {
+                reset();
+                setOpen(false);
+            },
+        });
     }
 
     return (
@@ -39,37 +62,16 @@ export default function EquipmentIndex() {
                     description="Fleet registry and utilization."
                     actions={
                         <>
+                            <Button onClick={openDialog}>
+                                <Plus className="mr-2 h-4 w-4" />
+                                Register Equipment
+                            </Button>
                             <LinkButton href="/equipment/assignments">Assignments</LinkButton>
                             <LinkButton href="/equipment/maintenance">Maintenance</LinkButton>
                             <LinkButton href="/equipment/fuel">Fuel Logs</LinkButton>
                         </>
                     }
                 />
-
-                <DataPanel title="Register Equipment">
-                    <form onSubmit={submit} className="flex flex-wrap items-end gap-4">
-                        <div className="space-y-2">
-                            <Label>Name</Label>
-                            <Input
-                                value={data.name}
-                                onChange={(e) => setData('name', e.target.value)}
-                                required
-                            />
-                            {errors.name && <p className="text-sm text-red-600">{errors.name}</p>}
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Type</Label>
-                            <Input
-                                value={data.type}
-                                onChange={(e) => setData('type', e.target.value)}
-                                required
-                            />
-                        </div>
-                        <Button type="submit" disabled={processing}>
-                            Register
-                        </Button>
-                    </form>
-                </DataPanel>
 
                 <ListToolbar
                     baseUrl="/equipment"
@@ -115,6 +117,41 @@ export default function EquipmentIndex() {
                     <PaginationLinks paginator={equipment} />
                 </DataPanel>
             </div>
+
+            <Dialog
+                open={open}
+                onOpenChange={(next) => (next ? openDialog() : closeDialog())}
+                title="Register Equipment"
+                description="Add equipment to the fleet registry."
+            >
+                <form onSubmit={submit} className="space-y-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="equipment-name">Name</Label>
+                        <Input
+                            id="equipment-name"
+                            value={data.name}
+                            onChange={(e) => setData('name', e.target.value)}
+                            required
+                        />
+                        {errors.name && <p className="text-sm text-red-600">{errors.name}</p>}
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="equipment-type">Type</Label>
+                        <Input
+                            id="equipment-type"
+                            value={data.type}
+                            onChange={(e) => setData('type', e.target.value)}
+                            required
+                        />
+                    </div>
+                    <DialogFormActions
+                        onCancel={closeDialog}
+                        processing={processing}
+                        submitLabel="Register"
+                        processingLabel="Registering…"
+                    />
+                </form>
+            </Dialog>
         </AppShell>
     );
 }

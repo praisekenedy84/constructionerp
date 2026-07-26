@@ -3,6 +3,7 @@ import DataPanel from '@/Components/Shared/DataPanel';
 import PageHeader from '@/Components/Shared/PageHeader';
 import AdminNav from '@/Components/Admin/AdminNav';
 import { Button } from '@/Components/ui/button';
+import { cn } from '@/lib/utils';
 import { PageProps } from '@/types';
 import { Head, useForm, usePage } from '@inertiajs/react';
 import { FormEvent, useState } from 'react';
@@ -12,7 +13,9 @@ interface MenuCatalogItem {
     label: string;
     href: string;
     permission: string | null;
-    group: string;
+    group?: string;
+    active_path?: string;
+    children?: MenuCatalogItem[];
 }
 
 interface AdminMenuProps extends PageProps {
@@ -52,7 +55,7 @@ export default function AdminMenu() {
     }
 
     const grouped = menu_catalog.reduce<Record<string, MenuCatalogItem[]>>((acc, item) => {
-        (acc[item.group] ??= []).push(item);
+        (acc[item.group ?? 'Other'] ??= []).push(item);
         return acc;
     }, {});
 
@@ -90,40 +93,15 @@ export default function AdminMenu() {
                                         {group}
                                     </h3>
                                     <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
-                                        {items.map((item) => {
-                                            const hidden = isHiddenForRole(item.href, selectedRole);
-
-                                            return (
-                                                <li
-                                                    key={item.key}
-                                                    className="flex items-center justify-between px-4 py-3"
-                                                >
-                                                    <div>
-                                                        <p className="text-sm font-medium text-slate-900">
-                                                            {item.label}
-                                                        </p>
-                                                        <p className="text-xs text-slate-500">
-                                                            {item.href}
-                                                            {item.permission && (
-                                                                <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 font-mono">
-                                                                    requires {item.permission}
-                                                                </span>
-                                                            )}
-                                                        </p>
-                                                    </div>
-                                                    <label className="flex items-center gap-2 text-sm text-slate-600">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={!hidden}
-                                                            onChange={() =>
-                                                                toggleRoleItem(item.href, selectedRole)
-                                                            }
-                                                        />
-                                                        Show in menu
-                                                    </label>
-                                                </li>
-                                            );
-                                        })}
+                                        {items.map((item) => (
+                                            <MenuVisibilityRow
+                                                key={item.key}
+                                                item={item}
+                                                selectedRole={selectedRole}
+                                                isHiddenForRole={isHiddenForRole}
+                                                toggleRoleItem={toggleRoleItem}
+                                            />
+                                        ))}
                                     </ul>
                                 </div>
                             ))}
@@ -136,5 +114,71 @@ export default function AdminMenu() {
                 </form>
             </div>
         </AppShell>
+    );
+}
+
+function MenuVisibilityRow({
+    item,
+    selectedRole,
+    isHiddenForRole,
+    toggleRoleItem,
+    nested = false,
+}: {
+    item: MenuCatalogItem;
+    selectedRole: string;
+    isHiddenForRole: (href: string, role: string) => boolean;
+    toggleRoleItem: (href: string, role: string) => void;
+    nested?: boolean;
+}) {
+    // Parent modules are hidden via active_path when present (legacy `/finance`, `/inventory`, …).
+    const toggleHref = nested ? item.href : (item.active_path ?? item.href);
+    const hidden = isHiddenForRole(toggleHref, selectedRole) || isHiddenForRole(item.href, selectedRole);
+
+    return (
+        <>
+            <li
+                className={cn(
+                    'flex items-center justify-between px-4 py-3',
+                    nested && 'bg-slate-50/80 pl-10',
+                )}
+            >
+                <div>
+                    <p className="text-sm font-medium text-slate-900">
+                        {nested ? `↳ ${item.label}` : item.label}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                        {item.active_path && !nested ? `${item.active_path} → ${item.href}` : item.href}
+                        {item.permission && (
+                            <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 font-mono">
+                                requires {item.permission}
+                            </span>
+                        )}
+                        {!item.permission && nested && (
+                            <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 font-mono">
+                                inherits parent permission
+                            </span>
+                        )}
+                    </p>
+                </div>
+                <label className="flex items-center gap-2 text-sm text-slate-600">
+                    <input
+                        type="checkbox"
+                        checked={!hidden}
+                        onChange={() => toggleRoleItem(toggleHref, selectedRole)}
+                    />
+                    Show in menu
+                </label>
+            </li>
+            {item.children?.map((child) => (
+                <MenuVisibilityRow
+                    key={child.key}
+                    item={child}
+                    selectedRole={selectedRole}
+                    isHiddenForRole={isHiddenForRole}
+                    toggleRoleItem={toggleRoleItem}
+                    nested
+                />
+            ))}
+        </>
     );
 }

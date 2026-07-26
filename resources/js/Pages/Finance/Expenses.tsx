@@ -5,12 +5,15 @@ import PaginationLinks from '@/Components/Shared/PaginationLinks';
 import PageHeader from '@/Components/Shared/PageHeader';
 import StatusBadge from '@/Components/Shared/StatusBadge';
 import { Button } from '@/Components/ui/button';
+import { Dialog } from '@/Components/ui/dialog';
+import { confirmDiscardIfDirty, DialogFormActions } from '@/Components/ui/dialog-form';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
 import { formatCurrency, formatDate } from '@/lib/formatters';
 import { Expense, ListingFilters, PageProps, Paginated, Project } from '@/types';
 import { Head, useForm, usePage } from '@inertiajs/react';
-import { FormEvent } from 'react';
+import { Plus } from 'lucide-react';
+import { FormEvent, useState } from 'react';
 
 interface ExpensesProps extends PageProps {
     expenses: Paginated<Expense>;
@@ -21,7 +24,8 @@ interface ExpensesProps extends PageProps {
 export default function Expenses() {
     const { expenses, filters, projects } = usePage<ExpensesProps>().props;
     const rows = expenses.data ?? [];
-    const { data, setData, post, processing, errors, reset } = useForm({
+    const [open, setOpen] = useState(false);
+    const { data, setData, post, processing, errors, reset, clearErrors, isDirty } = useForm({
         category: 'direct' as const,
         project_id: '',
         boq_item_id: '',
@@ -31,9 +35,28 @@ export default function Expenses() {
         expense_date: new Date().toISOString().split('T')[0],
     });
 
+    function openDialog() {
+        clearErrors();
+        setOpen(true);
+    }
+
+    function closeDialog() {
+        if (!confirmDiscardIfDirty(isDirty)) {
+            return;
+        }
+        setOpen(false);
+        reset();
+        clearErrors();
+    }
+
     function submit(e: FormEvent) {
         e.preventDefault();
-        post('/finance/expenses', { onSuccess: () => reset() });
+        post('/finance/expenses', {
+            onSuccess: () => {
+                reset();
+                setOpen(false);
+            },
+        });
     }
 
     return (
@@ -43,70 +66,13 @@ export default function Expenses() {
                 <PageHeader
                     title="Direct Expenses"
                     description="Project expenses that create DIRECT_EXPENSE budget transactions."
+                    actions={
+                        <Button onClick={openDialog}>
+                            <Plus className="mr-2 h-4 w-4" />
+                            Create New Expense
+                        </Button>
+                    }
                 />
-
-                <DataPanel title="Post Direct Expense">
-                    <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
-                        <div className="space-y-2">
-                            <Label>Project</Label>
-                            <select
-                                className="flex h-10 w-full rounded-md border border-slate-200 px-3 text-sm"
-                                value={data.project_id}
-                                onChange={(e) => setData('project_id', e.target.value)}
-                                required
-                            >
-                                <option value="">Select project</option>
-                                {projects.map((p) => (
-                                    <option key={p.id} value={p.id}>
-                                        {p.code} — {p.name}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Sub Type</Label>
-                            <Input
-                                value={data.sub_type}
-                                onChange={(e) => setData('sub_type', e.target.value)}
-                                required
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Amount (TZS)</Label>
-                            <Input
-                                type="number"
-                                step="0.01"
-                                value={data.amount}
-                                onChange={(e) => setData('amount', e.target.value)}
-                                required
-                            />
-                            {errors.amount && (
-                                <p className="text-sm text-red-600">{errors.amount}</p>
-                            )}
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Expense Date</Label>
-                            <Input
-                                type="date"
-                                value={data.expense_date}
-                                onChange={(e) => setData('expense_date', e.target.value)}
-                                required
-                            />
-                        </div>
-                        <div className="space-y-2 sm:col-span-2">
-                            <Label>Description</Label>
-                            <Input
-                                value={data.description}
-                                onChange={(e) => setData('description', e.target.value)}
-                            />
-                        </div>
-                        <div className="sm:col-span-2">
-                            <Button type="submit" disabled={processing}>
-                                Post Expense
-                            </Button>
-                        </div>
-                    </form>
-                </DataPanel>
 
                 <ListToolbar
                     baseUrl="/finance/expenses"
@@ -176,6 +142,82 @@ export default function Expenses() {
                     <PaginationLinks paginator={expenses} />
                 </DataPanel>
             </div>
+
+            <Dialog
+                open={open}
+                onOpenChange={(next) => (next ? openDialog() : closeDialog())}
+                title="Create New Expense"
+                description="Post a direct project expense."
+            >
+                <form onSubmit={submit} className="space-y-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="expense-project">Project</Label>
+                        <select
+                            id="expense-project"
+                            className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-800"
+                            value={data.project_id}
+                            onChange={(e) => setData('project_id', e.target.value)}
+                            required
+                        >
+                            <option value="">Select project</option>
+                            {projects.map((p) => (
+                                <option key={p.id} value={p.id}>
+                                    {p.code} — {p.name}
+                                </option>
+                            ))}
+                        </select>
+                        {errors.project_id && (
+                            <p className="text-sm text-red-600">{errors.project_id}</p>
+                        )}
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="expense-sub-type">Sub Type</Label>
+                        <Input
+                            id="expense-sub-type"
+                            value={data.sub_type}
+                            onChange={(e) => setData('sub_type', e.target.value)}
+                            required
+                        />
+                        {errors.sub_type && <p className="text-sm text-red-600">{errors.sub_type}</p>}
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="expense-amount">Amount (TZS)</Label>
+                        <Input
+                            id="expense-amount"
+                            type="number"
+                            step="0.01"
+                            value={data.amount}
+                            onChange={(e) => setData('amount', e.target.value)}
+                            required
+                        />
+                        {errors.amount && <p className="text-sm text-red-600">{errors.amount}</p>}
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="expense-date">Expense Date</Label>
+                        <Input
+                            id="expense-date"
+                            type="date"
+                            value={data.expense_date}
+                            onChange={(e) => setData('expense_date', e.target.value)}
+                            required
+                        />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="expense-description">Description</Label>
+                        <Input
+                            id="expense-description"
+                            value={data.description}
+                            onChange={(e) => setData('description', e.target.value)}
+                        />
+                    </div>
+                    <DialogFormActions
+                        onCancel={closeDialog}
+                        processing={processing}
+                        submitLabel="Post Expense"
+                        processingLabel="Posting…"
+                    />
+                </form>
+            </Dialog>
         </AppShell>
     );
 }

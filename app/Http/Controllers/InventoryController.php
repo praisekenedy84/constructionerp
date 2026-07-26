@@ -6,8 +6,11 @@ use App\Http\Requests\InventoryAdjustRequest;
 use App\Http\Requests\InventoryIssueRequest;
 use App\Http\Requests\InventoryTransferRequest;
 use App\Models\InventoryIssue;
+use App\Models\InventoryItem;
 use App\Models\InventoryTransaction;
 use App\Models\StockBalance;
+use App\Models\StockLocation;
+use App\Models\User;
 use App\Services\InventoryService;
 use App\Support\ListingQuery;
 use Illuminate\Http\RedirectResponse;
@@ -41,11 +44,11 @@ class InventoryController extends Controller
 
         $balances = $listing->paginate(25);
 
-        $lowStockCount = \App\Models\InventoryItem::query()
+        $lowStockCount = InventoryItem::query()
             ->whereNotNull('reorder_point')
             ->with('stockBalances')
             ->get()
-            ->filter(function (\App\Models\InventoryItem $item) {
+            ->filter(function (InventoryItem $item) {
                 $onHand = $item->stockBalances->sum(fn ($b) => (float) $b->quantity_on_hand);
 
                 return $onHand <= (float) $item->reorder_point;
@@ -56,6 +59,7 @@ class InventoryController extends Controller
             'balances' => $balances,
             'low_stock_count' => $lowStockCount,
             'filters' => $listing->filters(['project_id' => $request->input('project_id')]),
+            ...$this->formOptions(),
         ]);
     }
 
@@ -74,6 +78,7 @@ class InventoryController extends Controller
         return Inertia::render('Inventory/Issues', [
             'issues' => $listing->paginate(25),
             'filters' => $listing->filters(),
+            ...$this->formOptions(),
         ]);
     }
 
@@ -141,8 +146,27 @@ class InventoryController extends Controller
             (int) $validated['stock_location_id'],
             (string) $validated['new_quantity'],
             $request->user(),
+            [
+                'reason' => $validated['reason'],
+            ],
         );
 
         return back()->with('success', 'Stock adjustment recorded.');
+    }
+
+    /**
+     * @return array{
+     *     inventory_items: \Illuminate\Support\Collection<int, InventoryItem>,
+     *     stock_locations: \Illuminate\Support\Collection<int, StockLocation>,
+     *     recipients: \Illuminate\Support\Collection<int, User>
+     * }
+     */
+    private function formOptions(): array
+    {
+        return [
+            'inventory_items' => InventoryItem::query()->orderBy('name')->get(['id', 'code', 'name', 'unit']),
+            'stock_locations' => StockLocation::query()->orderBy('name')->get(['id', 'name', 'project_id']),
+            'recipients' => User::query()->orderBy('name')->get(['id', 'name', 'email']),
+        ];
     }
 }

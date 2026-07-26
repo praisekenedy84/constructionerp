@@ -29,7 +29,7 @@ class CashController extends Controller
         $validated = $request->validated();
 
         $allocation = $this->cashService->request(
-            (int) $validated['project_id'],
+            isset($validated['project_id']) ? (int) $validated['project_id'] : null,
             (string) $validated['requested_amount'],
             $request->user(),
             [
@@ -100,6 +100,7 @@ class CashController extends Controller
 
         return Inertia::render('Finance/CashFlow', [
             'project' => $project,
+            'projects' => Project::orderBy('name')->get(['id', 'code', 'name']),
             'allocations' => $listing->paginate(25),
             'filters' => $listing->filters(),
         ]);
@@ -153,6 +154,7 @@ class CashController extends Controller
                     'name' => $allocation->approver->name,
                 ] : null,
             ]),
+            'projects' => Project::orderBy('name')->get(['id', 'code', 'name']),
             'filters' => $request->only(['search', 'from', 'to', 'sort', 'direction', 'status']),
             'summary' => [
                 'total' => CashAllocation::count(),

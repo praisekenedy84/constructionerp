@@ -4,12 +4,15 @@ namespace App\Services;
 
 use App\Enums\AttendanceStatus;
 use App\Enums\BudgetTransactionType;
+use App\Enums\ExpenseCategory;
 use App\Enums\PayrollDeductionType;
 use App\Enums\PayrollRunStatus;
 use App\Enums\PayStructure;
 use App\Models\Advance;
 use App\Models\Attendance;
+use App\Models\BudgetTransaction;
 use App\Models\Employee;
+use App\Models\Expense;
 use App\Models\PayrollDeduction;
 use App\Models\PayrollItem;
 use App\Models\PayrollRun;
@@ -20,7 +23,7 @@ use Illuminate\Support\Facades\DB;
 class PayrollService
 {
     public function __construct(
-        private readonly BudgetService $budgetService,
+        private readonly ExpenseService $expenseService,
     ) {}
 
     /**
@@ -56,27 +59,110 @@ class PayrollService
     public function post(PayrollRun $run, User $actor): PayrollRun
     {
         return DB::transaction(function () use ($run, $actor) {
-            $run = PayrollRun::lockForUpdate()->with('items')->findOrFail($run->id);
+            $run = PayrollRun::lockForUpdate()
+                ->with(['items', 'project:id,code,name'])
+                ->findOrFail($run->id);
 
             if ($run->status === PayrollRunStatus::Posted) {
                 throw new \InvalidArgumentException('Payroll run has already been posted.');
             }
 
-            foreach ($run->items as $item) {
-                $this->budgetService->createTransaction($run->project_id, [
-                    'type' => BudgetTransactionType::Payroll,
-                    'amount' => (string) $item->net_pay,
-                    'boq_item_id' => $item->boq_item_id,
-                    'reference_entity_type' => 'payroll_item',
-                    'reference_entity_id' => $item->id,
-                    'created_by' => $actor->id,
-                ]);
-            }
+            $this->recordSalariesOverheadExpense($run, $actor);
+            $this->removeLegacyPayrollBudgetTransactions($run);
 
             $run->update(['status' => PayrollRunStatus::Posted]);
 
             return $run->fresh(['items']);
         });
+    }
+
+    /**
+     * Migrate posted runs that still only have PAYROLL budget txs (pre-overhead change)
+     * into Salaries overhead expenses, and drop those budget txs.
+     */
+    public function backfillLegacyPayrollOverhead(User $actor): int
+    {
+        $created = 0;
+
+        $runs = PayrollRun::query()
+            ->where('status', PayrollRunStatus::Posted)
+            ->with(['items', 'project:id,code,name'])
+            ->get();
+
+        foreach ($runs as $run) {
+            $ref = "payroll_run:{$run->id}";
+            $exists = Expense::query()
+                ->where('category', ExpenseCategory::Indirect)
+                ->where('activity_ref', $ref)
+                ->exists();
+
+            if ($exists) {
+                $this->removeLegacyPayrollBudgetTransactions($run);
+
+                continue;
+            }
+
+            DB::transaction(function () use ($run, $actor, &$created) {
+                if ($this->recordSalariesOverheadExpense($run, $actor)) {
+                    $created++;
+                }
+                $this->removeLegacyPayrollBudgetTransactions($run);
+            });
+        }
+
+        return $created;
+    }
+
+    /**
+     * @return bool True when an overhead expense row was created.
+     */
+    private function recordSalariesOverheadExpense(PayrollRun $run, User $actor): bool
+    {
+        $totalNetPay = '0';
+        foreach ($run->items as $item) {
+            $totalNetPay = bcadd($totalNetPay, (string) $item->net_pay, 2);
+        }
+
+        if (bccomp($totalNetPay, '0', 2) <= 0) {
+            return false;
+        }
+
+        $ref = "payroll_run:{$run->id}";
+        if (Expense::query()->where('activity_ref', $ref)->exists()) {
+            return false;
+        }
+
+        $periodStart = $run->period_start?->toDateString() ?? (string) $run->period_start;
+        $periodEnd = $run->period_end?->toDateString() ?? (string) $run->period_end;
+        $projectLabel = $run->project
+            ? "{$run->project->code} — {$run->project->name}"
+            : "project #{$run->project_id}";
+
+        $this->expenseService->create([
+            'category' => ExpenseCategory::Indirect,
+            'sub_type' => 'Salaries',
+            'amount' => $totalNetPay,
+            'description' => "Payroll run #{$run->id} ({$projectLabel}, {$periodStart} to {$periodEnd})",
+            'expense_date' => $periodEnd,
+            'activity_ref' => $ref,
+            'recorded_by' => $actor->id,
+        ]);
+
+        return true;
+    }
+
+    private function removeLegacyPayrollBudgetTransactions(PayrollRun $run): void
+    {
+        $itemIds = $run->items->pluck('id')->filter()->all();
+        if ($itemIds === []) {
+            return;
+        }
+
+        BudgetTransaction::query()
+            ->where('type', BudgetTransactionType::Payroll)
+            ->where('reference_entity_type', 'payroll_item')
+            ->whereIn('reference_entity_id', $itemIds)
+            ->delete();
     }
 
     public function createRunFromPreview(array $preview): PayrollRun
@@ -230,7 +316,68 @@ class PayrollService
             $data['period_end'],
         );
 
+        if (! empty($data['overrides'])) {
+            $preview = $this->applyManualOverrides($preview, $data['overrides']);
+        }
+
         return $this->createRunFromPreview($preview);
+    }
+
+    /**
+     * Replace calculated pay with a direct net amount (skips attendance-based base).
+     *
+     * @param  array{
+     *     project_id: int,
+     *     period_start: string,
+     *     period_end: string,
+     *     items: array<int, array<string, mixed>>,
+     *     total_net_pay: string,
+     * }  $preview
+     * @param  list<array{employee_id: int|string, net_pay: int|string|float}>  $overrides
+     * @return array{
+     *     project_id: int,
+     *     period_start: string,
+     *     period_end: string,
+     *     items: array<int, array<string, mixed>>,
+     *     total_net_pay: string,
+     * }
+     */
+    public function applyManualOverrides(array $preview, array $overrides): array
+    {
+        $byEmployee = [];
+        foreach ($overrides as $override) {
+            $byEmployee[(int) $override['employee_id']] = bcadd((string) $override['net_pay'], '0', 2);
+        }
+
+        $totalNetPay = '0';
+
+        foreach ($preview['items'] as $index => $item) {
+            $employeeId = (int) $item['employee_id'];
+
+            if (array_key_exists($employeeId, $byEmployee)) {
+                $amount = $byEmployee[$employeeId];
+                if (bccomp($amount, '0', 2) < 0) {
+                    $amount = '0';
+                }
+
+                $preview['items'][$index] = array_merge($item, [
+                    'base' => $amount,
+                    'overtime' => '0',
+                    'allowances' => '0',
+                    'deductions' => [],
+                    'deductions_total' => '0',
+                    'net_pay' => $amount,
+                    'advance_recoveries' => [],
+                    'manual_override' => true,
+                ]);
+            }
+
+            $totalNetPay = bcadd($totalNetPay, (string) $preview['items'][$index]['net_pay'], 2);
+        }
+
+        $preview['total_net_pay'] = $totalNetPay;
+
+        return $preview;
     }
 
     /**

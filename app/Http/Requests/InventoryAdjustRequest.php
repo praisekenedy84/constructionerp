@@ -16,7 +16,7 @@ class InventoryAdjustRequest extends FormRequest
         return [
             'inventory_item_id' => ['required', 'integer', 'exists:inventory_items,id'],
             'stock_location_id' => ['required', 'integer', 'exists:stock_locations,id'],
-            'quantity' => ['required', 'numeric', 'not_in:0'],
+            'new_quantity' => ['required', 'numeric', 'gte:0'],
             'reason' => ['required', 'string', 'max:500'],
         ];
     }

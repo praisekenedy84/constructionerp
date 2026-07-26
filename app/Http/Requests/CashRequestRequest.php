@@ -14,10 +14,18 @@ class CashRequestRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'project_id' => ['required', 'integer', 'exists:projects,id'],
+            // null / empty = organization-wide (general) fund request
+            'project_id' => ['nullable', 'integer', 'exists:projects,id'],
             'requested_amount' => ['required', 'numeric', 'gt:0'],
             'method' => ['nullable', 'string', 'max:100'],
             'reference_no' => ['nullable', 'string', 'max:100'],
         ];
+    }
+
+    protected function prepareForValidation(): void
+    {
+        if ($this->input('project_id') === '' || $this->input('project_id') === 'organization') {
+            $this->merge(['project_id' => null]);
+        }
     }
 }

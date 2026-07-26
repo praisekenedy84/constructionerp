@@ -72,23 +72,14 @@ class AuthenticatedPagesTest extends TestCase
             ->assertInertia(fn ($page) => $page->component('Dashboard'));
     }
 
-    public function test_finance_and_payroll_hubs_load_without_projects(): void
+    public function test_finance_and_payroll_module_roots_redirect_to_first_subfeature(): void
     {
         $this->loginAsTenantAdmin();
 
-        $this->get('/finance')
-            ->assertOk()
-            ->assertInertia(fn ($page) => $page
-                ->component('Finance/Hub')
-                ->where('project', null)
-            );
-
-        $this->get('/payroll')
-            ->assertOk()
-            ->assertInertia(fn ($page) => $page
-                ->component('Payroll/Hub')
-                ->where('project', null)
-            );
+        $this->get('/finance')->assertRedirect('/finance/approvals');
+        $this->get('/payroll')->assertRedirect('/payroll/employees');
+        $this->get('/procurement')->assertRedirect('/procurement/suppliers');
+        $this->get('/inventory')->assertRedirect('/inventory/balances');
 
         $this->get('/finance/approvals')->assertOk();
         $this->get('/finance/expenses')->assertOk();

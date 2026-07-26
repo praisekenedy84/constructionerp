@@ -49,6 +49,11 @@ class CashAllocation extends Model
         });
     }
 
+    public function isOrganizationWide(): bool
+    {
+        return $this->project_id === null;
+    }
+
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class);

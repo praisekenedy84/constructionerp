@@ -10,7 +10,7 @@ return new class extends Migration
     {
         Schema::create('cash_allocations', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('project_id')->constrained()->restrictOnDelete();
+            $table->foreignId('project_id')->nullable()->constrained()->nullOnDelete();
             $table->decimal('requested_amount', 15, 2);
             $table->decimal('received_amount', 15, 2)->default(0);
             $table->decimal('utilized_amount', 15, 2)->default(0);

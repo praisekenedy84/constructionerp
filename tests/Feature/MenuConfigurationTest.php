@@ -103,4 +103,95 @@ class MenuConfigurationTest extends TestCase
 
         $this->get('/reports')->assertOk();
     }
+
+    public function test_finance_menu_includes_submenu_children(): void
+    {
+        $tenant = Tenant::create(['name' => 'Nav Co', 'slug' => 'nav-co']);
+
+        app(AuthService::class)->createUser($tenant, [
+            'name' => 'Finance User',
+            'email' => 'finance@nav-co.local',
+            'password' => 'password',
+            'role' => 'System Administrator',
+        ]);
+
+        tenancy()->end();
+
+        $this->post('/login', [
+            'email' => 'finance@nav-co.local',
+            'password' => 'password',
+        ]);
+
+        $this->get('/dashboard')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->has('navigation')
+                ->where('navigation', function ($nav) {
+                    $finance = collect($nav)->firstWhere('key', 'finance');
+
+                    if (! $finance) {
+                        return false;
+                    }
+
+                    $childHrefs = collect($finance['children'] ?? [])->pluck('href')->all();
+
+                    return $finance['href'] === '/finance/approvals'
+                        && ($finance['active_path'] ?? null) === '/finance'
+                        && $childHrefs === [
+                            '/finance/approvals',
+                            '/finance/expenses',
+                            '/finance/overhead',
+                        ];
+                })
+            );
+    }
+
+    public function test_hidden_child_menu_item_is_omitted_from_navigation(): void
+    {
+        $tenant = Tenant::create(['name' => 'Child Hide Co', 'slug' => 'child-hide-co']);
+
+        app(AuthService::class)->createUser($tenant, [
+            'name' => 'Admin',
+            'email' => 'admin@child-hide.local',
+            'password' => 'password',
+            'role' => 'System Administrator',
+        ]);
+
+        tenancy()->end();
+
+        $this->post('/login', [
+            'email' => 'admin@child-hide.local',
+            'password' => 'password',
+        ]);
+
+        $tenant->run(function () {
+            SystemSetting::updateOrCreate(
+                ['key' => 'ui_settings'],
+                [
+                    'value' => [
+                        'app_name' => 'CRF-ERP',
+                        'tagline' => 'Test',
+                        'nav_overrides' => [
+                            'role_hidden' => [
+                                'System Administrator' => ['/finance/overhead'],
+                            ],
+                        ],
+                    ],
+                    'updated_at' => now(),
+                ],
+            );
+        });
+
+        $user = auth()->user();
+        $uiSettings = $tenant->run(fn () => SystemSetting::where('key', 'ui_settings')->first()->value);
+
+        $nav = app(MenuService::class)->visibleForUser($user, $uiSettings);
+        $finance = collect($nav)->firstWhere('key', 'finance');
+
+        $this->assertNotNull($finance);
+        $this->assertSame(
+            ['/finance/approvals', '/finance/expenses'],
+            collect($finance['children'] ?? [])->pluck('href')->all(),
+        );
+    }
 }

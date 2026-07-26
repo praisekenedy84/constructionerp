@@ -8,6 +8,8 @@ import PaginationLinks from '@/Components/Shared/PaginationLinks';
 import PageHeader from '@/Components/Shared/PageHeader';
 import StatusBadge from '@/Components/Shared/StatusBadge';
 import { Button } from '@/Components/ui/button';
+import { Dialog } from '@/Components/ui/dialog';
+import { confirmDiscardIfDirty, DialogFormActions } from '@/Components/ui/dialog-form';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
 import { formatCurrency, formatDate } from '@/lib/formatters';
@@ -17,7 +19,8 @@ import {
 } from '@/lib/chart-helpers';
 import { BudgetTransaction, ListingFilters, PageProps, Paginated, Project } from '@/types';
 import { Head, useForm, usePage } from '@inertiajs/react';
-import { FormEvent } from 'react';
+import { Plus } from 'lucide-react';
+import { FormEvent, useState } from 'react';
 
 interface BudgetShowProps extends PageProps {
     project: Project;
@@ -36,15 +39,33 @@ export default function BudgetShow() {
         { name: 'Utilized', amount: utilized },
         { name: 'Remaining', amount: parseFloat(remaining_budget) || 0 },
     ];
-    const { data, setData, post, processing, errors, reset } = useForm({
+    const [open, setOpen] = useState(false);
+    const { data, setData, post, processing, errors, reset, clearErrors, isDirty } = useForm({
         amount: '',
         reason: '',
     });
 
+    function openDialog() {
+        clearErrors();
+        setOpen(true);
+    }
+
+    function closeDialog() {
+        if (!confirmDiscardIfDirty(isDirty)) {
+            return;
+        }
+        setOpen(false);
+        reset();
+        clearErrors();
+    }
+
     function submitAdjustment(e: FormEvent) {
         e.preventDefault();
         post(`/projects/${project.id}/budget/adjustment`, {
-            onSuccess: () => reset(),
+            onSuccess: () => {
+                reset();
+                setOpen(false);
+            },
         });
     }
 
@@ -55,6 +76,12 @@ export default function BudgetShow() {
                 <PageHeader
                     title="Budget Ledger"
                     description={`${project.code} — ${project.name}`}
+                    actions={
+                        <Button onClick={openDialog}>
+                            <Plus className="mr-2 h-4 w-4" />
+                            Post Adjustment
+                        </Button>
+                    }
                 />
 
                 <div className="grid gap-4 sm:grid-cols-3">
@@ -103,40 +130,6 @@ export default function BudgetShow() {
                         xKey="date"
                         series={[{ key: 'spent', name: 'Cumulative Spend', color: '#1d4ed8' }]}
                     />
-                </DataPanel>
-
-                <DataPanel title="Manual Adjustment" description="Requires reason. Finance Manager or MD only.">
-                    <form onSubmit={submitAdjustment} className="flex flex-wrap items-end gap-4">
-                        <div className="space-y-2">
-                            <Label htmlFor="amount">Amount (TZS)</Label>
-                            <Input
-                                id="amount"
-                                type="number"
-                                step="0.01"
-                                value={data.amount}
-                                onChange={(e) => setData('amount', e.target.value)}
-                                className="w-40"
-                            />
-                            {errors.amount && (
-                                <p className="text-sm text-red-600">{errors.amount}</p>
-                            )}
-                        </div>
-                        <div className="flex-1 space-y-2">
-                            <Label htmlFor="reason">Reason</Label>
-                            <Input
-                                id="reason"
-                                value={data.reason}
-                                onChange={(e) => setData('reason', e.target.value)}
-                                required
-                            />
-                            {errors.reason && (
-                                <p className="text-sm text-red-600">{errors.reason}</p>
-                            )}
-                        </div>
-                        <Button type="submit" disabled={processing}>
-                            {processing ? 'Saving…' : 'Post Adjustment'}
-                        </Button>
-                    </form>
                 </DataPanel>
 
                 <ListToolbar
@@ -200,6 +193,47 @@ export default function BudgetShow() {
                     <PaginationLinks paginator={transactions} />
                 </DataPanel>
             </div>
+
+            <Dialog
+                open={open}
+                onOpenChange={(next) => (next ? openDialog() : closeDialog())}
+                title="Manual Budget Adjustment"
+                description="Requires reason. Finance Manager or MD only."
+            >
+                <form onSubmit={submitAdjustment} className="space-y-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="amount">Amount (TZS)</Label>
+                        <Input
+                            id="amount"
+                            type="number"
+                            step="0.01"
+                            value={data.amount}
+                            onChange={(e) => setData('amount', e.target.value)}
+                        />
+                        {errors.amount && (
+                            <p className="text-sm text-red-600">{errors.amount}</p>
+                        )}
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="reason">Reason</Label>
+                        <Input
+                            id="reason"
+                            value={data.reason}
+                            onChange={(e) => setData('reason', e.target.value)}
+                            required
+                        />
+                        {errors.reason && (
+                            <p className="text-sm text-red-600">{errors.reason}</p>
+                        )}
+                    </div>
+                    <DialogFormActions
+                        onCancel={closeDialog}
+                        processing={processing}
+                        submitLabel="Post Adjustment"
+                        processingLabel="Saving…"
+                    />
+                </form>
+            </Dialog>
         </AppShell>
     );
 }

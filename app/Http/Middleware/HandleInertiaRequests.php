@@ -22,9 +22,38 @@ class HandleInertiaRequests extends Middleware
 
     public function share(Request $request): array
     {
-        $user = $request->user();
+        $isPlatform = $request->is('platform', 'platform/*');
         $platformAdmin = Auth::guard('platform')->user();
         $uiSettings = ['app_name' => 'CRF-ERP', 'tagline' => 'Construction Resource & Finance'];
+
+        // Platform controllers briefly initialize then end tenancy. Resolving the
+        // web user here would re-init tenancy (via TenantAwareUserProvider) and
+        // leave shared Eloquent models pointing at a purged `tenant` connection.
+        if ($isPlatform) {
+            return [
+                ...parent::share($request),
+                'auth' => [
+                    'user' => null,
+                    'platform_admin' => $platformAdmin instanceof PlatformAdmin ? [
+                        'id' => $platformAdmin->id,
+                        'name' => $platformAdmin->name,
+                        'email' => $platformAdmin->email,
+                    ] : null,
+                    'impersonator_id' => session('impersonator_id'),
+                    'platform_impersonator_id' => session('platform_impersonator_id'),
+                ],
+                'currentProject' => null,
+                'unreadNotificationCount' => 0,
+                'uiSettings' => $uiSettings,
+                'navigation' => [],
+                'flash' => [
+                    'success' => fn () => $request->session()->get('success'),
+                    'error' => fn () => $request->session()->get('error'),
+                ],
+            ];
+        }
+
+        $user = $request->user();
 
         if ($user && tenancy()->initialized) {
             $setting = SystemSetting::where('key', 'ui_settings')->first();
@@ -33,9 +62,11 @@ class HandleInertiaRequests extends Middleware
             }
         }
 
-        $currentProject = null;
+        // Share a scalar/array — never a Model — so serialization cannot hit a
+        // purged tenant connection after platform code calls tenancy()->end().
+        $currentProjectId = null;
         if ($user && tenancy()->initialized && session('current_project_id')) {
-            $currentProject = Project::find(session('current_project_id'));
+            $currentProjectId = Project::whereKey(session('current_project_id'))->value('id');
         }
 
         return [
@@ -58,7 +89,7 @@ class HandleInertiaRequests extends Middleware
                 'impersonator_id' => session('impersonator_id'),
                 'platform_impersonator_id' => session('platform_impersonator_id'),
             ],
-            'currentProject' => $currentProject,
+            'currentProject' => $currentProjectId,
             'unreadNotificationCount' => $user && tenancy()->initialized
                 ? Notification::where('user_id', $user->id)->whereNull('read_at')->count()
                 : 0,

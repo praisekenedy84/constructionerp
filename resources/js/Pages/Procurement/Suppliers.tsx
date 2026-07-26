@@ -4,11 +4,14 @@ import ListToolbar from '@/Components/Shared/ListToolbar';
 import PaginationLinks from '@/Components/Shared/PaginationLinks';
 import PageHeader from '@/Components/Shared/PageHeader';
 import { Button } from '@/Components/ui/button';
+import { Dialog } from '@/Components/ui/dialog';
+import { confirmDiscardIfDirty, DialogFormActions } from '@/Components/ui/dialog-form';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
 import { ListingFilters, PageProps, Paginated, Supplier } from '@/types';
 import { Head, useForm, usePage } from '@inertiajs/react';
-import { FormEvent } from 'react';
+import { Plus } from 'lucide-react';
+import { FormEvent, useState } from 'react';
 
 interface SuppliersProps extends PageProps {
     suppliers: Paginated<Supplier>;
@@ -18,45 +21,50 @@ interface SuppliersProps extends PageProps {
 export default function Suppliers() {
     const { suppliers, filters } = usePage<SuppliersProps>().props;
     const rows = suppliers.data ?? [];
-    const { data, setData, post, processing, errors, reset } = useForm({
+    const [open, setOpen] = useState(false);
+    const { data, setData, post, processing, errors, reset, clearErrors, isDirty } = useForm({
         name: '',
         contact_info: '',
     });
 
+    function openDialog() {
+        clearErrors();
+        setOpen(true);
+    }
+
+    function closeDialog() {
+        if (!confirmDiscardIfDirty(isDirty)) {
+            return;
+        }
+        setOpen(false);
+        reset();
+        clearErrors();
+    }
+
     function submit(e: FormEvent) {
         e.preventDefault();
-        post('/procurement/suppliers', { onSuccess: () => reset() });
+        post('/procurement/suppliers', {
+            onSuccess: () => {
+                reset();
+                setOpen(false);
+            },
+        });
     }
 
     return (
         <AppShell title="Suppliers">
             <Head title="Suppliers" />
             <div className="space-y-6">
-                <PageHeader title="Suppliers" description="Supplier directory." />
-
-                <DataPanel title="Add Supplier">
-                    <form onSubmit={submit} className="flex flex-wrap items-end gap-4">
-                        <div className="space-y-2">
-                            <Label>Name</Label>
-                            <Input
-                                value={data.name}
-                                onChange={(e) => setData('name', e.target.value)}
-                                required
-                            />
-                            {errors.name && <p className="text-sm text-red-600">{errors.name}</p>}
-                        </div>
-                        <div className="flex-1 space-y-2">
-                            <Label>Contact Info</Label>
-                            <Input
-                                value={data.contact_info}
-                                onChange={(e) => setData('contact_info', e.target.value)}
-                            />
-                        </div>
-                        <Button type="submit" disabled={processing}>
+                <PageHeader
+                    title="Suppliers"
+                    description="Supplier directory."
+                    actions={
+                        <Button onClick={openDialog}>
+                            <Plus className="mr-2 h-4 w-4" />
                             Add Supplier
                         </Button>
-                    </form>
-                </DataPanel>
+                    }
+                />
 
                 <ListToolbar
                     baseUrl="/procurement/suppliers"
@@ -101,6 +109,40 @@ export default function Suppliers() {
                     <PaginationLinks paginator={suppliers} />
                 </DataPanel>
             </div>
+
+            <Dialog
+                open={open}
+                onOpenChange={(next) => (next ? openDialog() : closeDialog())}
+                title="Add Supplier"
+                description="Add a supplier to the directory."
+            >
+                <form onSubmit={submit} className="space-y-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="supplier-name">Name</Label>
+                        <Input
+                            id="supplier-name"
+                            value={data.name}
+                            onChange={(e) => setData('name', e.target.value)}
+                            required
+                        />
+                        {errors.name && <p className="text-sm text-red-600">{errors.name}</p>}
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="supplier-contact">Contact Info</Label>
+                        <Input
+                            id="supplier-contact"
+                            value={data.contact_info}
+                            onChange={(e) => setData('contact_info', e.target.value)}
+                        />
+                    </div>
+                    <DialogFormActions
+                        onCancel={closeDialog}
+                        processing={processing}
+                        submitLabel="Add Supplier"
+                        processingLabel="Adding…"
+                    />
+                </form>
+            </Dialog>
         </AppShell>
     );
 }

@@ -2,63 +2,27 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Project;
-use Illuminate\Http\Request;
-use Inertia\Inertia;
-use Inertia\Response;
+use Illuminate\Http\RedirectResponse;
 
 class HubController extends Controller
 {
-    public function finance(Request $request): Response
+    public function finance(): RedirectResponse
     {
-        $project = $this->resolveOptionalProject();
-
-        return Inertia::render('Finance/Hub', [
-            'project' => $project,
-            'projects' => Project::query()->orderBy('name')->get(['id', 'code', 'name', 'status']),
-        ]);
+        return redirect()->route('finance.approvals');
     }
 
-    public function payroll(Request $request): Response
+    public function payroll(): RedirectResponse
     {
-        $project = $this->resolveOptionalProject();
-
-        return Inertia::render('Payroll/Hub', [
-            'project' => $project,
-            'projects' => Project::query()->orderBy('name')->get(['id', 'code', 'name', 'status']),
-        ]);
+        return redirect()->route('payroll.employees.index');
     }
 
-    public function procurement(): Response
+    public function procurement(): RedirectResponse
     {
-        return Inertia::render('Procurement/Index');
+        return redirect()->route('procurement.suppliers.index');
     }
 
-    public function inventory(): Response
+    public function inventory(): RedirectResponse
     {
-        return Inertia::render('Inventory/Index');
-    }
-
-    private function resolveOptionalProject(): ?Project
-    {
-        $id = session('current_project_id');
-
-        if ($id) {
-            $project = Project::find($id);
-
-            if ($project) {
-                return $project;
-            }
-
-            session()->forget('current_project_id');
-        }
-
-        $project = Project::query()->orderByDesc('created_at')->first();
-
-        if ($project) {
-            session(['current_project_id' => $project->id]);
-        }
-
-        return $project;
+        return redirect()->route('inventory.balances');
     }
 }

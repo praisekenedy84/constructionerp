@@ -4,12 +4,15 @@ import ListToolbar from '@/Components/Shared/ListToolbar';
 import PaginationLinks from '@/Components/Shared/PaginationLinks';
 import PageHeader from '@/Components/Shared/PageHeader';
 import { Button } from '@/Components/ui/button';
+import { Dialog } from '@/Components/ui/dialog';
+import { confirmDiscardIfDirty, DialogFormActions } from '@/Components/ui/dialog-form';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
 import { formatCurrency, formatDate } from '@/lib/formatters';
 import { Equipment, EquipmentMaintenance, ListingFilters, PageProps, Paginated } from '@/types';
 import { Head, useForm, usePage } from '@inertiajs/react';
-import { FormEvent } from 'react';
+import { Plus } from 'lucide-react';
+import { FormEvent, useState } from 'react';
 
 interface MaintenanceProps extends PageProps {
     maintenances: Paginated<EquipmentMaintenance>;
@@ -20,7 +23,8 @@ interface MaintenanceProps extends PageProps {
 export default function Maintenance() {
     const { maintenances, filters, equipment } = usePage<MaintenanceProps>().props;
     const rows = maintenances.data ?? [];
-    const { data, setData, post, processing, reset } = useForm({
+    const [open, setOpen] = useState(false);
+    const { data, setData, post, processing, reset, clearErrors, isDirty } = useForm({
         equipment_id: '',
         type: 'maintenance' as 'maintenance' | 'repair',
         cost: '',
@@ -28,9 +32,28 @@ export default function Maintenance() {
         date: new Date().toISOString().split('T')[0],
     });
 
+    function openDialog() {
+        clearErrors();
+        setOpen(true);
+    }
+
+    function closeDialog() {
+        if (!confirmDiscardIfDirty(isDirty)) {
+            return;
+        }
+        setOpen(false);
+        reset();
+        clearErrors();
+    }
+
     function submit(e: FormEvent) {
         e.preventDefault();
-        post('/equipment/maintenance', { onSuccess: () => reset() });
+        post('/equipment/maintenance', {
+            onSuccess: () => {
+                reset();
+                setOpen(false);
+            },
+        });
     }
 
     return (
@@ -40,71 +63,13 @@ export default function Maintenance() {
                 <PageHeader
                     title="Maintenance Log"
                     description="Creates EQUIPMENT_COST budget transactions."
+                    actions={
+                        <Button onClick={openDialog}>
+                            <Plus className="mr-2 h-4 w-4" />
+                            Log Maintenance
+                        </Button>
+                    }
                 />
-
-                <DataPanel title="Log Maintenance">
-                    <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
-                        <div className="space-y-2">
-                            <Label>Equipment</Label>
-                            <select
-                                className="flex h-10 w-full rounded-md border border-slate-200 px-3 text-sm"
-                                value={data.equipment_id}
-                                onChange={(e) => setData('equipment_id', e.target.value)}
-                                required
-                            >
-                                <option value="">Select equipment</option>
-                                {equipment.map((eq) => (
-                                    <option key={eq.id} value={eq.id}>
-                                        {eq.name}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Type</Label>
-                            <select
-                                className="flex h-10 w-full rounded-md border border-slate-200 px-3 text-sm"
-                                value={data.type}
-                                onChange={(e) =>
-                                    setData('type', e.target.value as typeof data.type)
-                                }
-                            >
-                                <option value="maintenance">Maintenance</option>
-                                <option value="repair">Repair</option>
-                            </select>
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Cost (TZS)</Label>
-                            <Input
-                                type="number"
-                                step="0.01"
-                                value={data.cost}
-                                onChange={(e) => setData('cost', e.target.value)}
-                                required
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Date</Label>
-                            <Input
-                                type="date"
-                                value={data.date}
-                                onChange={(e) => setData('date', e.target.value)}
-                            />
-                        </div>
-                        <div className="space-y-2 sm:col-span-2">
-                            <Label>Description</Label>
-                            <Input
-                                value={data.description}
-                                onChange={(e) => setData('description', e.target.value)}
-                            />
-                        </div>
-                        <div>
-                            <Button type="submit" disabled={processing}>
-                                Log Maintenance
-                            </Button>
-                        </div>
-                    </form>
-                </DataPanel>
 
                 <ListToolbar
                     baseUrl="/equipment/maintenance"
@@ -151,6 +116,81 @@ export default function Maintenance() {
                     <PaginationLinks paginator={maintenances} />
                 </DataPanel>
             </div>
+
+            <Dialog
+                open={open}
+                onOpenChange={(next) => (next ? openDialog() : closeDialog())}
+                title="Log Maintenance"
+                description="Creates EQUIPMENT_COST budget transactions."
+            >
+                <form onSubmit={submit} className="space-y-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="maint-equipment">Equipment</Label>
+                        <select
+                            id="maint-equipment"
+                            className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-800"
+                            value={data.equipment_id}
+                            onChange={(e) => setData('equipment_id', e.target.value)}
+                            required
+                        >
+                            <option value="">Select equipment</option>
+                            {equipment.map((eq) => (
+                                <option key={eq.id} value={eq.id}>
+                                    {eq.name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="maint-type">Type</Label>
+                        <select
+                            id="maint-type"
+                            className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-800"
+                            value={data.type}
+                            onChange={(e) =>
+                                setData('type', e.target.value as typeof data.type)
+                            }
+                        >
+                            <option value="maintenance">Maintenance</option>
+                            <option value="repair">Repair</option>
+                        </select>
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="maint-cost">Cost (TZS)</Label>
+                        <Input
+                            id="maint-cost"
+                            type="number"
+                            step="0.01"
+                            value={data.cost}
+                            onChange={(e) => setData('cost', e.target.value)}
+                            required
+                        />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="maint-date">Date</Label>
+                        <Input
+                            id="maint-date"
+                            type="date"
+                            value={data.date}
+                            onChange={(e) => setData('date', e.target.value)}
+                        />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="maint-description">Description</Label>
+                        <Input
+                            id="maint-description"
+                            value={data.description}
+                            onChange={(e) => setData('description', e.target.value)}
+                        />
+                    </div>
+                    <DialogFormActions
+                        onCancel={closeDialog}
+                        processing={processing}
+                        submitLabel="Log Maintenance"
+                        processingLabel="Logging…"
+                    />
+                </form>
+            </Dialog>
         </AppShell>
     );
 }

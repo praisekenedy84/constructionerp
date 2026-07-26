@@ -37,10 +37,10 @@ export const navItems: NavItem[] = [
     { label: 'Dashboard', href: '/dashboard' },
     { label: 'Projects', href: '/projects', permission: { module: 'projects', action: 'read' } },
     { label: 'Requisitions', href: '/requisitions', permission: { module: 'requisitions', action: 'read' } },
-    { label: 'Finance', href: '/finance', permission: { module: 'budgets', action: 'read' } },
-    { label: 'Procurement', href: '/procurement', permission: { module: 'procurement', action: 'read' } },
-    { label: 'Inventory', href: '/inventory', permission: { module: 'inventory', action: 'read' } },
-    { label: 'Payroll', href: '/payroll', permission: { module: 'payroll', action: 'read' } },
+    { label: 'Finance', href: '/finance/approvals', permission: { module: 'budgets', action: 'read' } },
+    { label: 'Procurement', href: '/procurement/suppliers', permission: { module: 'procurement', action: 'read' } },
+    { label: 'Inventory', href: '/inventory/balances', permission: { module: 'inventory', action: 'read' } },
+    { label: 'Payroll', href: '/payroll/employees', permission: { module: 'payroll', action: 'read' } },
     { label: 'Equipment', href: '/equipment', permission: { module: 'equipment', action: 'read' } },
     { label: 'Reports', href: '/reports', permission: { module: 'reports', action: 'read' } },
     { label: 'Audit', href: '/audit', permission: { module: 'audit', action: 'read' } },
@@ -65,11 +65,15 @@ export function filterNav(
     });
 }
 
-export function isNavItemActive(href: string, url: string): boolean {
-    const path = url.split('?')[0].split('#')[0];
+function currentPath(url: string): string {
+    return url.split('?')[0].split('#')[0];
+}
 
-    if (href === '/dashboard') {
-        return path === '/dashboard';
+export function isNavItemActive(href: string, url: string, exact = false): boolean {
+    const path = currentPath(url);
+
+    if (exact || href === '/dashboard') {
+        return path === href;
     }
 
     if (href === '/admin/users') {
@@ -77,6 +81,47 @@ export function isNavItemActive(href: string, url: string): boolean {
     }
 
     return path === href || path.startsWith(`${href}/`);
+}
+
+/** Prefer the longest matching sibling so `/equipment` does not stay active on `/equipment/assignments`. */
+export function isNavChildActive(
+    href: string,
+    url: string,
+    siblings: Array<{ href: string }> = [],
+): boolean {
+    const path = currentPath(url);
+    const matches = siblings.filter(
+        (sibling) => path === sibling.href || path.startsWith(`${sibling.href}/`),
+    );
+
+    if (matches.length === 0) {
+        return false;
+    }
+
+    const best = matches.reduce((a, b) => (a.href.length >= b.href.length ? a : b));
+
+    return best.href === href;
+}
+
+/** True when the current path is within a parent section (active_path, or any child). */
+export function isNavSectionActive(
+    href: string,
+    url: string,
+    children: Array<{ href: string }> = [],
+    activePath?: string,
+): boolean {
+    if (children.length === 0) {
+        return isNavItemActive(href, url);
+    }
+
+    const path = currentPath(url);
+    const section = activePath ?? href;
+
+    if (path === section || path.startsWith(`${section}/`)) {
+        return true;
+    }
+
+    return children.some((child) => isNavItemActive(child.href, url));
 }
 
 export function canOverrideLimits(user: User | null): boolean {

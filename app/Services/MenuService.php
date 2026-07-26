@@ -14,7 +14,14 @@ class MenuService
      * Layer 3: global hidden items (presentation only)
      *
      * @param  array<string, mixed>  $uiSettings
-     * @return list<array{key: string, label: string, href: string, group: string}>
+     * @return list<array{
+     *     key: string,
+     *     label: string,
+     *     href: string,
+     *     group: string,
+     *     active_path?: string,
+     *     children?: list<array{key: string, label: string, href: string, group: string}>
+     * }>
      */
     public function visibleForUser(User $user, array $uiSettings): array
     {
@@ -34,7 +41,7 @@ class MenuService
         $visible = [];
 
         foreach (MenuCatalog::items() as $item) {
-            if (in_array($item['href'], $hiddenForUser, true)) {
+            if ($this->isHidden($item['href'], $hiddenForUser, $item['active_path'] ?? null)) {
                 continue;
             }
 
@@ -46,15 +53,56 @@ class MenuService
                 continue;
             }
 
-            $visible[] = [
+            $entry = [
                 'key' => $item['key'],
                 'label' => $item['label'],
                 'href' => $item['href'],
                 'group' => $item['group'],
             ];
+
+            if (! empty($item['active_path'])) {
+                $entry['active_path'] = $item['active_path'];
+            }
+
+            $children = [];
+            foreach ($item['children'] ?? [] as $child) {
+                if (in_array($child['href'], $hiddenForUser, true)) {
+                    continue;
+                }
+
+                $permission = $child['permission'] ?? $item['permission'];
+                if ($permission && ! $user->hasModulePermission(...$this->parsePermission($permission))) {
+                    continue;
+                }
+
+                $children[] = [
+                    'key' => $child['key'],
+                    'label' => $child['label'],
+                    'href' => $child['href'],
+                    'group' => $item['group'],
+                ];
+            }
+
+            if ($children !== []) {
+                $entry['children'] = $children;
+            }
+
+            $visible[] = $entry;
         }
 
         return $visible;
+    }
+
+    /**
+     * @param  list<string>  $hiddenForUser
+     */
+    private function isHidden(string $href, array $hiddenForUser, ?string $activePath): bool
+    {
+        if (in_array($href, $hiddenForUser, true)) {
+            return true;
+        }
+
+        return $activePath !== null && in_array($activePath, $hiddenForUser, true);
     }
 
     /** @return array{0: string, 1: string} */

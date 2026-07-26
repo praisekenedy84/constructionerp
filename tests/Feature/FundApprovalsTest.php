@@ -72,7 +72,41 @@ class FundApprovalsTest extends TestCase
             ->assertInertia(fn ($page) => $page
                 ->component('Finance/FundApprovals')
                 ->has('allocations.data', 1)
+                ->has('projects')
                 ->has('summary.total')
+            );
+    }
+
+    public function test_finance_can_request_organization_wide_funds(): void
+    {
+        $this->setupTenantWithAllocation();
+
+        $this->post('/login', [
+            'email' => 'finance@fund.local',
+            'password' => 'password',
+        ]);
+
+        $this->post('/finance/cash-requests', [
+            'requested_amount' => '75000',
+            'method' => 'Bank transfer',
+            'reference_no' => 'ORG-001',
+        ])->assertRedirect();
+
+        tenancy()->initialize(Tenant::where('slug', 'fund-co')->firstOrFail());
+
+        $this->assertDatabaseHas('cash_allocations', [
+            'reference_no' => 'ORG-001',
+            'project_id' => null,
+            'requested_amount' => '75000.00',
+        ]);
+
+        tenancy()->end();
+
+        $this->get('/finance/approvals')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Finance/FundApprovals')
+                ->has('allocations.data', 2)
             );
     }
 

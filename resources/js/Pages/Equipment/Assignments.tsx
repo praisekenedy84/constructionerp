@@ -4,6 +4,8 @@ import ListToolbar from '@/Components/Shared/ListToolbar';
 import PaginationLinks from '@/Components/Shared/PaginationLinks';
 import PageHeader from '@/Components/Shared/PageHeader';
 import { Button } from '@/Components/ui/button';
+import { Dialog } from '@/Components/ui/dialog';
+import { confirmDiscardIfDirty, DialogFormActions } from '@/Components/ui/dialog-form';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
 import { formatDate } from '@/lib/formatters';
@@ -16,7 +18,8 @@ import {
     Project,
 } from '@/types';
 import { Head, useForm, usePage } from '@inertiajs/react';
-import { FormEvent } from 'react';
+import { Plus } from 'lucide-react';
+import { FormEvent, useState } from 'react';
 
 interface AssignmentsProps extends PageProps {
     assignments: Paginated<EquipmentAssignment>;
@@ -28,82 +31,52 @@ interface AssignmentsProps extends PageProps {
 export default function Assignments() {
     const { assignments, filters, equipment, projects } = usePage<AssignmentsProps>().props;
     const rows = assignments.data ?? [];
-    const { data, setData, post, processing, reset } = useForm({
+    const [open, setOpen] = useState(false);
+    const { data, setData, post, processing, reset, clearErrors, isDirty } = useForm({
         equipment_id: '',
         project_id: '',
         hours_budgeted: '',
         start_date: new Date().toISOString().split('T')[0],
     });
 
+    function openDialog() {
+        clearErrors();
+        setOpen(true);
+    }
+
+    function closeDialog() {
+        if (!confirmDiscardIfDirty(isDirty)) {
+            return;
+        }
+        setOpen(false);
+        reset();
+        clearErrors();
+    }
+
     function submit(e: FormEvent) {
         e.preventDefault();
-        post('/equipment/assignments', { onSuccess: () => reset() });
+        post('/equipment/assignments', {
+            onSuccess: () => {
+                reset();
+                setOpen(false);
+            },
+        });
     }
 
     return (
         <AppShell title="Equipment Assignments">
             <Head title="Equipment Assignments" />
             <div className="space-y-6">
-                <PageHeader title="Equipment Assignments" description="Assign equipment to projects." />
-
-                <DataPanel title="New Assignment">
-                    <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
-                        <div className="space-y-2">
-                            <Label>Equipment</Label>
-                            <select
-                                className="flex h-10 w-full rounded-md border border-slate-200 px-3 text-sm"
-                                value={data.equipment_id}
-                                onChange={(e) => setData('equipment_id', e.target.value)}
-                                required
-                            >
-                                <option value="">Select equipment</option>
-                                {equipment.map((eq) => (
-                                    <option key={eq.id} value={eq.id}>
-                                        {eq.name} ({eq.type})
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Project</Label>
-                            <select
-                                className="flex h-10 w-full rounded-md border border-slate-200 px-3 text-sm"
-                                value={data.project_id}
-                                onChange={(e) => setData('project_id', e.target.value)}
-                                required
-                            >
-                                <option value="">Select project</option>
-                                {projects.map((p) => (
-                                    <option key={p.id} value={p.id}>
-                                        {p.code} — {p.name}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Hours Budgeted</Label>
-                            <Input
-                                type="number"
-                                step="0.01"
-                                value={data.hours_budgeted}
-                                onChange={(e) => setData('hours_budgeted', e.target.value)}
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Start Date</Label>
-                            <Input
-                                type="date"
-                                value={data.start_date}
-                                onChange={(e) => setData('start_date', e.target.value)}
-                            />
-                        </div>
-                        <div>
-                            <Button type="submit" disabled={processing}>
-                                Assign
-                            </Button>
-                        </div>
-                    </form>
-                </DataPanel>
+                <PageHeader
+                    title="Equipment Assignments"
+                    description="Assign equipment to projects."
+                    actions={
+                        <Button onClick={openDialog}>
+                            <Plus className="mr-2 h-4 w-4" />
+                            New Assignment
+                        </Button>
+                    }
+                />
 
                 <ListToolbar
                     baseUrl="/equipment/assignments"
@@ -150,6 +123,75 @@ export default function Assignments() {
                     <PaginationLinks paginator={assignments} />
                 </DataPanel>
             </div>
+
+            <Dialog
+                open={open}
+                onOpenChange={(next) => (next ? openDialog() : closeDialog())}
+                title="New Assignment"
+                description="Assign equipment to a project."
+            >
+                <form onSubmit={submit} className="space-y-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="assign-equipment">Equipment</Label>
+                        <select
+                            id="assign-equipment"
+                            className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-800"
+                            value={data.equipment_id}
+                            onChange={(e) => setData('equipment_id', e.target.value)}
+                            required
+                        >
+                            <option value="">Select equipment</option>
+                            {equipment.map((eq) => (
+                                <option key={eq.id} value={eq.id}>
+                                    {eq.name} ({eq.type})
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="assign-project">Project</Label>
+                        <select
+                            id="assign-project"
+                            className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-800"
+                            value={data.project_id}
+                            onChange={(e) => setData('project_id', e.target.value)}
+                            required
+                        >
+                            <option value="">Select project</option>
+                            {projects.map((p) => (
+                                <option key={p.id} value={p.id}>
+                                    {p.code} — {p.name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="assign-hours">Hours Budgeted</Label>
+                        <Input
+                            id="assign-hours"
+                            type="number"
+                            step="0.01"
+                            value={data.hours_budgeted}
+                            onChange={(e) => setData('hours_budgeted', e.target.value)}
+                        />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="assign-start">Start Date</Label>
+                        <Input
+                            id="assign-start"
+                            type="date"
+                            value={data.start_date}
+                            onChange={(e) => setData('start_date', e.target.value)}
+                        />
+                    </div>
+                    <DialogFormActions
+                        onCancel={closeDialog}
+                        processing={processing}
+                        submitLabel="Assign"
+                        processingLabel="Assigning…"
+                    />
+                </form>
+            </Dialog>
         </AppShell>
     );
 }

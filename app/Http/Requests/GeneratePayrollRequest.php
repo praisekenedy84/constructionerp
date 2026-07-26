@@ -17,6 +17,9 @@ class GeneratePayrollRequest extends FormRequest
             'project_id' => ['required', 'integer', 'exists:projects,id'],
             'period_start' => ['required', 'date'],
             'period_end' => ['required', 'date', 'after_or_equal:period_start'],
+            'overrides' => ['nullable', 'array'],
+            'overrides.*.employee_id' => ['required', 'integer', 'exists:employees,id'],
+            'overrides.*.net_pay' => ['required', 'numeric', 'gte:0'],
         ];
     }
 }

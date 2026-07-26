@@ -3,12 +3,15 @@ import DataPanel from '@/Components/Shared/DataPanel';
 import PageHeader from '@/Components/Shared/PageHeader';
 import StatusBadge from '@/Components/Shared/StatusBadge';
 import { Button } from '@/Components/ui/button';
+import { Dialog } from '@/Components/ui/dialog';
+import { confirmDiscardIfDirty, DialogFormActions } from '@/Components/ui/dialog-form';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
 import { formatDate } from '@/lib/formatters';
 import { PageProps, ReportDefinition, ReportSchedule } from '@/types';
 import { Head, useForm, usePage } from '@inertiajs/react';
-import { FormEvent } from 'react';
+import { Plus } from 'lucide-react';
+import { FormEvent, useState } from 'react';
 
 interface SchedulesProps extends PageProps {
     schedules: ReportSchedule[];
@@ -17,16 +20,34 @@ interface SchedulesProps extends PageProps {
 
 export default function Schedules() {
     const { schedules, reports } = usePage<SchedulesProps>().props;
-    const { data, setData, post, processing, errors, reset } = useForm({
+    const [open, setOpen] = useState(false);
+    const { data, setData, post, processing, errors, reset, clearErrors, isDirty } = useForm({
         report_slug: '',
         frequency: 'weekly',
         recipients: '',
     });
 
+    function openDialog() {
+        clearErrors();
+        setOpen(true);
+    }
+
+    function closeDialog() {
+        if (!confirmDiscardIfDirty(isDirty)) {
+            return;
+        }
+        setOpen(false);
+        reset();
+        clearErrors();
+    }
+
     function submit(e: FormEvent) {
         e.preventDefault();
         post('/reports/schedules', {
-            onSuccess: () => reset(),
+            onSuccess: () => {
+                reset();
+                setOpen(false);
+            },
         });
     }
 
@@ -37,57 +58,13 @@ export default function Schedules() {
                 <PageHeader
                     title="Report Schedules"
                     description="Automated report delivery via email."
+                    actions={
+                        <Button onClick={openDialog}>
+                            <Plus className="mr-2 h-4 w-4" />
+                            Create Schedule
+                        </Button>
+                    }
                 />
-
-                <DataPanel title="Create Schedule">
-                    <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
-                        <div className="space-y-2">
-                            <Label>Report</Label>
-                            <select
-                                className="flex h-10 w-full rounded-md border border-slate-200 px-3 text-sm"
-                                value={data.report_slug}
-                                onChange={(e) => setData('report_slug', e.target.value)}
-                                required
-                            >
-                                <option value="">Select report</option>
-                                {reports.map((r) => (
-                                    <option key={r.slug} value={r.slug}>
-                                        {r.name}
-                                    </option>
-                                ))}
-                            </select>
-                            {errors.report_slug && (
-                                <p className="text-sm text-red-600">{errors.report_slug}</p>
-                            )}
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Frequency</Label>
-                            <select
-                                className="flex h-10 w-full rounded-md border border-slate-200 px-3 text-sm"
-                                value={data.frequency}
-                                onChange={(e) => setData('frequency', e.target.value)}
-                            >
-                                <option value="daily">Daily</option>
-                                <option value="weekly">Weekly</option>
-                                <option value="monthly">Monthly</option>
-                            </select>
-                        </div>
-                        <div className="space-y-2 sm:col-span-2">
-                            <Label>Recipients (comma-separated emails)</Label>
-                            <Input
-                                value={data.recipients}
-                                onChange={(e) => setData('recipients', e.target.value)}
-                                placeholder="finance@company.com, md@company.com"
-                                required
-                            />
-                        </div>
-                        <div>
-                            <Button type="submit" disabled={processing}>
-                                Create Schedule
-                            </Button>
-                        </div>
-                    </form>
-                </DataPanel>
 
                 <DataPanel title="Active Schedules" noPadding>
                     <table className="w-full text-sm">
@@ -122,6 +99,65 @@ export default function Schedules() {
                     </table>
                 </DataPanel>
             </div>
+
+            <Dialog
+                open={open}
+                onOpenChange={(next) => (next ? openDialog() : closeDialog())}
+                title="Create Schedule"
+                description="Schedule automated report delivery via email."
+            >
+                <form onSubmit={submit} className="space-y-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="schedule-report">Report</Label>
+                        <select
+                            id="schedule-report"
+                            className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-800"
+                            value={data.report_slug}
+                            onChange={(e) => setData('report_slug', e.target.value)}
+                            required
+                        >
+                            <option value="">Select report</option>
+                            {reports.map((r) => (
+                                <option key={r.slug} value={r.slug}>
+                                    {r.name}
+                                </option>
+                            ))}
+                        </select>
+                        {errors.report_slug && (
+                            <p className="text-sm text-red-600">{errors.report_slug}</p>
+                        )}
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="schedule-frequency">Frequency</Label>
+                        <select
+                            id="schedule-frequency"
+                            className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-800"
+                            value={data.frequency}
+                            onChange={(e) => setData('frequency', e.target.value)}
+                        >
+                            <option value="daily">Daily</option>
+                            <option value="weekly">Weekly</option>
+                            <option value="monthly">Monthly</option>
+                        </select>
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="schedule-recipients">Recipients (comma-separated emails)</Label>
+                        <Input
+                            id="schedule-recipients"
+                            value={data.recipients}
+                            onChange={(e) => setData('recipients', e.target.value)}
+                            placeholder="finance@company.com, md@company.com"
+                            required
+                        />
+                    </div>
+                    <DialogFormActions
+                        onCancel={closeDialog}
+                        processing={processing}
+                        submitLabel="Create Schedule"
+                        processingLabel="Creating…"
+                    />
+                </form>
+            </Dialog>
         </AppShell>
     );
 }

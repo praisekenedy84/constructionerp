@@ -6,6 +6,7 @@ enum BudgetTransactionType: string
 {
     case ApprovedRequisition = 'APPROVED_REQUISITION';
     case AmendedRequisition = 'AMENDED_REQUISITION';
+    case CashAllocation = 'CASH_ALLOCATION';
     case Purchase = 'PURCHASE';
     case Payroll = 'PAYROLL';
     case EquipmentCost = 'EQUIPMENT_COST';

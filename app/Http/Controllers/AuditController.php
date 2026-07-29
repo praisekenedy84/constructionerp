@@ -12,7 +12,7 @@ class AuditController extends Controller
 {
     public function index(Request $request): Response
     {
-        $this->authorizeRoles($request->user(), ['Auditor', 'System Administrator', 'Platform Admin']);
+        $this->authorizePermission($request->user(), 'audit', 'read');
 
         $query = AuditLog::query()->with('performer');
 

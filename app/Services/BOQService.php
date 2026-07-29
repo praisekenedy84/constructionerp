@@ -4,17 +4,45 @@ namespace App\Services;
 
 use App\Enums\BoqItemCategory;
 use App\Enums\BoqRevisionStatus;
+use App\Exports\BoqExport;
 use App\Models\BoqItem;
 use App\Models\BoqRevision;
 use App\Models\BoqSection;
 use App\Models\Project;
 use App\Models\User;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Maatwebsite\Excel\Facades\Excel;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class BOQService
 {
+    /**
+     * @param  array<int, array{section: string, description: string, unit: string, category: string, budgeted_qty: numeric-string|float|int, unit_rate: numeric-string|float|int}>  $items
+     * @return array<int, BoqItem>
+     */
+    public function storeItems(Project $project, array $items): array
+    {
+        return DB::transaction(function () use ($project, $items) {
+            $created = [];
+
+            foreach ($items as $item) {
+                $created[] = $this->createItem($project, [
+                    'section' => $item['section'],
+                    'description' => $item['description'],
+                    'unit' => $item['unit'] ?: 'ea',
+                    'category' => $item['category'],
+                    'budgeted_qty' => $item['budgeted_qty'],
+                    'unit_rate' => $item['unit_rate'],
+                ]);
+            }
+
+            return $created;
+        });
+    }
+
     /**
      * @return array{success: array<int, array<string, mixed>>, errors: array<int, array{row: int, message: string}>}
      */
@@ -41,32 +69,19 @@ class BOQService
                 $mapped = $this->mapRow($header, $row);
 
                 try {
-                    $sectionName = $mapped['section'] ?? 'General';
                     $description = trim((string) ($mapped['description'] ?? ''));
 
                     if ($description === '') {
                         throw new \InvalidArgumentException('Description is required.');
                     }
 
-                    $section = BoqSection::firstOrCreate(
-                        ['project_id' => $project->id, 'name' => $sectionName],
-                        ['display_order' => BoqSection::where('project_id', $project->id)->count() + 1]
-                    );
-
-                    $budgetedQty = bcadd((string) ($mapped['budgeted_qty'] ?? '0'), '0', 4);
-                    $unitRate = bcadd((string) ($mapped['unit_rate'] ?? '0'), '0', 2);
-                    $budgetedAmount = bcmul($budgetedQty, $unitRate, 2);
-
-                    $category = $this->resolveCategory($mapped['category'] ?? 'materials');
-
-                    $item = BoqItem::create([
-                        'section_id' => $section->id,
+                    $item = $this->createItem($project, [
+                        'section' => $mapped['section'] ?? 'General',
                         'description' => $description,
                         'unit' => trim((string) ($mapped['unit'] ?? 'ea')),
-                        'category' => $category,
-                        'budgeted_qty' => $budgetedQty,
-                        'unit_rate' => $unitRate,
-                        'budgeted_amount' => $budgetedAmount,
+                        'category' => $mapped['category'] ?? 'materials',
+                        'budgeted_qty' => $mapped['budgeted_qty'] ?? '0',
+                        'unit_rate' => $mapped['unit_rate'] ?? '0',
                     ]);
 
                     $success[] = [
@@ -81,6 +96,127 @@ class BOQService
         });
 
         return ['success' => $success, 'errors' => $errors];
+    }
+
+    /**
+     * @param  array{section: string, description: string, unit?: string, category?: string, budgeted_qty?: mixed, unit_rate?: mixed}  $data
+     */
+    public function createItem(Project $project, array $data): BoqItem
+    {
+        $section = $this->resolveOrCreateSection($project, (string) ($data['section'] ?? 'General'));
+
+        $budgetedQty = bcadd((string) ($data['budgeted_qty'] ?? '0'), '0', 3);
+        $unitRate = bcadd((string) ($data['unit_rate'] ?? '0'), '0', 2);
+        $budgetedAmount = bcmul($budgetedQty, $unitRate, 2);
+
+        return BoqItem::create([
+            'section_id' => $section->id,
+            'description' => trim((string) $data['description']),
+            'unit' => trim((string) ($data['unit'] ?? 'ea')) ?: 'ea',
+            'category' => $this->resolveCategory((string) ($data['category'] ?? 'materials')),
+            'budgeted_qty' => $budgetedQty,
+            'unit_rate' => $unitRate,
+            'budgeted_amount' => $budgetedAmount,
+        ]);
+    }
+
+    /**
+     * @param  array{section: string, description: string, unit?: string, category?: string, budgeted_qty?: mixed, unit_rate?: mixed}  $data
+     */
+    public function updateItem(Project $project, BoqItem $item, array $data): BoqItem
+    {
+        $this->assertItemBelongsToProject($project, $item);
+
+        return DB::transaction(function () use ($project, $item, $data) {
+            $oldSectionId = $item->section_id;
+            $section = $this->resolveOrCreateSection($project, (string) ($data['section'] ?? 'General'));
+
+            $budgetedQty = bcadd((string) ($data['budgeted_qty'] ?? '0'), '0', 3);
+            $unitRate = bcadd((string) ($data['unit_rate'] ?? '0'), '0', 2);
+            $budgetedAmount = bcmul($budgetedQty, $unitRate, 2);
+
+            $item->update([
+                'section_id' => $section->id,
+                'description' => trim((string) $data['description']),
+                'unit' => trim((string) ($data['unit'] ?? 'ea')) ?: 'ea',
+                'category' => $this->resolveCategory((string) ($data['category'] ?? 'materials')),
+                'budgeted_qty' => $budgetedQty,
+                'unit_rate' => $unitRate,
+                'budgeted_amount' => $budgetedAmount,
+            ]);
+
+            $this->deleteSectionIfEmpty($oldSectionId);
+
+            return $item->fresh(['section']);
+        });
+    }
+
+    /**
+     * @param  list<int>  $itemIds
+     */
+    public function deleteItems(Project $project, array $itemIds): int
+    {
+        return DB::transaction(function () use ($project, $itemIds) {
+            $items = BoqItem::query()
+                ->whereIn('id', $itemIds)
+                ->whereHas('section', fn ($query) => $query->where('project_id', $project->id))
+                ->get();
+
+            $sectionIds = $items->pluck('section_id')->unique()->all();
+
+            foreach ($items as $item) {
+                $item->delete();
+            }
+
+            foreach ($sectionIds as $sectionId) {
+                $this->deleteSectionIfEmpty((int) $sectionId);
+            }
+
+            return $items->count();
+        });
+    }
+
+    public function findItemForProject(Project $project, int $itemId): BoqItem
+    {
+        $item = BoqItem::query()
+            ->with('section')
+            ->whereKey($itemId)
+            ->whereHas('section', fn ($query) => $query->where('project_id', $project->id))
+            ->firstOrFail();
+
+        return $item;
+    }
+
+    private function assertItemBelongsToProject(Project $project, BoqItem $item): void
+    {
+        $item->loadMissing('section');
+
+        if ((int) $item->section?->project_id !== (int) $project->id) {
+            abort(404);
+        }
+    }
+
+    private function deleteSectionIfEmpty(int $sectionId): void
+    {
+        $section = BoqSection::query()->find($sectionId);
+
+        if (! $section) {
+            return;
+        }
+
+        if ($section->items()->count() === 0) {
+            $section->delete();
+        }
+    }
+
+    public function resolveOrCreateSection(Project $project, string $sectionName): BoqSection
+    {
+        $name = trim($sectionName) !== '' ? trim($sectionName) : 'General';
+
+        return BoqSection::firstOrCreate(
+            ['project_id' => $project->id, 'name' => $name],
+            ['display_order' => BoqSection::where('project_id', $project->id)->count() + 1]
+        );
     }
 
     public function createRevision(Project $project, User $requester, string $reason): BoqRevision
@@ -183,5 +319,52 @@ class BOQService
             ->orderBy('display_order')
             ->get()
             ->all();
+    }
+
+    /**
+     * Rows use the same columns accepted by importFromFile().
+     *
+     * @return Collection<int, array{0: string, 1: string, 2: string, 3: string, 4: string, 5: string}>
+     */
+    public function exportRows(Project $project, bool $templateOnly = false): Collection
+    {
+        if ($templateOnly) {
+            return collect([
+                ['Earthworks', 'Excavation - bulk', 'm3', 'materials', '100', '8500'],
+            ]);
+        }
+
+        $rows = collect();
+
+        foreach ($this->tree($project) as $section) {
+            foreach ($section->items as $item) {
+                $rows->push([
+                    $section->name,
+                    $item->description,
+                    $item->unit,
+                    $item->category instanceof BoqItemCategory
+                        ? $item->category->value
+                        : (string) $item->category,
+                    (string) $item->budgeted_qty,
+                    (string) $item->unit_rate,
+                ]);
+            }
+        }
+
+        return $rows;
+    }
+
+    public function exportExcel(Project $project, bool $templateOnly = false): BinaryFileResponse
+    {
+        $rows = $this->exportRows($project, $templateOnly);
+        $slug = Str::slug($project->code ?: 'project');
+        $filename = $templateOnly
+            ? "boq-template-{$slug}.xlsx"
+            : "boq-{$slug}-".now()->format('Ymd-His').'.xlsx';
+
+        return Excel::download(
+            new BoqExport($rows, $templateOnly ? 'BOQ Template' : 'BOQ'),
+            $filename,
+        );
     }
 }

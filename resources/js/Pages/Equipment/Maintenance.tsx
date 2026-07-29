@@ -3,6 +3,7 @@ import DataPanel from '@/Components/Shared/DataPanel';
 import ListToolbar from '@/Components/Shared/ListToolbar';
 import PaginationLinks from '@/Components/Shared/PaginationLinks';
 import PageHeader from '@/Components/Shared/PageHeader';
+import { AmountInput } from '@/Components/ui/amount-input';
 import { Button } from '@/Components/ui/button';
 import { Dialog } from '@/Components/ui/dialog';
 import { confirmDiscardIfDirty, DialogFormActions } from '@/Components/ui/dialog-form';
@@ -157,12 +158,10 @@ export default function Maintenance() {
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="maint-cost">Cost (TZS)</Label>
-                        <Input
+                        <AmountInput
                             id="maint-cost"
-                            type="number"
-                            step="0.01"
                             value={data.cost}
-                            onChange={(e) => setData('cost', e.target.value)}
+                            onValueChange={(v) => setData('cost', v)}
                             required
                         />
                     </div>

@@ -26,7 +26,7 @@ class PurchaseOrder extends Model
     protected function casts(): array
     {
         return [
-            'quantity' => 'decimal:4',
+            'quantity' => 'decimal:3',
             'unit_cost' => 'decimal:2',
             'total_amount' => 'decimal:2',
             'status' => PurchaseOrderStatus::class,

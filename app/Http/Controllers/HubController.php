@@ -23,6 +23,6 @@ class HubController extends Controller
 
     public function inventory(): RedirectResponse
     {
-        return redirect()->route('inventory.balances');
+        return redirect()->route('inventory.items');
     }
 }

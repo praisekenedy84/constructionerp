@@ -3,12 +3,16 @@
 namespace App\Services;
 
 use App\Enums\CashAllocationStatus;
+use App\Enums\InventoryItemCategory;
 use App\Exceptions\InsufficientCashException;
 use App\Models\CashAllocation;
 use App\Models\CashDisbursement;
+use App\Models\InventoryItem;
 use App\Models\Requisition;
+use App\Models\RequisitionItem;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class FulfillmentService
 {
@@ -20,6 +24,29 @@ class FulfillmentService
     {
         return DB::transaction(function () use ($req, $actor, $amount, $opts) {
             $normalizedAmount = bcadd($amount, '0', 2);
+
+            $payee = trim((string) ($opts['payee'] ?? $opts['account_name'] ?? ''));
+            $accountName = trim((string) ($opts['account_name'] ?? $payee));
+            $referenceNo = trim((string) ($opts['reference_no'] ?? ''));
+            $method = strtolower(trim((string) ($opts['method'] ?? '')));
+
+            if ($payee === '' && $accountName === '') {
+                throw ValidationException::withMessages([
+                    'payee' => 'Enter the account or party that received the cash.',
+                ]);
+            }
+
+            if ($referenceNo === '') {
+                throw ValidationException::withMessages([
+                    'reference_no' => 'A disbursement reference number is required.',
+                ]);
+            }
+
+            if (! in_array($method, ['cash', 'mobile', 'bank'], true)) {
+                throw ValidationException::withMessages([
+                    'method' => 'Choose payment method: cash, mobile, or bank.',
+                ]);
+            }
 
             $allocation = isset($opts['cash_allocation_id'])
                 ? CashAllocation::lockForUpdate()->findOrFail($opts['cash_allocation_id'])
@@ -37,14 +64,14 @@ class FulfillmentService
                 throw new InsufficientCashException($normalizedAmount, $allocation->balance);
             }
 
-            $allocation->increment('utilized_amount', $normalizedAmount);
-
             return CashDisbursement::create([
                 'requisition_id' => $req->id,
                 'cash_allocation_id' => $allocation->id,
                 'amount' => $normalizedAmount,
-                'method' => $opts['method'] ?? $allocation->method ?? 'cash',
-                'payee' => $opts['payee'] ?? null,
+                'method' => $method,
+                'payee' => $payee !== '' ? $payee : $accountName,
+                'account_name' => $accountName !== '' ? $accountName : $payee,
+                'reference_no' => $referenceNo,
                 'disbursed_by' => $actor->id,
                 'disbursed_at' => now(),
                 'created_at' => now(),
@@ -58,17 +85,29 @@ class FulfillmentService
             $issues = $opts['issues'] ?? [];
             $results = [];
 
+            if (($opts['inventory_source'] ?? 'existing') === 'new') {
+                $inventoryItemId = $this->createInventoryItemForFulfillment($req, $actor, $opts);
+                $opts['inventory_item_id'] = $inventoryItemId;
+            }
+
             if (empty($issues)) {
                 foreach ($req->items as $item) {
-                    if (empty($opts['stock_location_id']) || empty($opts['inventory_item_id'])) {
+                    $inventoryItemId = (int) ($opts['inventory_item_id'] ?? $item->inventory_item_id ?? 0);
+                    $stockLocationId = (int) ($opts['stock_location_id'] ?? 0);
+
+                    if ($inventoryItemId < 1 || $stockLocationId < 1) {
                         throw new \InvalidArgumentException(
-                            'Stock fulfillment requires issues array or stock_location_id and inventory_item_id.'
+                            'Stock fulfillment requires an inventory item and stock location, or a new item to create.'
                         );
                     }
 
+                    if (! $item->inventory_item_id) {
+                        $item->update(['inventory_item_id' => $inventoryItemId]);
+                    }
+
                     $results[] = $this->inventoryService->issue(
-                        (int) $opts['inventory_item_id'],
-                        (int) $opts['stock_location_id'],
+                        $inventoryItemId,
+                        $stockLocationId,
                         (string) $item->quantity,
                         $actor,
                         [
@@ -84,7 +123,7 @@ class FulfillmentService
                     $results[] = $this->inventoryService->issue(
                         (int) $issue['inventory_item_id'],
                         (int) $issue['stock_location_id'],
-                        bcadd((string) $issue['quantity'], '0', 4),
+                        bcadd((string) $issue['quantity'], '0', 3),
                         $actor,
                         [
                             'requisition_id' => $req->id,
@@ -100,5 +139,98 @@ class FulfillmentService
 
             return $results;
         });
+    }
+
+    /**
+     * @param  array<string, mixed>  $opts
+     */
+    private function createInventoryItemForFulfillment(Requisition $req, User $actor, array $opts): int
+    {
+        $newItem = $opts['new_inventory_item'] ?? null;
+        if (! is_array($newItem) || blank($newItem['name'] ?? null) || blank($newItem['unit'] ?? null)) {
+            throw ValidationException::withMessages([
+                'new_inventory_item.name' => 'Name and unit are required to create an inventory item.',
+            ]);
+        }
+
+        $stockLocationId = (int) ($opts['stock_location_id'] ?? 0);
+        if ($stockLocationId < 1) {
+            throw ValidationException::withMessages([
+                'stock_location_id' => 'Choose a stock location for the new inventory item.',
+            ]);
+        }
+
+        $category = (string) ($newItem['category'] ?? InventoryItemCategory::Materials->value);
+        if (! InventoryItemCategory::tryFrom($category)) {
+            throw ValidationException::withMessages([
+                'new_inventory_item.category' => 'Invalid inventory category.',
+            ]);
+        }
+
+        $name = trim((string) $newItem['name']);
+        $code = trim((string) ($newItem['code'] ?? ''));
+        if ($code === '') {
+            $code = InventoryItem::generateUniqueCode($name);
+        } else {
+            $code = strtoupper($code);
+            if (InventoryItem::withTrashed()->where('code', $code)->exists()) {
+                throw ValidationException::withMessages([
+                    'new_inventory_item.code' => 'That inventory code is already in use.',
+                ]);
+            }
+        }
+
+        $item = InventoryItem::create([
+            'code' => $code,
+            'name' => $name,
+            'unit' => trim((string) $newItem['unit']),
+            'category' => $category,
+        ]);
+
+        $receiveQty = isset($newItem['receive_quantity']) && $newItem['receive_quantity'] !== ''
+            ? bcadd((string) $newItem['receive_quantity'], '0', 3)
+            : $this->sumIssueQuantity($req, $opts);
+
+        $unitCost = bcadd((string) ($newItem['unit_cost'] ?? $req->items->first()?->unit_cost ?? '0'), '0', 2);
+
+        if (bccomp($receiveQty, '0', 3) === 1) {
+            $this->inventoryService->receive(
+                $item->id,
+                $stockLocationId,
+                $receiveQty,
+                $actor,
+                $unitCost,
+                [
+                    'reference_entity_type' => 'requisition_fulfillment',
+                    'reference_entity_id' => $req->id,
+                ]
+            );
+        }
+
+        $req->items()
+            ->whereNull('inventory_item_id')
+            ->update(['inventory_item_id' => $item->id]);
+
+        return $item->id;
+    }
+
+    /**
+     * @param  array<string, mixed>  $opts
+     */
+    private function sumIssueQuantity(Requisition $req, array $opts): string
+    {
+        if (! empty($opts['issues']) && is_array($opts['issues'])) {
+            $total = '0';
+            foreach ($opts['issues'] as $issue) {
+                $total = bcadd($total, (string) ($issue['quantity'] ?? '0'), 3);
+            }
+
+            return $total;
+        }
+
+        return $req->items->reduce(
+            fn (string $carry, RequisitionItem $item) => bcadd($carry, (string) $item->quantity, 3),
+            '0'
+        );
     }
 }

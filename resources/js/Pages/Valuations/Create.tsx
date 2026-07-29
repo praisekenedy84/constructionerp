@@ -1,6 +1,7 @@
 import AppShell from '@/Components/Layout/AppShell';
 import DataPanel from '@/Components/Shared/DataPanel';
 import PageHeader from '@/Components/Shared/PageHeader';
+import { AmountInput } from '@/Components/ui/amount-input';
 import { Button } from '@/Components/ui/button';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
@@ -44,11 +45,9 @@ export default function ValuationsCreate() {
                     <DataPanel title="Gross Value">
                         <div className="space-y-2">
                             <Label>Gross Value (TZS)</Label>
-                            <Input
-                                type="number"
-                                step="0.01"
+                            <AmountInput
                                 value={data.gross_value}
-                                onChange={(e) => setData('gross_value', e.target.value)}
+                                onValueChange={(v) => setData('gross_value', v)}
                                 required
                             />
                             {errors.gross_value && (

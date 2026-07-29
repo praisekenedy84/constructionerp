@@ -24,7 +24,7 @@ class GoodsReceipt extends Model
     protected function casts(): array
     {
         return [
-            'quantity_received' => 'decimal:4',
+            'quantity_received' => 'decimal:3',
             'condition' => GoodsReceiptCondition::class,
             'received_at' => 'datetime',
             'created_at' => 'datetime',

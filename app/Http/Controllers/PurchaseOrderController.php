@@ -19,7 +19,7 @@ class PurchaseOrderController extends Controller
 
     public function index(Request $request): Response
     {
-        $this->authorizeRoles($request->user(), ['Procurement Officer']);
+        $this->authorizePermission($request->user(), 'procurement', 'read');
 
         $listing = ListingQuery::for(
             PurchaseOrder::query()->with(['supplier', 'requisition']),
@@ -43,7 +43,7 @@ class PurchaseOrderController extends Controller
 
     public function store(StorePurchaseOrderRequest $request): RedirectResponse
     {
-        $this->authorizeRoles($request->user(), ['Procurement Officer']);
+        $this->authorizePermission($request->user(), 'procurement', 'create');
 
         $po = $this->procurementService->createPOFromRequisition(
             $request->validated(),

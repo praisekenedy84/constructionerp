@@ -4,6 +4,7 @@ import ListToolbar from '@/Components/Shared/ListToolbar';
 import PaginationLinks from '@/Components/Shared/PaginationLinks';
 import PageHeader from '@/Components/Shared/PageHeader';
 import StatusBadge from '@/Components/Shared/StatusBadge';
+import { AmountInput } from '@/Components/ui/amount-input';
 import { Button } from '@/Components/ui/button';
 import { Dialog } from '@/Components/ui/dialog';
 import { confirmDiscardIfDirty, DialogFormActions } from '@/Components/ui/dialog-form';
@@ -394,12 +395,10 @@ function EmployeeDialog({
                 {form.data.pay_structure === 'daily' ? (
                     <div className="space-y-2">
                         <Label htmlFor={`${title}-emp-daily`}>Daily rate</Label>
-                        <Input
+                        <AmountInput
                             id={`${title}-emp-daily`}
-                            type="number"
-                            step="0.01"
                             value={form.data.daily_rate}
-                            onChange={(e) => form.setData('daily_rate', e.target.value)}
+                            onValueChange={(v) => form.setData('daily_rate', v)}
                             required
                         />
                         {form.errors.daily_rate && (
@@ -409,12 +408,10 @@ function EmployeeDialog({
                 ) : (
                     <div className="space-y-2">
                         <Label htmlFor={`${title}-emp-monthly`}>Monthly salary</Label>
-                        <Input
+                        <AmountInput
                             id={`${title}-emp-monthly`}
-                            type="number"
-                            step="0.01"
                             value={form.data.monthly_salary}
-                            onChange={(e) => form.setData('monthly_salary', e.target.value)}
+                            onValueChange={(v) => form.setData('monthly_salary', v)}
                             required
                         />
                         {form.errors.monthly_salary && (

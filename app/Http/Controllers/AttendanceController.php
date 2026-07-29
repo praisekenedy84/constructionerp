@@ -15,7 +15,7 @@ class AttendanceController extends Controller
 
     public function store(StoreAttendanceRequest $request): RedirectResponse
     {
-        $this->authorizeRoles($request->user(), ['HR Officer', 'Site Engineer']);
+        $this->authorizePermission($request->user(), 'payroll', 'update');
 
         $validated = $request->validated();
         $date = $validated['date'] ?? now()->toDateString();
@@ -31,7 +31,7 @@ class AttendanceController extends Controller
 
     public function index(Request $request): Response
     {
-        $this->authorizeRoles($request->user(), ['HR Officer']);
+        $this->authorizePermission($request->user(), 'payroll', 'read');
 
         $grid = $this->payrollService->attendanceGrid($request->all());
 

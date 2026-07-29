@@ -64,10 +64,6 @@ class ApprovalService
                 throw new \InvalidArgumentException('Approval step has already been resolved.');
             }
 
-            if (! $actor->hasRole($step->required_role) && ! $actor->isSuperUser()) {
-                throw new AuthorizationException("Actor does not have required role: {$step->required_role}.");
-            }
-
             if ($requisition->requestor_id === $actor->id && ! $actor->isSuperUser()) {
                 throw new AuthorizationException('You cannot approve your own requisition.');
             }
@@ -110,10 +106,14 @@ class ApprovalService
                         'resolved_at' => now(),
                     ]);
 
-                $this->requisitionService->onAmended($requisition, $actor, $opts);
+                $amendment = $this->requisitionService->onAmended($requisition, $actor, $opts);
                 $requisition->update(['status' => RequisitionStatus::Amended]);
 
-                $this->recordHistory($requisition, 'under_review', 'amended', $actor, $opts);
+                $this->recordHistory($requisition->fresh(), 'under_review', 'amended', $actor, [
+                    ...$opts,
+                    'amended_amount' => $amendment['amended_amount'],
+                    'amendment_items' => $amendment['amendment_items'],
+                ]);
 
                 return $requisition->fresh(['approvalSteps', 'items']);
             }
@@ -197,10 +197,6 @@ class ApprovalService
 
     private function assertApprovalPermission(User $actor, string $action): void
     {
-        if ($actor->isSuperUser()) {
-            return;
-        }
-
         $map = [
             'approved' => 'approve',
             'amended' => 'amend',
@@ -232,6 +228,7 @@ class ApprovalService
             'variance' => isset($opts['amended_amount'])
                 ? bcsub((string) $requisition->original_amount, (string) $opts['amended_amount'], 2)
                 : null,
+            'amendment_items' => $opts['amendment_items'] ?? null,
             'created_at' => now(),
         ]);
     }

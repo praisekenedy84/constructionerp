@@ -26,11 +26,12 @@ class AppServiceProvider extends ServiceProvider
         });
 
         Gate::before(function ($user, $ability) {
-            if (! method_exists($user, 'isSuperUser')) {
+            if (! method_exists($user, 'isPlatformAdmin')) {
                 return null;
             }
 
-            if ($user->isSuperUser()) {
+            // Only Platform Admin bypasses Gates; tenant access is checkbox-driven.
+            if ($user->isPlatformAdmin()) {
                 return true;
             }
 

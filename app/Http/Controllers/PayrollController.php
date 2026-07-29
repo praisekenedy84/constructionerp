@@ -20,7 +20,7 @@ class PayrollController extends Controller
 
     public function index(Request $request, int $projectId): Response
     {
-        $this->authorizeRoles($request->user(), ['HR Officer', 'Finance Manager']);
+        $this->authorizePermission($request->user(), 'payroll', 'read');
 
         $project = Project::findOrFail($projectId);
 
@@ -54,7 +54,7 @@ class PayrollController extends Controller
 
     public function runs(Request $request): Response
     {
-        $this->authorizeRoles($request->user(), ['HR Officer', 'Finance Manager']);
+        $this->authorizePermission($request->user(), 'payroll', 'read');
 
         $query = PayrollRun::query()
             ->with('project:id,code,name')
@@ -91,7 +91,7 @@ class PayrollController extends Controller
 
     public function show(Request $request, int $id): Response
     {
-        $this->authorizeRoles($request->user(), ['HR Officer', 'Finance Manager']);
+        $this->authorizePermission($request->user(), 'payroll', 'read');
 
         $run = PayrollRun::query()
             ->with(['project:id,code,name', 'items.employee'])
@@ -107,7 +107,7 @@ class PayrollController extends Controller
 
     public function generateForm(Request $request): Response
     {
-        $this->authorizeRoles($request->user(), ['HR Officer']);
+        $this->authorizePermission($request->user(), 'payroll', 'create');
 
         $projectId = $request->integer('project_id')
             ?: session('current_project_id')
@@ -151,7 +151,7 @@ class PayrollController extends Controller
 
     public function generate(GeneratePayrollRequest $request): RedirectResponse
     {
-        $this->authorizeRoles($request->user(), ['HR Officer']);
+        $this->authorizePermission($request->user(), 'payroll', 'create');
 
         $run = $this->payrollService->generate($request->validated(), $request->user());
 
@@ -165,7 +165,7 @@ class PayrollController extends Controller
 
     public function post(Request $request, int $id): RedirectResponse
     {
-        $this->authorizeRoles($request->user(), ['Finance Manager', 'HR Officer']);
+        $this->authorizePermission($request->user(), 'payroll', 'approve');
 
         $run = PayrollRun::findOrFail($id);
         $this->payrollService->post($run, $request->user());

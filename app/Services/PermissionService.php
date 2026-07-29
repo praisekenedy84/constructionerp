@@ -14,9 +14,17 @@ class PermissionService
     {
         app(PermissionRegistrar::class)->forgetCachedPermissions();
 
-        foreach (ModulePermission::allPermissionNames() as $name) {
+        $valid = ModulePermission::allPermissionNames();
+
+        foreach ($valid as $name) {
             Permission::firstOrCreate(['name' => $name, 'guard_name' => 'web']);
         }
+
+        // Drop obsolete capabilities that no longer exist in the catalog.
+        Permission::query()
+            ->where('guard_name', 'web')
+            ->whereNotIn('name', $valid)
+            ->delete();
 
         foreach (ModulePermission::matrix() as $roleName => $permissions) {
             $role = Role::where('name', $roleName)->where('guard_name', 'web')->first();
@@ -37,22 +45,11 @@ class PermissionService
         $valid = ModulePermission::allPermissionNames();
         $permissions = array_values(array_intersect($permissions, $valid));
 
-        if ($roleName === 'System Administrator' && ! $this->hasAdminMinimum($permissions)) {
-            throw new \InvalidArgumentException('System Administrator must retain auth:read and auth:update.');
-        }
-
         app(PermissionRegistrar::class)->forgetCachedPermissions();
 
         $role = Role::where('name', $roleName)->where('guard_name', 'web')->firstOrFail();
         $role->syncPermissions($permissions);
 
         return $role->load('permissions');
-    }
-
-    /** @param  list<string>  $permissions */
-    private function hasAdminMinimum(array $permissions): bool
-    {
-        return in_array('auth:read', $permissions, true)
-            && in_array('auth:update', $permissions, true);
     }
 }

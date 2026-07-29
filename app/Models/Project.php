@@ -42,6 +42,12 @@ class Project extends Model
     protected static function booted(): void
     {
         static::creating(function (Project $project) {
+            // Prefer an explicitly provided net budget (e.g. after compliance charges).
+            if (array_key_exists('net_budget', $project->getAttributes())
+                && $project->getAttributes()['net_budget'] !== null) {
+                return;
+            }
+
             $wht = $project->wht_percentage ?? 0;
             $project->net_budget = bcmul(
                 (string) $project->contract_amount,
@@ -49,6 +55,58 @@ class Project extends Model
                 2
             );
         });
+    }
+
+    /**
+     * Deduction for one charge: rate % of contract, fixed amount, or the lesser when both are set.
+     */
+    public static function chargeAmount(string $contractAmount, mixed $rate = null, mixed $fixedAmount = null): string
+    {
+        $contract = bcadd((string) $contractAmount, '0', 2);
+        $rateValue = is_numeric($rate) ? (string) $rate : '0';
+        $fixed = ($fixedAmount === null || $fixedAmount === '')
+            ? '0'
+            : bcadd((string) $fixedAmount, '0', 2);
+
+        $fromPercent = '0.00';
+        if (bccomp($rateValue, '0', 4) === 1) {
+            $fromPercent = bcmul($contract, bcdiv($rateValue, '100', 6), 2);
+        }
+
+        $hasPercent = bccomp($fromPercent, '0', 2) === 1;
+        $hasFixed = bccomp($fixed, '0', 2) === 1;
+
+        if ($hasPercent && $hasFixed) {
+            return bccomp($fromPercent, $fixed, 2) === 1 ? $fixed : $fromPercent;
+        }
+
+        if ($hasPercent) {
+            return $fromPercent;
+        }
+
+        return $hasFixed ? $fixed : '0.00';
+    }
+
+    /**
+     * @param  iterable<int, array<string, mixed>|object>  $rules
+     */
+    public static function netBudgetFromCharges(string $contractAmount, iterable $rules): string
+    {
+        $totalCharges = '0.00';
+
+        foreach ($rules as $rule) {
+            $rate = data_get($rule, 'rate');
+            $fixed = data_get($rule, 'max_amount');
+            $totalCharges = bcadd(
+                $totalCharges,
+                self::chargeAmount($contractAmount, $rate, $fixed),
+                2
+            );
+        }
+
+        $remaining = bcsub(bcadd($contractAmount, '0', 2), $totalCharges, 2);
+
+        return bccomp($remaining, '0', 2) === -1 ? '0.00' : $remaining;
     }
 
     public function withholdingTaxRates(): HasMany

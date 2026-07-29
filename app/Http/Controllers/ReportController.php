@@ -15,8 +15,10 @@ class ReportController extends Controller
 {
     public function __construct(private ReportService $reportService) {}
 
-    public function index(): Response
+    public function index(Request $request): Response
     {
+        $this->authorizePermission($request->user(), 'reports', 'read');
+
         return Inertia::render('Reports/Index', [
             'reports' => $this->reportService->catalog(),
         ]);
@@ -24,6 +26,8 @@ class ReportController extends Controller
 
     public function preview(Request $request, string $slug): Response
     {
+        $this->authorizePermission($request->user(), 'reports', 'read');
+
         $preview = $this->reportService->preview($slug, $request->all());
 
         return Inertia::render('Reports/Show', [
@@ -41,6 +45,8 @@ class ReportController extends Controller
 
     public function export(Request $request, string $slug): StreamedResponse
     {
+        $this->authorizePermission($request->user(), 'reports', 'export');
+
         $format = $request->string('format', 'csv')->toString();
 
         return $this->reportService->export($slug, $request->all(), $format);
@@ -48,7 +54,7 @@ class ReportController extends Controller
 
     public function schedules(Request $request): Response
     {
-        $this->authorizeRoles($request->user(), ['Finance Manager', 'Managing Director', 'Auditor']);
+        $this->authorizePermission($request->user(), 'reports', 'schedule');
 
         return Inertia::render('Reports/Schedules', [
             'schedules' => $this->reportService->schedules(),
@@ -58,7 +64,7 @@ class ReportController extends Controller
 
     public function createSchedule(CreateReportScheduleRequest $request): RedirectResponse
     {
-        $this->authorizeRoles($request->user(), ['Finance Manager', 'Managing Director']);
+        $this->authorizePermission($request->user(), 'reports', 'schedule');
 
         $this->reportService->createSchedule($request->validated(), $request->user());
 

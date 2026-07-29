@@ -4,6 +4,7 @@ import ListToolbar from '@/Components/Shared/ListToolbar';
 import PaginationLinks from '@/Components/Shared/PaginationLinks';
 import PageHeader from '@/Components/Shared/PageHeader';
 import StatusBadge from '@/Components/Shared/StatusBadge';
+import { AmountInput } from '@/Components/ui/amount-input';
 import { Button } from '@/Components/ui/button';
 import { Dialog } from '@/Components/ui/dialog';
 import { confirmDiscardIfDirty, DialogFormActions } from '@/Components/ui/dialog-form';
@@ -149,12 +150,10 @@ export default function Overhead() {
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="overhead-amount">Amount (TZS)</Label>
-                        <Input
+                        <AmountInput
                             id="overhead-amount"
-                            type="number"
-                            step="0.01"
                             value={data.amount}
-                            onChange={(e) => setData('amount', e.target.value)}
+                            onValueChange={(v) => setData('amount', v)}
                             required
                         />
                         {errors.amount && <p className="text-sm text-red-600">{errors.amount}</p>}

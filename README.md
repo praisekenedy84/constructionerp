@@ -20,10 +20,22 @@ php artisan tenant:provision "Demo Construction" demo \
 # Seed demo project, BOQ, suppliers
 php artisan tenant:seed-demo demo
 
+# Seed multiple people per role (password: password)
+php artisan tenant:seed-users demo
+
 php artisan serve
 ```
 
 Sign in: http://127.0.0.1:8000/login → `admin@demo.local` / `password`
+
+Useful persona logins (all password `password`):
+
+| Role | Accounts |
+|------|----------|
+| Site Engineer | `engineer@demo.local`, `engineer2@demo.local`, `engineer3@demo.local` |
+| Project Manager | `pm@demo.local`, `pm2@demo.local`, `pm3@demo.local` |
+| Finance Manager | `finance@demo.local`, `finance2@demo.local` |
+| Storekeeper | `storekeeper@demo.local`, `storekeeper2@demo.local` |
 
 ## Architecture
 
@@ -73,6 +85,7 @@ Sign in: http://127.0.0.1:8000/login → `admin@demo.local` / `password`
 ```bash
 php artisan tenant:provision {name} {slug} [--admin-email=] [--admin-password=]
 php artisan tenant:seed-demo {slug}
+php artisan tenant:seed-users {slug}
 php artisan tenants:migrate --force
 ```
 

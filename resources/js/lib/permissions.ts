@@ -19,7 +19,12 @@ export function hasRole(user: User | null, roles: string | string[]): boolean {
 
 export function hasPermission(user: User | null, module: string, action: string): boolean {
     if (!user) return false;
-    if (isSuperUser(user)) return true;
+
+    // Full-access tenant/platform admins bypass the checkbox matrix.
+    const roles = user.roles ?? [];
+    if (roles.includes('Platform Admin') || roles.includes('System Administrator')) {
+        return true;
+    }
 
     const key = `${module}:${action}`;
 
@@ -44,7 +49,7 @@ export const navItems: NavItem[] = [
     { label: 'Equipment', href: '/equipment', permission: { module: 'equipment', action: 'read' } },
     { label: 'Reports', href: '/reports', permission: { module: 'reports', action: 'read' } },
     { label: 'Audit', href: '/audit', permission: { module: 'audit', action: 'read' } },
-    { label: 'Admin', href: '/admin/users', roles: ['Platform Admin', 'System Administrator'] },
+    { label: 'Admin', href: '/admin/users', permission: { module: 'auth', action: 'read' } },
 ];
 
 export function filterNav(
@@ -125,5 +130,8 @@ export function isNavSectionActive(
 }
 
 export function canOverrideLimits(user: User | null): boolean {
-    return hasRole(user, ['Finance Manager', 'Managing Director', 'System Administrator']);
+    return (
+        hasPermission(user, 'requisitions', 'override') ||
+        hasPermission(user, 'budgets', 'override')
+    );
 }

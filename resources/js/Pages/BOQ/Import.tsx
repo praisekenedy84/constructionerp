@@ -6,39 +6,53 @@ import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
 import { PageProps, Project } from '@/types';
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
+import { Download } from 'lucide-react';
 import { FormEvent } from 'react';
 
 interface ImportError {
-    row: number;
-    field: string;
+    row: number | null;
     message: string;
+}
+
+interface ImportResult {
+    success_count: number;
+    error_count: number;
+    errors: ImportError[];
 }
 
 interface BoqImportProps extends PageProps {
     project: Project;
-    errors_report?: ImportError[];
+    import_result?: ImportResult | null;
 }
 
+const templateColumns = [
+    { field: 'Section', note: 'BOQ section name' },
+    { field: 'Description', note: 'Item description (required)' },
+    { field: 'Unit', note: 'e.g. m3, kg, ea' },
+    { field: 'Category', note: 'materials, labor, equipment, …' },
+    { field: 'Qty', note: 'Budgeted quantity' },
+    { field: 'Rate', note: 'Unit rate (TZS)' },
+];
+
 export default function BoqImport() {
-    const { project, errors_report } = usePage<BoqImportProps>().props;
-    const { data, setData, post, processing, errors, progress } = useForm<{
+    const { project, import_result } = usePage<BoqImportProps>().props;
+    const { data, setData, post, processing, errors, progress, clearErrors } = useForm<{
         file: File | null;
-        column_map: Record<string, string>;
     }>({
         file: null,
-        column_map: {
-            section: 'Section',
-            description: 'Description',
-            unit: 'Unit',
-            category: 'Category',
-            budgeted_qty: 'Qty',
-            unit_rate: 'Rate',
-        },
     });
 
     function submit(e: FormEvent) {
         e.preventDefault();
-        post(`/projects/${project.id}/boq/import`, { forceFormData: true });
+        if (!data.file) {
+            return;
+        }
+
+        clearErrors();
+        post(`/projects/${project.id}/boq/import`, {
+            forceFormData: true,
+            preserveScroll: true,
+        });
     }
 
     return (
@@ -47,8 +61,81 @@ export default function BoqImport() {
             <div className="mx-auto max-w-3xl space-y-6">
                 <PageHeader
                     title="Import BOQ"
-                    description={`Upload CSV or Excel for ${project.name}`}
+                    description={`Upload an Excel/CSV file for ${project.name}. Use the same column layout as Export Excel.`}
+                    actions={
+                        <div className="flex flex-wrap gap-2">
+                            <a href={`/projects/${project.id}/boq/export?template=1`}>
+                                <Button type="button" variant="outline">
+                                    <Download className="h-4 w-4" />
+                                    Download template
+                                </Button>
+                            </a>
+                            <Link href={`/projects/${project.id}/boq/create`}>
+                                <Button type="button" variant="outline">
+                                    Enter items manually
+                                </Button>
+                            </Link>
+                        </div>
+                    }
                 />
+
+                {import_result && (
+                    <DataPanel
+                        title="Last import result"
+                        description={`${import_result.success_count} imported · ${import_result.error_count} failed`}
+                    >
+                        {import_result.errors.length > 0 ? (
+                            <div className="max-h-64 overflow-y-auto">
+                                <table className="w-full text-sm">
+                                    <thead>
+                                        <tr className="text-left text-xs text-slate-500">
+                                            <th className="pb-2 font-medium">Row</th>
+                                            <th className="pb-2 font-medium">Error</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {import_result.errors.map((err, i) => (
+                                            <tr key={i}>
+                                                <td className="py-2 text-slate-600">
+                                                    {err.row ?? '—'}
+                                                </td>
+                                                <td className="py-2 text-red-600">{err.message}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ) : (
+                            <p className="text-sm text-slate-600">No row errors reported.</p>
+                        )}
+                    </DataPanel>
+                )}
+
+                <DataPanel
+                    title="Expected columns"
+                    description="Exported BOQ files and the downloadable template use these headers."
+                >
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr className="border-b border-slate-200 text-left text-xs text-slate-500">
+                                    <th className="pb-2 pr-4 font-medium">Column</th>
+                                    <th className="pb-2 font-medium">Meaning</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {templateColumns.map((col) => (
+                                    <tr key={col.field}>
+                                        <td className="py-2 pr-4 font-mono text-slate-900">
+                                            {col.field}
+                                        </td>
+                                        <td className="py-2 text-slate-600">{col.note}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </DataPanel>
 
                 <form onSubmit={submit} className="space-y-6">
                     <DataPanel title="File Upload">
@@ -58,12 +145,15 @@ export default function BoqImport() {
                                 <Input
                                     id="file"
                                     type="file"
-                                    accept=".csv,.xlsx,.xls"
+                                    accept=".csv,.xlsx,.xls,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                                     onChange={(e) =>
                                         setData('file', e.target.files?.[0] ?? null)
                                     }
                                     required
                                 />
+                                {data.file && (
+                                    <p className="text-xs text-slate-500">Selected: {data.file.name}</p>
+                                )}
                                 {errors.file && (
                                     <p className="text-sm text-red-600">{errors.file}</p>
                                 )}
@@ -78,50 +168,6 @@ export default function BoqImport() {
                             )}
                         </div>
                     </DataPanel>
-
-                    <DataPanel title="Column Mapping">
-                        <div className="grid gap-3 sm:grid-cols-2">
-                            {Object.entries(data.column_map).map(([field, column]) => (
-                                <div key={field} className="space-y-1">
-                                    <Label className="capitalize">{field.replace(/_/g, ' ')}</Label>
-                                    <Input
-                                        value={column}
-                                        onChange={(e) =>
-                                            setData('column_map', {
-                                                ...data.column_map,
-                                                [field]: e.target.value,
-                                            })
-                                        }
-                                    />
-                                </div>
-                            ))}
-                        </div>
-                    </DataPanel>
-
-                    {errors_report && errors_report.length > 0 && (
-                        <DataPanel title="Import Errors" description={`${errors_report.length} rows failed`}>
-                            <div className="max-h-64 overflow-y-auto">
-                                <table className="w-full text-sm">
-                                    <thead>
-                                        <tr className="text-left text-xs text-slate-500">
-                                            <th className="pb-2 font-medium">Row</th>
-                                            <th className="pb-2 font-medium">Field</th>
-                                            <th className="pb-2 font-medium">Error</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100">
-                                        {errors_report.map((err, i) => (
-                                            <tr key={i}>
-                                                <td className="py-2 text-slate-600">{err.row}</td>
-                                                <td className="py-2 text-slate-600">{err.field}</td>
-                                                <td className="py-2 text-red-600">{err.message}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </DataPanel>
-                    )}
 
                     <div className="flex justify-end gap-3">
                         <Link href={`/projects/${project.id}/boq`}>

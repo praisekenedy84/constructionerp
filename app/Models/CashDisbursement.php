@@ -11,12 +11,27 @@ class CashDisbursement extends Model
 
     const UPDATED_AT = null;
 
+    protected static function booted(): void
+    {
+        static::created(function (CashDisbursement $disbursement): void {
+            CashAllocation::whereKey($disbursement->cash_allocation_id)
+                ->increment('utilized_amount', (string) $disbursement->amount);
+        });
+
+        static::deleted(function (CashDisbursement $disbursement): void {
+            CashAllocation::whereKey($disbursement->cash_allocation_id)
+                ->decrement('utilized_amount', (string) $disbursement->amount);
+        });
+    }
+
     protected $fillable = [
         'requisition_id',
         'cash_allocation_id',
         'amount',
         'method',
         'payee',
+        'account_name',
+        'reference_no',
         'disbursed_by',
         'disbursed_at',
         'created_at',

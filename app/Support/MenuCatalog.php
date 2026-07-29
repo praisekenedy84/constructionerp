@@ -57,14 +57,15 @@ class MenuCatalog
             [
                 'key' => 'inventory',
                 'label' => 'Inventory',
-                'href' => '/inventory/balances',
+                'href' => '/inventory/items',
                 'active_path' => '/inventory',
                 'permission' => 'inventory:read',
                 'group' => 'Supply Chain',
                 'children' => [
-                    ['key' => 'inventory.balances', 'label' => 'Stock Balances', 'href' => '/inventory/balances', 'permission' => null],
-                    ['key' => 'inventory.issues', 'label' => 'Issues', 'href' => '/inventory/issues', 'permission' => null],
-                    ['key' => 'inventory.transactions', 'label' => 'Transactions', 'href' => '/inventory/transactions', 'permission' => null],
+                    ['key' => 'inventory.items', 'label' => 'Items', 'href' => '/inventory/items', 'permission' => null],
+                    ['key' => 'inventory.balances', 'label' => 'On Hand', 'href' => '/inventory/balances', 'permission' => null],
+                    ['key' => 'inventory.issues', 'label' => 'Hand Over', 'href' => '/inventory/issues', 'permission' => null],
+                    ['key' => 'inventory.transactions', 'label' => 'History', 'href' => '/inventory/transactions', 'permission' => null],
                 ],
             ],
             [
@@ -145,7 +146,7 @@ class MenuCatalog
     {
         return array_values(array_filter(
             self::tenantRoles(),
-            fn (string $role) => ! in_array($role, ['Platform Admin'], true),
+            fn (string $role) => ! in_array($role, ['Platform Admin', 'System Administrator'], true),
         ));
     }
 }

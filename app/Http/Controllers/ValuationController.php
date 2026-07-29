@@ -18,7 +18,7 @@ class ValuationController extends Controller
 
     public function index(Request $request, int $id): Response
     {
-        $this->authorizeRoles($request->user(), ['Quantity Surveyor', 'Finance Manager', 'Project Manager']);
+        $this->authorizePermission($request->user(), 'valuations', 'read');
 
         $project = Project::findOrFail($id);
 
@@ -39,7 +39,7 @@ class ValuationController extends Controller
 
     public function create(Request $request, int $id): Response
     {
-        $this->authorizeRoles($request->user(), ['Quantity Surveyor']);
+        $this->authorizePermission($request->user(), 'valuations', 'create');
 
         $project = Project::with('complianceRules')->findOrFail($id);
 
@@ -51,7 +51,7 @@ class ValuationController extends Controller
 
     public function store(StoreValuationRequest $request, int $id): RedirectResponse
     {
-        $this->authorizeRoles($request->user(), ['Quantity Surveyor']);
+        $this->authorizePermission($request->user(), 'valuations', 'create');
 
         $project = Project::findOrFail($id);
         $valuation = $this->valuationService->create($project, $request->validated('gross_value'), $request->user());
@@ -61,7 +61,7 @@ class ValuationController extends Controller
 
     public function certify(Request $request, int $id): RedirectResponse
     {
-        $this->authorizeRoles($request->user(), ['Managing Director', 'Finance Manager']);
+        $this->authorizePermission($request->user(), 'valuations', 'approve');
 
         $valuation = Valuation::findOrFail($id);
         $this->valuationService->certify($valuation, $request->user());

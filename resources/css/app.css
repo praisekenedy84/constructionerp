@@ -11,4 +11,125 @@
 @theme {
     --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
         'Segoe UI Symbol', 'Noto Color Emoji';
+
+    --animate-collapsible-down: collapsible-down 0.2s ease-out;
+    --animate-collapsible-up: collapsible-up 0.2s ease-out;
+    --animate-sheet-overlay-in: sheet-overlay-in 0.2s ease-out;
+    --animate-sheet-overlay-out: sheet-overlay-out 0.15s ease-in;
+    --animate-sheet-in-from-left: sheet-in-from-left 0.3s ease-out;
+    --animate-sheet-out-to-left: sheet-out-to-left 0.2s ease-in;
+    --animate-sheet-in-from-right: sheet-in-from-right 0.3s ease-out;
+    --animate-sheet-out-to-right: sheet-out-to-right 0.2s ease-in;
+    --animate-sheet-in-from-top: sheet-in-from-top 0.3s ease-out;
+    --animate-sheet-out-to-top: sheet-out-to-top 0.2s ease-in;
+    --animate-sheet-in-from-bottom: sheet-in-from-bottom 0.3s ease-out;
+    --animate-sheet-out-to-bottom: sheet-out-to-bottom 0.2s ease-in;
+}
+
+@keyframes collapsible-down {
+    from {
+        height: 0;
+    }
+    to {
+        height: var(--radix-collapsible-content-height);
+    }
+}
+
+@keyframes collapsible-up {
+    from {
+        height: var(--radix-collapsible-content-height);
+    }
+    to {
+        height: 0;
+    }
+}
+
+@keyframes sheet-overlay-in {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes sheet-overlay-out {
+    from {
+        opacity: 1;
+    }
+    to {
+        opacity: 0;
+    }
+}
+
+@keyframes sheet-in-from-left {
+    from {
+        transform: translateX(-100%);
+    }
+    to {
+        transform: translateX(0);
+    }
+}
+
+@keyframes sheet-out-to-left {
+    from {
+        transform: translateX(0);
+    }
+    to {
+        transform: translateX(-100%);
+    }
+}
+
+@keyframes sheet-in-from-right {
+    from {
+        transform: translateX(100%);
+    }
+    to {
+        transform: translateX(0);
+    }
+}
+
+@keyframes sheet-out-to-right {
+    from {
+        transform: translateX(0);
+    }
+    to {
+        transform: translateX(100%);
+    }
+}
+
+@keyframes sheet-in-from-top {
+    from {
+        transform: translateY(-100%);
+    }
+    to {
+        transform: translateY(0);
+    }
+}
+
+@keyframes sheet-out-to-top {
+    from {
+        transform: translateY(0);
+    }
+    to {
+        transform: translateY(-100%);
+    }
+}
+
+@keyframes sheet-in-from-bottom {
+    from {
+        transform: translateY(100%);
+    }
+    to {
+        transform: translateY(0);
+    }
+}
+
+@keyframes sheet-out-to-bottom {
+    from {
+        transform: translateY(0);
+    }
+    to {
+        transform: translateY(100%);
+    }
 }

@@ -17,7 +17,7 @@ class EmployeeController extends Controller
 {
     public function index(Request $request): Response
     {
-        $this->authorizeRoles($request->user(), ['HR Officer']);
+        $this->authorizePermission($request->user(), 'payroll', 'read');
 
         $projectId = $request->integer('project_id')
             ?: session('current_project_id')
@@ -48,7 +48,7 @@ class EmployeeController extends Controller
 
     public function store(StoreEmployeeRequest $request): RedirectResponse
     {
-        $this->authorizeRoles($request->user(), ['HR Officer']);
+        $this->authorizePermission($request->user(), 'payroll', 'create');
 
         Employee::create($request->validated());
 
@@ -57,7 +57,7 @@ class EmployeeController extends Controller
 
     public function update(UpdatePayrollEmployeeRequest $request, int $id): RedirectResponse
     {
-        $this->authorizeRoles($request->user(), ['HR Officer']);
+        $this->authorizePermission($request->user(), 'payroll', 'update');
 
         $employee = Employee::findOrFail($id);
         $employee->update($request->validated());
@@ -67,7 +67,7 @@ class EmployeeController extends Controller
 
     public function destroy(Request $request, int $id): RedirectResponse
     {
-        $this->authorizeRoles($request->user(), ['HR Officer']);
+        $this->authorizePermission($request->user(), 'payroll', 'update');
 
         $employee = Employee::findOrFail($id);
         $employee->delete();

@@ -9,6 +9,7 @@ use App\Enums\CashAllocationStatus;
 use App\Enums\ComplianceRuleType;
 use App\Enums\FulfillmentType;
 use App\Enums\ProjectStatus;
+use App\Enums\RequisitionResourceType;
 use App\Enums\RequisitionStatus;
 use App\Models\ApprovalStep;
 use App\Models\BoqItem;
@@ -21,6 +22,7 @@ use App\Models\InventoryItem;
 use App\Models\Project;
 use App\Models\ProjectComplianceRule;
 use App\Models\Requisition;
+use App\Models\RequisitionItem;
 use App\Models\StockBalance;
 use App\Models\StockLocation;
 use App\Models\Supplier;
@@ -117,6 +119,7 @@ class SeedDemoCommand extends Command
 
             $excavation = $boqItems->firstWhere('description', 'Excavation - bulk');
             $gravel = $boqItems->firstWhere('description', 'Gravel fill');
+            $siteLabour = $boqItems->firstWhere('description', 'Site labour');
 
             Supplier::firstOrCreate(['name' => 'Kilimanjaro Supplies Ltd'], ['contact_info' => 'info@kilimanjaro.co.tz']);
             Supplier::firstOrCreate(['name' => 'Coastal Cement Co.'], ['contact_info' => 'sales@coastalcement.co.tz']);
@@ -128,6 +131,20 @@ class SeedDemoCommand extends Command
                 'reorder_point' => '100',
             ]);
 
+            $diesel = InventoryItem::firstOrCreate(['code' => 'DSL-L'], [
+                'name' => 'Diesel fuel',
+                'unit' => 'L',
+                'category' => 'fuel',
+                'reorder_point' => '500',
+            ]);
+
+            $rebar = InventoryItem::firstOrCreate(['code' => 'RBR-16'], [
+                'name' => 'Reinforcement bar 16mm',
+                'unit' => 'pcs',
+                'category' => 'materials',
+                'reorder_point' => '50',
+            ]);
+
             $store = StockLocation::firstOrCreate(
                 ['project_id' => $project->id, 'name' => 'Main Site Store'],
             );
@@ -137,6 +154,24 @@ class SeedDemoCommand extends Command
                 [
                     'quantity_on_hand' => '450.0000',
                     'average_cost' => '18500.00',
+                    'updated_at' => now(),
+                ],
+            );
+
+            StockBalance::updateOrCreate(
+                ['inventory_item_id' => $diesel->id, 'stock_location_id' => $store->id],
+                [
+                    'quantity_on_hand' => '2200.0000',
+                    'average_cost' => '3200.00',
+                    'updated_at' => now(),
+                ],
+            );
+
+            StockBalance::updateOrCreate(
+                ['inventory_item_id' => $rebar->id, 'stock_location_id' => $store->id],
+                [
+                    'quantity_on_hand' => '180.0000',
+                    'average_cost' => '45000.00',
                     'updated_at' => now(),
                 ],
             );
@@ -168,12 +203,20 @@ class SeedDemoCommand extends Command
             ]);
 
             if ($admin) {
+                $engineer1 = User::where('email', 'engineer@demo.local')->first();
+                $engineer2 = User::where('email', 'engineer2@demo.local')->first();
+                $engineer3 = User::where('email', 'engineer3@demo.local')->first();
+                $authorA = $engineer1?->id ?? $admin->id;
+                $authorB = $engineer2?->id ?? $admin->id;
+                $authorC = $engineer3?->id ?? $admin->id;
+
                 CashAllocation::firstOrCreate(
                     ['project_id' => $project->id, 'reference_no' => 'CASH-DEMO-001'],
                     [
                         'requested_amount' => '50000000.00',
                         'received_amount' => '50000000.00',
                         'utilized_amount' => '12500000.00',
+                        'opening_utilized_amount' => '12500000.00',
                         'status' => CashAllocationStatus::Received,
                         'requested_by' => $admin->id,
                         'approved_by' => $admin->id,
@@ -183,48 +226,254 @@ class SeedDemoCommand extends Command
                     ],
                 );
 
-                $approvedReq = Requisition::firstOrCreate(
-                    ['requisition_no' => 'REQ-DEMO-001'],
+                $demoRequisitions = [
                     [
-                        'project_id' => $project->id,
-                        'boq_item_id' => $excavation->id,
-                        'department' => 'Site Operations',
-                        'requestor_id' => $admin->id,
-                        'status' => RequisitionStatus::Approved,
-                        'fulfillment_type' => FulfillmentType::CashDisbursement,
-                        'original_amount' => '8500000.00',
+                        'requisition_no' => 'REQ-DEMO-001',
+                        'header' => [
+                            'project_id' => $project->id,
+                            'boq_item_id' => null,
+                            'department' => 'Site Operations',
+                            'resource_type' => RequisitionResourceType::Cash,
+                            'requestor_id' => $authorA,
+                            'status' => RequisitionStatus::Approved,
+                            'fulfillment_type' => FulfillmentType::CashDisbursement,
+                            'original_amount' => '850000.00',
+                        ],
+                        'items' => [
+                            [
+                                'description' => 'Petty cash for local transport and site incidentals',
+                                'unit' => 'lump',
+                                'quantity' => '1.0000',
+                                'unit_cost' => '850000.00',
+                                'line_total' => '850000.00',
+                                'details' => ['estimated_amount' => '850000.00'],
+                            ],
+                        ],
                     ],
-                );
-
-                Requisition::firstOrCreate(
-                    ['requisition_no' => 'REQ-DEMO-002'],
                     [
-                        'project_id' => $project->id,
-                        'boq_item_id' => $gravel->id,
-                        'department' => 'Procurement',
-                        'requestor_id' => $admin->id,
-                        'status' => RequisitionStatus::UnderReview,
-                        'fulfillment_type' => FulfillmentType::DirectSupplierPayment,
-                        'original_amount' => '3600000.00',
+                        'requisition_no' => 'REQ-DEMO-002',
+                        'header' => [
+                            'project_id' => $project->id,
+                            'boq_item_id' => $gravel->id,
+                            'department' => 'Procurement',
+                            'resource_type' => RequisitionResourceType::Materials,
+                            'requestor_id' => $authorB,
+                            'status' => RequisitionStatus::UnderReview,
+                            'fulfillment_type' => FulfillmentType::DirectSupplierPayment,
+                            'original_amount' => '3600000.00',
+                        ],
+                        'items' => [
+                            [
+                                'boq_item_id' => $gravel->id,
+                                'description' => 'Gravel fill — supplier delivery',
+                                'unit' => 'm3',
+                                'quantity' => '300.0000',
+                                'unit_cost' => '12000.00',
+                                'line_total' => '3600000.00',
+                                'details' => null,
+                            ],
+                        ],
                     ],
-                );
-
-                Requisition::firstOrCreate(
-                    ['requisition_no' => 'REQ-DEMO-003'],
                     [
-                        'project_id' => $project->id,
-                        'boq_item_id' => $excavation->id,
-                        'department' => 'Site Operations',
-                        'requestor_id' => $admin->id,
-                        'status' => RequisitionStatus::Draft,
-                        'fulfillment_type' => FulfillmentType::StockIssue,
-                        'original_amount' => '1200000.00',
+                        'requisition_no' => 'REQ-DEMO-003',
+                        'header' => [
+                            'project_id' => $project->id,
+                            'boq_item_id' => $excavation->id,
+                            'department' => 'Site Stores',
+                            'resource_type' => RequisitionResourceType::Materials,
+                            'requestor_id' => $authorA,
+                            'status' => RequisitionStatus::Draft,
+                            'fulfillment_type' => FulfillmentType::StockIssue,
+                            'original_amount' => '925000.00',
+                        ],
+                        'items' => [
+                            [
+                                'boq_item_id' => $excavation->id,
+                                'inventory_item_id' => $cement->id,
+                                'description' => 'Portland Cement 50kg',
+                                'unit' => 'bag',
+                                'quantity' => '50.0000',
+                                'unit_cost' => '18500.00',
+                                'line_total' => '925000.00',
+                                'details' => null,
+                            ],
+                        ],
                     ],
-                );
+                    [
+                        'requisition_no' => 'REQ-DEMO-004',
+                        'header' => [
+                            'project_id' => $project->id,
+                            'boq_item_id' => $siteLabour?->id,
+                            'department' => 'Site Operations',
+                            'resource_type' => RequisitionResourceType::Labor,
+                            'requestor_id' => $authorC,
+                            'status' => RequisitionStatus::UnderReview,
+                            'fulfillment_type' => FulfillmentType::CashDisbursement,
+                            'original_amount' => '1250000.00',
+                        ],
+                        'items' => [
+                            [
+                                'boq_item_id' => $siteLabour?->id,
+                                'description' => 'Casual workers for excavation support',
+                                'unit' => 'worker-day',
+                                'quantity' => '50.0000',
+                                'unit_cost' => '25000.00',
+                                'line_total' => '1250000.00',
+                                'details' => [
+                                    'workers' => '10.0000',
+                                    'days' => '5.0000',
+                                    'rate_per_day' => '25000.00',
+                                ],
+                            ],
+                        ],
+                    ],
+                    [
+                        'requisition_no' => 'REQ-DEMO-005',
+                        'header' => [
+                            'project_id' => $project->id,
+                            'boq_item_id' => $excavation->id,
+                            'department' => 'Plant',
+                            'resource_type' => RequisitionResourceType::Equipment,
+                            'requestor_id' => $authorB,
+                            'status' => RequisitionStatus::Approved,
+                            'fulfillment_type' => FulfillmentType::DirectSupplierPayment,
+                            'original_amount' => '2400000.00',
+                        ],
+                        'items' => [
+                            [
+                                'boq_item_id' => $excavation->id,
+                                'description' => 'CAT 320 Excavator hire',
+                                'unit' => 'day',
+                                'quantity' => '3.0000',
+                                'unit_cost' => '800000.00',
+                                'line_total' => '2400000.00',
+                                'details' => [
+                                    'duration' => '3.0000',
+                                    'duration_unit' => 'day',
+                                    'rate' => '800000.00',
+                                ],
+                            ],
+                        ],
+                    ],
+                    [
+                        'requisition_no' => 'REQ-DEMO-006',
+                        'header' => [
+                            'project_id' => $project->id,
+                            'boq_item_id' => null,
+                            'department' => 'Logistics',
+                            'resource_type' => RequisitionResourceType::Transport,
+                            'requestor_id' => $authorB,
+                            'status' => RequisitionStatus::Draft,
+                            'fulfillment_type' => FulfillmentType::DirectSupplierPayment,
+                            'original_amount' => '480000.00',
+                        ],
+                        'items' => [
+                            [
+                                'description' => 'Aggregate haulage from quarry to site',
+                                'unit' => 'trip',
+                                'quantity' => '6.0000',
+                                'unit_cost' => '80000.00',
+                                'line_total' => '480000.00',
+                                'details' => [
+                                    'trips' => '6.0000',
+                                    'cost_per_trip' => '80000.00',
+                                ],
+                            ],
+                        ],
+                    ],
+                    [
+                        'requisition_no' => 'REQ-DEMO-007',
+                        'header' => [
+                            'project_id' => $project->id,
+                            'boq_item_id' => null,
+                            'department' => 'Plant',
+                            'resource_type' => RequisitionResourceType::Fuel,
+                            'requestor_id' => $authorC,
+                            'status' => RequisitionStatus::Draft,
+                            'fulfillment_type' => FulfillmentType::StockIssue,
+                            'original_amount' => '640000.00',
+                        ],
+                        'items' => [
+                            [
+                                'inventory_item_id' => $diesel->id,
+                                'description' => 'Diesel fuel',
+                                'unit' => 'L',
+                                'quantity' => '200.0000',
+                                'unit_cost' => '3200.00',
+                                'line_total' => '640000.00',
+                                'details' => null,
+                            ],
+                        ],
+                    ],
+                    [
+                        'requisition_no' => 'REQ-DEMO-008',
+                        'header' => [
+                            'project_id' => $project->id,
+                            'boq_item_id' => null,
+                            'department' => 'Site Stores',
+                            'resource_type' => RequisitionResourceType::Materials,
+                            'requestor_id' => $authorA,
+                            'status' => RequisitionStatus::Draft,
+                            'fulfillment_type' => FulfillmentType::DirectSupplierPayment,
+                            'original_amount' => '375000.00',
+                        ],
+                        'items' => [
+                            [
+                                'description' => 'Safety helmets (new item — not in catalog)',
+                                'unit' => 'pcs',
+                                'quantity' => '25.0000',
+                                'unit_cost' => '15000.00',
+                                'line_total' => '375000.00',
+                                'details' => null,
+                            ],
+                        ],
+                    ],
+                ];
 
-                $pendingReq = Requisition::where('requisition_no', 'REQ-DEMO-002')->first();
+                foreach ($demoRequisitions as $demo) {
+                    $requisition = Requisition::firstOrCreate(
+                        ['requisition_no' => $demo['requisition_no']],
+                        $demo['header'],
+                    );
 
-                if ($pendingReq) {
+                    // Keep older demo rows aligned with the flexible model + authors.
+                    $requisition->fill([
+                        'resource_type' => $demo['header']['resource_type'],
+                        'boq_item_id' => $demo['header']['boq_item_id'],
+                        'original_amount' => $demo['header']['original_amount'],
+                        'department' => $demo['header']['department'],
+                        'fulfillment_type' => $demo['header']['fulfillment_type'],
+                        'status' => $demo['header']['status'],
+                        'requestor_id' => $demo['header']['requestor_id'],
+                    ])->save();
+
+                    if ($requisition->items()->exists()) {
+                        continue;
+                    }
+
+                    foreach ($demo['items'] as $item) {
+                        RequisitionItem::create([
+                            'requisition_id' => $requisition->id,
+                            'boq_item_id' => $item['boq_item_id'] ?? $demo['header']['boq_item_id'],
+                            'inventory_item_id' => $item['inventory_item_id'] ?? null,
+                            'description' => $item['description'],
+                            'unit' => $item['unit'],
+                            'quantity' => $item['quantity'],
+                            'unit_cost' => $item['unit_cost'],
+                            'line_total' => $item['line_total'],
+                            'details' => $item['details'],
+                        ]);
+                    }
+                }
+
+                $pendingMaterials = Requisition::where('requisition_no', 'REQ-DEMO-002')->first();
+                $pendingLabour = Requisition::where('requisition_no', 'REQ-DEMO-004')->first();
+
+                foreach ([$pendingMaterials, $pendingLabour] as $pendingReq) {
+                    if (! $pendingReq) {
+                        continue;
+                    }
+
                     ApprovalStep::firstOrCreate(
                         ['requisition_id' => $pendingReq->id, 'level' => 1],
                         [
@@ -235,21 +484,44 @@ class SeedDemoCommand extends Command
                     );
                 }
 
-                BudgetTransaction::firstOrCreate(
-                    [
-                        'project_id' => $project->id,
-                        'boq_item_id' => $excavation->id,
-                        'type' => BudgetTransactionType::ApprovedRequisition,
-                        'reference_entity_type' => Requisition::class,
-                        'reference_entity_id' => $approvedReq->id,
-                    ],
-                    [
-                        'amount' => '8500000.00',
-                        'reason' => 'Approved requisition REQ-DEMO-001',
-                        'created_by' => $admin->id,
-                        'created_at' => now()->subWeek(),
-                    ],
-                );
+                $approvedCash = Requisition::where('requisition_no', 'REQ-DEMO-001')->first();
+                $approvedEquipment = Requisition::where('requisition_no', 'REQ-DEMO-005')->first();
+
+                if ($approvedCash) {
+                    BudgetTransaction::firstOrCreate(
+                        [
+                            'project_id' => $project->id,
+                            'type' => BudgetTransactionType::ApprovedRequisition,
+                            'reference_entity_type' => Requisition::class,
+                            'reference_entity_id' => $approvedCash->id,
+                        ],
+                        [
+                            'boq_item_id' => null,
+                            'amount' => '850000.00',
+                            'reason' => 'Approved cash requisition REQ-DEMO-001',
+                            'created_by' => $admin->id,
+                            'created_at' => now()->subWeek(),
+                        ],
+                    );
+                }
+
+                if ($approvedEquipment) {
+                    BudgetTransaction::firstOrCreate(
+                        [
+                            'project_id' => $project->id,
+                            'boq_item_id' => $excavation->id,
+                            'type' => BudgetTransactionType::ApprovedRequisition,
+                            'reference_entity_type' => Requisition::class,
+                            'reference_entity_id' => $approvedEquipment->id,
+                        ],
+                        [
+                            'amount' => '2400000.00',
+                            'reason' => 'Approved equipment hire REQ-DEMO-005',
+                            'created_by' => $admin->id,
+                            'created_at' => now()->subDays(3),
+                        ],
+                    );
+                }
 
                 BudgetTransaction::firstOrCreate(
                     [
@@ -268,7 +540,17 @@ class SeedDemoCommand extends Command
 
             $this->info("Demo data seeded for project [{$project->code}] — net budget: TZS {$project->net_budget}");
             $this->line('  • 2 projects, 3 BOQ items, 2 suppliers, 2 employees, 2 equipment');
-            $this->line('  • Cash allocation, 3 requisitions (draft / under review / approved), stock balance');
+            $this->line('  • Inventory: cement, diesel, rebar with stock balances');
+            $this->line('  • 8 flexible requisitions by different engineers:');
+            $this->line('      REQ-DEMO-001 cash · approved · Joseph');
+            $this->line('      REQ-DEMO-002 materials + BOQ · under review · Neema');
+            $this->line('      REQ-DEMO-003 catalog cement · draft (Joseph only)');
+            $this->line('      REQ-DEMO-004 labour · under review · Daniel');
+            $this->line('      REQ-DEMO-005 equipment · approved · Neema');
+            $this->line('      REQ-DEMO-006 transport · draft (Neema only)');
+            $this->line('      REQ-DEMO-007 fuel · draft (Daniel only)');
+            $this->line('      REQ-DEMO-008 new material · draft (Joseph only)');
+            $this->line('  Tip: run `php artisan tenant:seed-users demo` first for multi-user logins.');
         });
 
         return self::SUCCESS;

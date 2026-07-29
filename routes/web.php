@@ -46,14 +46,24 @@ Route::middleware('auth')->group(function () {
     Route::get('/projects/create', [ProjectController::class, 'create'])->name('projects.create');
     Route::post('/projects', [ProjectController::class, 'store'])->name('projects.store');
     Route::post('/projects/{id}/select', [ProjectController::class, 'select'])->name('projects.select');
+    Route::get('/projects/{id}/edit', [ProjectController::class, 'edit'])->name('projects.edit');
+    Route::put('/projects/{id}', [ProjectController::class, 'update'])->name('projects.update');
+    Route::delete('/projects/{id}', [ProjectController::class, 'destroy'])->name('projects.destroy');
 
     Route::middleware('project.context')->group(function () {
         Route::get('/projects/{id}', [ProjectController::class, 'show'])->name('projects.show');
         Route::patch('/projects/{id}/progress', [ProjectController::class, 'updateProgress'])->name('projects.progress');
 
         Route::get('/projects/{id}/boq', [BOQController::class, 'tree'])->name('projects.boq');
+        Route::get('/projects/{id}/boq/create', [BOQController::class, 'create'])->name('projects.boq.create');
+        Route::post('/projects/{id}/boq/items', [BOQController::class, 'store'])->name('projects.boq.store');
+        Route::post('/projects/{id}/boq/items/bulk-delete', [BOQController::class, 'bulkDestroy'])->name('projects.boq.items.bulk-destroy');
+        Route::get('/projects/{id}/boq/items/{itemId}/edit', [BOQController::class, 'edit'])->name('projects.boq.items.edit');
+        Route::put('/projects/{id}/boq/items/{itemId}', [BOQController::class, 'update'])->name('projects.boq.items.update');
+        Route::delete('/projects/{id}/boq/items/{itemId}', [BOQController::class, 'destroy'])->name('projects.boq.items.destroy');
         Route::get('/projects/{id}/boq/import', [BOQController::class, 'importForm'])->name('projects.boq.import-form');
         Route::post('/projects/{id}/boq/import', [BOQController::class, 'import'])->name('projects.boq.import');
+        Route::get('/projects/{id}/boq/export', [BOQController::class, 'export'])->name('projects.boq.export');
 
         Route::get('/projects/{id}/budget', [BudgetController::class, 'show'])->name('projects.budget');
         Route::post('/projects/{id}/budget/adjustment', [BudgetController::class, 'manualAdjustment'])->name('projects.budget.adjustment');
@@ -71,11 +81,19 @@ Route::middleware('auth')->group(function () {
     Route::post('/requisitions', [RequisitionController::class, 'store'])->name('requisitions.store');
     Route::get('/requisitions/review-queue', [RequisitionController::class, 'reviewQueue'])->name('requisitions.review-queue');
     Route::get('/requisitions/fulfill-queue', [RequisitionController::class, 'fulfillQueue'])->name('requisitions.fulfill-queue');
+    Route::get('/requisitions/{id}/edit', [RequisitionController::class, 'edit'])->name('requisitions.edit');
+    Route::put('/requisitions/{id}', [RequisitionController::class, 'update'])->name('requisitions.update');
     Route::get('/requisitions/{id}', [RequisitionController::class, 'show'])->name('requisitions.show');
     Route::post('/requisitions/{id}/transition', [RequisitionController::class, 'transition'])->name('requisitions.transition');
     Route::post('/requisitions/{id}/attachments', [RequisitionController::class, 'addAttachment'])->name('requisitions.attachments');
+    Route::delete('/requisitions/{id}', [RequisitionController::class, 'destroy'])->name('requisitions.destroy');
 
     Route::get('/approvals/steps', [ApprovalController::class, 'steps'])->name('approvals.steps');
+    Route::get('/approvals/steps/{id}/resolve', function () {
+        return redirect()
+            ->route('requisitions.review-queue')
+            ->with('error', 'Use the review form to approve or reject a requisition.');
+    })->name('approvals.resolve.get');
     Route::post('/approvals/steps/{id}/resolve', [ApprovalController::class, 'resolve'])->name('approvals.resolve');
 
     Route::get('/finance', [HubController::class, 'finance'])->name('finance.hub');
@@ -111,10 +129,13 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/inventory', [HubController::class, 'inventory'])->name('inventory.hub');
     Route::get('/inventory/items', [InventoryController::class, 'items'])->name('inventory.items');
+    Route::post('/inventory/items', [InventoryController::class, 'storeItem'])->name('inventory.items.store');
+    Route::post('/inventory/locations', [InventoryController::class, 'storeLocation'])->name('inventory.locations.store');
     Route::get('/inventory/balances', [InventoryController::class, 'balances'])->name('inventory.balances');
     Route::get('/inventory/issues', [InventoryController::class, 'issues'])->name('inventory.issues');
     Route::get('/inventory/transactions', [InventoryController::class, 'transactions'])->name('inventory.transactions');
     Route::post('/inventory/issue', [InventoryController::class, 'issue'])->name('inventory.issue');
+    Route::post('/inventory/receive', [InventoryController::class, 'receive'])->name('inventory.receive');
     Route::post('/inventory/transfer', [InventoryController::class, 'transfer'])->name('inventory.transfer');
     Route::post('/inventory/adjust', [InventoryController::class, 'adjust'])->name('inventory.adjust');
 

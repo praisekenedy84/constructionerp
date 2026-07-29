@@ -138,15 +138,45 @@ export type FulfillmentType =
     | 'stock_issue'
     | 'direct_supplier_payment';
 
+export type RequisitionAddressedTo = 'finance' | 'storekeeper';
+
+export type RequisitionResourceType =
+    | 'materials'
+    | 'cash'
+    | 'equipment'
+    | 'labor'
+    | 'fuel'
+    | 'transport'
+    | 'services'
+    | 'other';
+
 export interface RequisitionItem {
     id: number;
     requisition_id: number;
-    boq_item_id: number;
+    boq_item_id: number | null;
+    inventory_item_id?: number | null;
     description: string;
+    unit?: string | null;
     quantity: string;
     unit_cost: string;
     line_total: string;
+    original_quantity?: string | null;
+    original_unit_cost?: string | null;
+    original_line_total?: string | null;
+    original_description?: string | null;
+    details?: {
+        workers?: string;
+        days?: string;
+        rate_per_day?: string;
+        estimated_amount?: string;
+        duration?: string;
+        duration_unit?: string;
+        rate?: string;
+        trips?: string;
+        cost_per_trip?: string;
+    } | null;
     boq_item?: BoqItem;
+    inventory_item?: InventoryItem;
 }
 
 export interface RequisitionStatusHistory {
@@ -160,6 +190,27 @@ export interface RequisitionStatusHistory {
     original_amount: string | null;
     amended_amount: string | null;
     variance: string | null;
+    amendment_items?: {
+        before: Array<{
+            id?: number;
+            description: string;
+            unit?: string | null;
+            quantity: string;
+            unit_cost: string;
+            line_total: string;
+        }>;
+        after: Array<{
+            id?: number;
+            description: string;
+            unit?: string | null;
+            quantity: string;
+            unit_cost: string;
+            line_total: string;
+            original_quantity?: string | null;
+            original_unit_cost?: string | null;
+            original_line_total?: string | null;
+        }>;
+    } | null;
     created_at: string;
     actor?: { id: number; name: string };
 }
@@ -177,18 +228,20 @@ export interface Requisition {
     id: number;
     requisition_no: string;
     project_id: number;
-    boq_item_id: number;
+    boq_item_id: number | null;
     department: string;
+    resource_type: RequisitionResourceType;
     requestor_id: number;
     status: RequisitionStatus;
     fulfillment_type: FulfillmentType;
+    addressed_to?: RequisitionAddressedTo;
     original_amount: string;
     amended_amount: string | null;
     created_at: string;
     updated_at: string;
     project?: Project;
     boq_item?: BoqItem;
-    requestor?: { id: number; name: string };
+    requestor?: { id: number; name: string; email?: string };
     items?: RequisitionItem[];
     history?: RequisitionStatusHistory[];
     attachments?: RequisitionAttachment[];

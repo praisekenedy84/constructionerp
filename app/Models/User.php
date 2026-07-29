@@ -51,6 +51,11 @@ class User extends Authenticatable
         ]);
     }
 
+    public function isSystemAdministrator(): bool
+    {
+        return $this->hasRole('System Administrator');
+    }
+
     public function isPlatformAdmin(): bool
     {
         return $this->hasRole('Platform Admin');
@@ -63,12 +68,17 @@ class User extends Authenticatable
 
     public function canManagePlatform(): bool
     {
-        return $this->hasRole(['Platform Admin', 'System Administrator']);
+        if ($this->isPlatformAdmin() || $this->isSystemAdministrator()) {
+            return true;
+        }
+
+        return $this->hasModulePermission('auth', 'read');
     }
 
     public function hasModulePermission(string $module, string $action): bool
     {
-        if ($this->isSuperUser()) {
+        // Platform Admin and System Administrator can perform every tenant action.
+        if ($this->isPlatformAdmin() || $this->isSystemAdministrator()) {
             return true;
         }
 
@@ -78,7 +88,7 @@ class User extends Authenticatable
     /** @return list<string> */
     public function modulePermissions(): array
     {
-        if ($this->isSuperUser()) {
+        if ($this->isPlatformAdmin() || $this->isSystemAdministrator()) {
             return ModulePermission::allPermissionNames();
         }
 
@@ -92,6 +102,7 @@ class User extends Authenticatable
 
     public function canOverrideLimits(): bool
     {
-        return $this->hasRole(['Finance Manager', 'Managing Director', 'System Administrator']);
+        return $this->hasModulePermission('requisitions', 'override')
+            || $this->hasModulePermission('budgets', 'override');
     }
 }

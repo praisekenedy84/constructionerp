@@ -26,7 +26,7 @@ class InventoryIssue extends Model
     protected function casts(): array
     {
         return [
-            'quantity' => 'decimal:4',
+            'quantity' => 'decimal:3',
             'value' => 'decimal:2',
             'issued_at' => 'datetime',
             'created_at' => 'datetime',

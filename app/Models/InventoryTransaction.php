@@ -29,7 +29,7 @@ class InventoryTransaction extends Model
     {
         return [
             'type' => InventoryTransactionType::class,
-            'quantity' => 'decimal:4',
+            'quantity' => 'decimal:3',
             'unit_cost' => 'decimal:2',
             'created_at' => 'datetime',
         ];

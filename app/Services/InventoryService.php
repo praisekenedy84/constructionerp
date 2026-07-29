@@ -22,10 +22,10 @@ class InventoryService
         array $opts = [],
     ): InventoryIssue {
         return DB::transaction(function () use ($inventoryItemId, $stockLocationId, $quantity, $actor, $opts) {
-            $qty = bcadd($quantity, '0', 4);
+            $qty = bcadd($quantity, '0', 3);
             $balance = $this->lockBalance($inventoryItemId, $stockLocationId);
 
-            if (bccomp((string) $balance->quantity_on_hand, $qty, 4) < 0) {
+            if (bccomp((string) $balance->quantity_on_hand, $qty, 3) < 0) {
                 throw new InsufficientStockException(
                     $inventoryItemId,
                     $stockLocationId,
@@ -75,15 +75,15 @@ class InventoryService
         array $opts = [],
     ): InventoryTransaction {
         return DB::transaction(function () use ($inventoryItemId, $stockLocationId, $quantity, $actor, $unitCost, $opts) {
-            $qty = bcadd($quantity, '0', 4);
+            $qty = bcadd($quantity, '0', 3);
             $cost = bcadd($unitCost, '0', 2);
             $balance = $this->lockBalance($inventoryItemId, $stockLocationId);
 
             $oldQty = (string) $balance->quantity_on_hand;
             $oldCost = (string) $balance->average_cost;
-            $newQty = bcadd($oldQty, $qty, 4);
+            $newQty = bcadd($oldQty, $qty, 3);
 
-            if (bccomp($newQty, '0', 4) === 1) {
+            if (bccomp($newQty, '0', 3) === 1) {
                 $totalValue = bcadd(bcmul($oldQty, $oldCost, 2), bcmul($qty, $cost, 2), 2);
                 $balance->average_cost = bcdiv($totalValue, $newQty, 2);
             }
@@ -115,10 +115,10 @@ class InventoryService
         array $opts = [],
     ): array {
         return DB::transaction(function () use ($inventoryItemId, $fromLocationId, $toLocationId, $quantity, $actor) {
-            $qty = bcadd($quantity, '0', 4);
+            $qty = bcadd($quantity, '0', 3);
             $source = $this->lockBalance($inventoryItemId, $fromLocationId);
 
-            if (bccomp((string) $source->quantity_on_hand, $qty, 4) < 0) {
+            if (bccomp((string) $source->quantity_on_hand, $qty, 3) < 0) {
                 throw new InsufficientStockException(
                     $inventoryItemId,
                     $fromLocationId,
@@ -169,15 +169,15 @@ class InventoryService
         array $opts = [],
     ): InventoryTransaction {
         return DB::transaction(function () use ($inventoryItemId, $stockLocationId, $quantity, $actor, $unitCost, $opts) {
-            $qty = bcadd($quantity, '0', 4);
+            $qty = bcadd($quantity, '0', 3);
             $cost = bcadd($unitCost, '0', 2);
             $balance = $this->lockBalance($inventoryItemId, $stockLocationId);
 
             $oldQty = (string) $balance->quantity_on_hand;
             $oldCost = (string) $balance->average_cost;
-            $newQty = bcadd($oldQty, $qty, 4);
+            $newQty = bcadd($oldQty, $qty, 3);
 
-            if (bccomp($newQty, '0', 4) === 1) {
+            if (bccomp($newQty, '0', 3) === 1) {
                 $totalValue = bcadd(bcmul($oldQty, $oldCost, 2), bcmul($qty, $cost, 2), 2);
                 $balance->average_cost = bcdiv($totalValue, $newQty, 2);
             }
@@ -208,10 +208,10 @@ class InventoryService
         array $opts = [],
     ): InventoryTransaction {
         return DB::transaction(function () use ($inventoryItemId, $stockLocationId, $quantity, $actor, $opts) {
-            $qty = bcadd($quantity, '0', 4);
+            $qty = bcadd($quantity, '0', 3);
             $balance = $this->lockBalance($inventoryItemId, $stockLocationId);
 
-            if (bccomp((string) $balance->quantity_on_hand, $qty, 4) < 0) {
+            if (bccomp((string) $balance->quantity_on_hand, $qty, 3) < 0) {
                 throw new InsufficientStockException(
                     $inventoryItemId,
                     $stockLocationId,
@@ -245,26 +245,26 @@ class InventoryService
         array $opts = [],
     ): InventoryTransaction {
         return DB::transaction(function () use ($inventoryItemId, $stockLocationId, $newQuantity, $actor, $opts) {
-            $targetQty = bcadd($newQuantity, '0', 4);
+            $targetQty = bcadd($newQuantity, '0', 3);
             $balance = $this->lockBalance($inventoryItemId, $stockLocationId);
             $currentQty = (string) $balance->quantity_on_hand;
 
-            if (bccomp($targetQty, '0', 4) < 0) {
+            if (bccomp($targetQty, '0', 3) < 0) {
                 throw new InsufficientStockException(
                     $inventoryItemId,
                     $stockLocationId,
-                    bcsub('0', $targetQty, 4),
+                    bcsub('0', $targetQty, 3),
                     $currentQty
                 );
             }
 
-            $difference = bcsub($targetQty, $currentQty, 4);
+            $difference = bcsub($targetQty, $currentQty, 3);
 
-            if (bccomp($difference, '0', 4) === 0) {
+            if (bccomp($difference, '0', 3) === 0) {
                 throw new \InvalidArgumentException('Adjustment quantity matches current stock.');
             }
 
-            if (bccomp($difference, '0', 4) === 1) {
+            if (bccomp($difference, '0', 3) === 1) {
                 $this->receive(
                     $inventoryItemId,
                     $stockLocationId,
@@ -275,7 +275,7 @@ class InventoryService
                 );
             } else {
                 $outQty = ltrim($difference, '-');
-                if (bccomp($currentQty, $outQty, 4) < 0) {
+                if (bccomp($currentQty, $outQty, 3) < 0) {
                     throw new InsufficientStockException(
                         $inventoryItemId,
                         $stockLocationId,

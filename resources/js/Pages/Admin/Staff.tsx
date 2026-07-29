@@ -4,6 +4,7 @@ import ListToolbar from '@/Components/Shared/ListToolbar';
 import PaginationLinks from '@/Components/Shared/PaginationLinks';
 import PageHeader from '@/Components/Shared/PageHeader';
 import AdminNav from '@/Components/Admin/AdminNav';
+import { AmountInput } from '@/Components/ui/amount-input';
 import { Button } from '@/Components/ui/button';
 import { Dialog } from '@/Components/ui/dialog';
 import { confirmDiscardIfDirty, DialogFormActions } from '@/Components/ui/dialog-form';
@@ -141,22 +142,18 @@ export default function AdminStaff() {
                 {form.data.pay_structure === 'daily' ? (
                     <div className="space-y-2">
                         <Label>Daily rate</Label>
-                        <Input
-                            type="number"
-                            step="0.01"
+                        <AmountInput
                             value={form.data.daily_rate}
-                            onChange={(e) => form.setData('daily_rate', e.target.value)}
+                            onValueChange={(v) => form.setData('daily_rate', v)}
                             required
                         />
                     </div>
                 ) : (
                     <div className="space-y-2">
                         <Label>Monthly salary</Label>
-                        <Input
-                            type="number"
-                            step="0.01"
+                        <AmountInput
                             value={form.data.monthly_salary}
-                            onChange={(e) => form.setData('monthly_salary', e.target.value)}
+                            onValueChange={(v) => form.setData('monthly_salary', v)}
                             required
                         />
                     </div>

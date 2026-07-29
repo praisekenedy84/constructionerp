@@ -271,6 +271,10 @@ class AdminController extends Controller
         return Inertia::render('Admin/Permissions', [
             'modules' => ModulePermission::MODULES,
             'actions' => ModulePermission::ACTIONS,
+            'catalog' => ModulePermission::catalog(),
+            'module_labels' => ModulePermission::moduleLabels(),
+            'action_labels' => ModulePermission::actionLabels(),
+            'action_descriptions' => ModulePermission::actionDescriptions(),
             'roles' => $this->formatRolesForPermissions($matrix),
             'editable_roles' => MenuCatalog::editablePermissionRoles(),
             'policy_defaults' => $matrix,

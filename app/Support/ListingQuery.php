@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 
@@ -13,8 +14,12 @@ class ListingQuery
         private readonly Request $request,
     ) {}
 
-    public static function for(Builder $query, Request $request): self
+    public static function for(Builder|Relation $query, Request $request): self
     {
+        if ($query instanceof Relation) {
+            $query = $query->getQuery();
+        }
+
         return new self($query, $request);
     }
 

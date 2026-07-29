@@ -35,16 +35,16 @@ class BoqItem extends Model
     {
         return [
             'category' => BoqItemCategory::class,
-            'budgeted_qty' => 'decimal:4',
+            'budgeted_qty' => 'decimal:3',
             'unit_rate' => 'decimal:2',
             'budgeted_amount' => 'decimal:2',
-            'reserved_qty' => 'decimal:4',
-            'consumed_qty' => 'decimal:4',
-            'requested_qty' => 'decimal:4',
-            'approved_qty' => 'decimal:4',
-            'procured_qty' => 'decimal:4',
-            'received_qty' => 'decimal:4',
-            'issued_qty' => 'decimal:4',
+            'reserved_qty' => 'decimal:3',
+            'consumed_qty' => 'decimal:3',
+            'requested_qty' => 'decimal:3',
+            'approved_qty' => 'decimal:3',
+            'procured_qty' => 'decimal:3',
+            'received_qty' => 'decimal:3',
+            'issued_qty' => 'decimal:3',
         ];
     }
 
@@ -52,9 +52,9 @@ class BoqItem extends Model
     {
         return Attribute::get(function (): string {
             return bcsub(
-                bcsub((string) $this->budgeted_qty, (string) $this->consumed_qty, 4),
+                bcsub((string) $this->budgeted_qty, (string) $this->consumed_qty, 3),
                 (string) $this->reserved_qty,
-                4
+                3
             );
         });
     }

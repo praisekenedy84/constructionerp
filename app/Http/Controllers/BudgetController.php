@@ -18,7 +18,7 @@ class BudgetController extends Controller
 
     public function show(Request $request, int $id): Response
     {
-        $this->authorizeRoles($request->user(), ['Finance Manager', 'Accountant', 'Project Manager']);
+        $this->authorizePermission($request->user(), 'budgets', 'read');
 
         $project = Project::findOrFail($id);
         $listing = ListingQuery::for(
@@ -39,7 +39,7 @@ class BudgetController extends Controller
 
     public function manualAdjustment(ManualBudgetAdjustmentRequest $request, int $id): RedirectResponse
     {
-        $this->authorizeRoles($request->user(), ['Finance Manager', 'Managing Director']);
+        $this->authorizePermission($request->user(), 'budgets', 'override');
 
         $this->budgetService->createTransaction($id, [
             'type' => BudgetTransactionType::ManualAdjustment,

@@ -24,6 +24,8 @@ class EquipmentController extends Controller
 
     public function index(Request $request): Response
     {
+        $this->authorizePermission($request->user(), 'equipment', 'read');
+
         $listing = ListingQuery::for(
             Equipment::query()->with(['assignments.project']),
             $request,
@@ -40,6 +42,8 @@ class EquipmentController extends Controller
 
     public function assignments(Request $request): Response
     {
+        $this->authorizePermission($request->user(), 'equipment', 'read');
+
         $listing = ListingQuery::for(
             EquipmentAssignment::query()->with(['equipment', 'project']),
             $request,
@@ -58,6 +62,8 @@ class EquipmentController extends Controller
 
     public function maintenanceIndex(Request $request): Response
     {
+        $this->authorizePermission($request->user(), 'equipment', 'read');
+
         $listing = ListingQuery::for(
             EquipmentMaintenance::query()->with('equipment'),
             $request,
@@ -75,6 +81,8 @@ class EquipmentController extends Controller
 
     public function fuelIndex(Request $request): Response
     {
+        $this->authorizePermission($request->user(), 'equipment', 'read');
+
         $listing = ListingQuery::for(
             EquipmentFuelLog::query()->with('equipment'),
             $request,
@@ -101,9 +109,7 @@ class EquipmentController extends Controller
 
     public function assign(EquipmentAssignRequest $request): RedirectResponse
     {
-        $this->authorizePermission($request->user(), 'equipment', 'update');
-
-        $this->equipmentService->assign($request->validated(), $request->user());
+        $this->authorizePermission($request->user(), 'equipment', 'assign');
 
         return back()->with('success', 'Equipment assigned to project.');
     }

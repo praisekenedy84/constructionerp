@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\ApproveCashRequest;
 use App\Http\Requests\CashReceiveRequest;
 use App\Http\Requests\CashRequestRequest;
 use App\Models\CashAllocation;
@@ -43,21 +44,24 @@ class CashController extends Controller
         return back()->with('success', "Cash request #{$allocation->id} submitted.");
     }
 
-    public function approve(Request $request, int $id): RedirectResponse
+    public function approve(ApproveCashRequest $request, int $id): RedirectResponse
     {
         $this->authorizePermission($request->user(), 'budgets', 'approve');
-        $this->authorizeRoles($request->user(), 'Manager');
 
         $allocation = CashAllocation::findOrFail($id);
-        $this->cashService->approve($allocation, $request->user());
 
-        return back()->with('success', 'Cash request approved.');
+        try {
+            $this->cashService->approve($allocation, $request->user(), $request->validated());
+        } catch (\InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', 'Fund request approved — amount added to finance cash on hand.');
     }
 
     public function reject(Request $request, int $id): RedirectResponse
     {
         $this->authorizePermission($request->user(), 'budgets', 'reject');
-        $this->authorizeRoles($request->user(), 'Manager');
 
         $allocation = CashAllocation::findOrFail($id);
         $this->cashService->reject($allocation, $request->user(), $request->input('reason'));
@@ -67,19 +71,24 @@ class CashController extends Controller
 
     public function receive(CashReceiveRequest $request, int $id): RedirectResponse
     {
-        $this->authorizePermission($request->user(), 'budgets', 'update');
+        $this->authorizePermission($request->user(), 'budgets', 'receive');
 
         $allocation = CashAllocation::findOrFail($id);
         $validated = $request->validated();
 
-        $this->cashService->receive(
-            $allocation,
-            (string) $validated['received_amount'],
-            [
-                'method' => $validated['method'] ?? null,
-                'reference_no' => $validated['reference_no'] ?? null,
-            ],
-        );
+        try {
+            $this->cashService->receive(
+                $allocation,
+                (string) $validated['received_amount'],
+                $request->user(),
+                [
+                    'method' => $validated['method'] ?? null,
+                    'reference_no' => $validated['reference_no'] ?? null,
+                ],
+            );
+        } catch (\InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
+        }
 
         return back()->with('success', 'Cash receipt recorded.');
     }

@@ -4,6 +4,7 @@ import ListToolbar from '@/Components/Shared/ListToolbar';
 import PaginationLinks from '@/Components/Shared/PaginationLinks';
 import PageHeader from '@/Components/Shared/PageHeader';
 import StatusBadge from '@/Components/Shared/StatusBadge';
+import { AmountInput } from '@/Components/ui/amount-input';
 import { Button } from '@/Components/ui/button';
 import { Dialog } from '@/Components/ui/dialog';
 import { confirmDiscardIfDirty, DialogFormActions } from '@/Components/ui/dialog-form';
@@ -50,8 +51,13 @@ export default function FundApprovals() {
 
     const canApprove = hasPermission(auth.user, 'budgets', 'approve');
     const canReject = hasPermission(auth.user, 'budgets', 'reject');
-    const canReceive = hasPermission(auth.user, 'budgets', 'update');
+    const canReceive = hasPermission(auth.user, 'budgets', 'receive');
     const canRequest = hasPermission(auth.user, 'budgets', 'create');
+
+    const [approvingId, setApprovingId] = useState<number | null>(null);
+    const [approveAmount, setApproveAmount] = useState('');
+    const [approveMethod, setApproveMethod] = useState('');
+    const [approveReference, setApproveReference] = useState('');
 
     const {
         data: requestData,
@@ -104,7 +110,18 @@ export default function FundApprovals() {
     }
 
     function approve(id: number) {
-        router.post(`/finance/cash-requests/${id}/approve`);
+        router.post(`/finance/cash-requests/${id}/approve`, {
+            approved_amount: approveAmount || undefined,
+            method: approveMethod || undefined,
+            reference_no: approveReference || undefined,
+        }, {
+            onSuccess: () => {
+                setApprovingId(null);
+                setApproveAmount('');
+                setApproveMethod('');
+                setApproveReference('');
+            },
+        });
     }
 
     function reject(id: number) {
@@ -145,7 +162,7 @@ export default function FundApprovals() {
             <div className="space-y-6">
                 <PageHeader
                     title="Fund Approvals"
-                    description="Review all fund requests — pending, approved, received, and rejected — with full audit history."
+                    description="Finance requests funds; manager approval deducts project budget and floats cash on hand for disbursements."
                     actions={
                         <div className="flex flex-wrap gap-2">
                             {canRequest && (
@@ -287,22 +304,33 @@ export default function FundApprovals() {
                                                                 <Button
                                                                     size="sm"
                                                                     className="bg-green-700 hover:bg-green-800"
-                                                                    onClick={() => approve(allocation.id)}
+                                                                    onClick={() => {
+                                                                        setApprovingId(
+                                                                            approvingId === allocation.id
+                                                                                ? null
+                                                                                : allocation.id,
+                                                                        );
+                                                                        setApproveAmount(
+                                                                            allocation.requested_amount,
+                                                                        );
+                                                                        setRejectingId(null);
+                                                                    }}
                                                                 >
-                                                                    Approve
+                                                                    Approve / Amend
                                                                 </Button>
                                                                 {canReject && (
                                                                     <Button
                                                                         size="sm"
                                                                         variant="outline"
                                                                         className="border-red-300 text-red-700"
-                                                                        onClick={() =>
+                                                                        onClick={() => {
                                                                             setRejectingId(
                                                                                 rejectingId === allocation.id
                                                                                     ? null
                                                                                     : allocation.id,
-                                                                            )
-                                                                        }
+                                                                            );
+                                                                            setApprovingId(null);
+                                                                        }}
                                                                     >
                                                                         Reject
                                                                     </Button>
@@ -327,12 +355,52 @@ export default function FundApprovals() {
                                                             </Button>
                                                         )}
 
-                                                        {allocation.status !== 'pending' &&
-                                                            allocation.status !== 'approved' && (
-                                                                <span className="text-xs text-slate-400">
-                                                                    No actions
-                                                                </span>
-                                                            )}
+                                                        {allocation.status === 'received' && (
+                                                            <span className="text-xs text-green-700">
+                                                                Floated to cash on hand
+                                                            </span>
+                                                        )}
+
+                                                        {allocation.status === 'rejected' && (
+                                                            <span className="text-xs text-slate-400">
+                                                                Rejected
+                                                            </span>
+                                                        )}
+
+                                                        {approvingId === allocation.id && (
+                                                            <div className="flex w-full max-w-xs flex-col gap-2">
+                                                                <p className="text-xs text-slate-500">
+                                                                    Leave amount as-is or amend before funding cash
+                                                                    on hand.
+                                                                </p>
+                                                                <AmountInput
+                                                                    placeholder="Approved amount"
+                                                                    value={approveAmount}
+                                                                    onValueChange={setApproveAmount}
+                                                                />
+                                                                <Input
+                                                                    placeholder="Method (optional)"
+                                                                    value={approveMethod}
+                                                                    onChange={(e) =>
+                                                                        setApproveMethod(e.target.value)
+                                                                    }
+                                                                />
+                                                                <Input
+                                                                    placeholder="Reference (optional)"
+                                                                    value={approveReference}
+                                                                    onChange={(e) =>
+                                                                        setApproveReference(e.target.value)
+                                                                    }
+                                                                />
+                                                                <Button
+                                                                    size="sm"
+                                                                    className="bg-green-700 hover:bg-green-800"
+                                                                    onClick={() => approve(allocation.id)}
+                                                                >
+                                                                    Confirm &amp; float cash
+                                                                </Button>
+                                                            </div>
+                                                        )}
 
                                                         {rejectingId === allocation.id && (
                                                             <div className="flex w-full max-w-xs flex-col gap-2">
@@ -355,12 +423,10 @@ export default function FundApprovals() {
 
                                                         {receivingId === allocation.id && (
                                                             <div className="flex w-full max-w-xs flex-col gap-2">
-                                                                <Input
+                                                                <AmountInput
                                                                     placeholder="Received amount"
                                                                     value={receiveAmount}
-                                                                    onChange={(e) =>
-                                                                        setReceiveAmount(e.target.value)
-                                                                    }
+                                                                    onValueChange={setReceiveAmount}
                                                                 />
                                                                 <Input
                                                                     placeholder="Method (optional)"
@@ -432,12 +498,10 @@ export default function FundApprovals() {
                         </div>
                         <div className="space-y-2">
                             <Label htmlFor="request-amount">Amount (TZS)</Label>
-                            <Input
+                            <AmountInput
                                 id="request-amount"
-                                type="number"
-                                step="0.01"
                                 value={requestData.requested_amount}
-                                onChange={(e) => setRequestData('requested_amount', e.target.value)}
+                                onValueChange={(v) => setRequestData('requested_amount', v)}
                                 required
                             />
                             {requestErrors.requested_amount && (

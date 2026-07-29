@@ -5,6 +5,7 @@ import ListToolbar from '@/Components/Shared/ListToolbar';
 import PaginationLinks from '@/Components/Shared/PaginationLinks';
 import PageHeader from '@/Components/Shared/PageHeader';
 import StatusBadge from '@/Components/Shared/StatusBadge';
+import { AmountInput } from '@/Components/ui/amount-input';
 import { Button } from '@/Components/ui/button';
 import { Dialog } from '@/Components/ui/dialog';
 import { confirmDiscardIfDirty, DialogFormActions } from '@/Components/ui/dialog-form';
@@ -190,12 +191,10 @@ export default function CashFlow() {
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="cash-amount">Amount (TZS)</Label>
-                        <Input
+                        <AmountInput
                             id="cash-amount"
-                            type="number"
-                            step="0.01"
                             value={data.requested_amount}
-                            onChange={(e) => setData('requested_amount', e.target.value)}
+                            onValueChange={(v) => setData('requested_amount', v)}
                             required
                         />
                         {errors.requested_amount && (

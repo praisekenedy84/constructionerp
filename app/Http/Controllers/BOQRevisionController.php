@@ -14,7 +14,7 @@ class BOQRevisionController extends Controller
 
     public function store(StoreBoqRevisionRequest $request): RedirectResponse
     {
-        $this->authorizeRoles($request->user(), ['Quantity Surveyor', 'Project Manager']);
+        $this->authorizePermission($request->user(), 'boq', 'update');
 
         $revision = $this->boqService->createRevision(
             $request->integer('project_id'),
@@ -27,7 +27,7 @@ class BOQRevisionController extends Controller
 
     public function activate(Request $request, int $id): RedirectResponse
     {
-        $this->authorizeRoles($request->user(), ['Quantity Surveyor', 'Managing Director']);
+        $this->authorizePermission($request->user(), 'boq', 'approve');
 
         $revision = BoqRevision::findOrFail($id);
         $this->boqService->activateRevision($revision, $request->user());

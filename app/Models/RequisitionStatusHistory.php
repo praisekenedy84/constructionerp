@@ -22,6 +22,7 @@ class RequisitionStatusHistory extends Model
         'original_amount',
         'amended_amount',
         'variance',
+        'amendment_items',
         'created_at',
     ];
 
@@ -33,6 +34,7 @@ class RequisitionStatusHistory extends Model
             'original_amount' => 'decimal:2',
             'amended_amount' => 'decimal:2',
             'variance' => 'decimal:2',
+            'amendment_items' => 'array',
             'created_at' => 'datetime',
         ];
     }

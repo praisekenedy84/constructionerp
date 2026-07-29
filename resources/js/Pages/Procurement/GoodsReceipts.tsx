@@ -9,7 +9,7 @@ import { Dialog } from '@/Components/ui/dialog';
 import { confirmDiscardIfDirty, DialogFormActions } from '@/Components/ui/dialog-form';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
-import { formatDate } from '@/lib/formatters';
+import { formatDate, formatQuantity } from '@/lib/formatters';
 import { GoodsReceipt, ListingFilters, PageProps, Paginated, PurchaseOrder } from '@/types';
 import { Head, useForm, usePage } from '@inertiajs/react';
 import { Plus } from 'lucide-react';
@@ -103,7 +103,7 @@ export default function GoodsReceipts() {
                                     <tr key={grn.id}>
                                         <td className="px-6 py-4 font-mono">GRN-{grn.id}</td>
                                         <td className="px-6 py-4">PO-{grn.purchase_order_id}</td>
-                                        <td className="px-6 py-4">{grn.quantity_received}</td>
+                                        <td className="px-6 py-4">{formatQuantity(grn.quantity_received)}</td>
                                         <td className="px-6 py-4">
                                             <StatusBadge status={grn.condition} />
                                         </td>
@@ -146,7 +146,7 @@ export default function GoodsReceipts() {
                         <Input
                             id="grn-qty"
                             type="number"
-                            step="0.0001"
+                            step="0.001"
                             value={data.quantity_received}
                             onChange={(e) => setData('quantity_received', e.target.value)}
                             required

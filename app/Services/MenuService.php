@@ -49,10 +49,6 @@ class MenuService
                 continue;
             }
 
-            if ($item['key'] === 'admin' && ! $user->canManagePlatform()) {
-                continue;
-            }
-
             $entry = [
                 'key' => $item['key'],
                 'label' => $item['label'],

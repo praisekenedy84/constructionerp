@@ -14,7 +14,7 @@ class FinanceController extends Controller
 
     public function dashboard(Request $request, int $projectId): Response
     {
-        $this->authorizeRoles($request->user(), ['Finance Manager', 'Accountant', 'Manager']);
+        $this->authorizePermission($request->user(), 'budgets', 'read');
 
         $project = Project::findOrFail($projectId);
 

@@ -4,9 +4,11 @@ import PageHeader from '@/Components/Shared/PageHeader';
 import StatusBadge from '@/Components/Shared/StatusBadge';
 import { Button } from '@/Components/ui/button';
 import { formatCurrency, formatDate, formatPercent } from '@/lib/formatters';
+import { hasPermission } from '@/lib/permissions';
 import { PageProps, Project } from '@/types';
-import { Head, Link, usePage } from '@inertiajs/react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
 import { cn } from '@/lib/utils';
+import { Pencil, Trash2 } from 'lucide-react';
 
 type Tab = 'overview' | 'boq' | 'budget' | 'requisitions' | 'finance' | 'reports';
 
@@ -25,7 +27,17 @@ const tabs: { key: Tab; label: string; href: (id: number) => string }[] = [
 ];
 
 export default function ProjectsShow() {
-    const { project, tab = 'overview' } = usePage<ProjectsShowProps>().props;
+    const { project, tab = 'overview', auth } = usePage<ProjectsShowProps>().props;
+    const canUpdate = hasPermission(auth.user, 'projects', 'update');
+    const canDelete = hasPermission(auth.user, 'projects', 'delete-soft');
+
+    function archiveProject() {
+        if (!confirm(`Archive project "${project.code} — ${project.name}"?`)) {
+            return;
+        }
+
+        router.delete(`/projects/${project.id}`);
+    }
 
     return (
         <AppShell title={project.name}>
@@ -35,11 +47,33 @@ export default function ProjectsShow() {
                     title={project.name}
                     description={`${project.code} · ${project.client} · ${project.location}`}
                     actions={
-                        <Link href={`/projects/${project.id}/valuations`}>
-                            <Button variant="outline" size="sm">
-                                Valuations
-                            </Button>
-                        </Link>
+                        <div className="flex flex-wrap items-center gap-2">
+                            {canUpdate && (
+                                <Link href={`/projects/${project.id}/edit`}>
+                                    <Button variant="outline" size="sm">
+                                        <Pencil className="h-4 w-4" />
+                                        Edit
+                                    </Button>
+                                </Link>
+                            )}
+                            {canDelete && (
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="border-red-200 text-red-700 hover:bg-red-50"
+                                    onClick={archiveProject}
+                                >
+                                    <Trash2 className="h-4 w-4" />
+                                    Archive
+                                </Button>
+                            )}
+                            <Link href={`/projects/${project.id}/valuations`}>
+                                <Button variant="outline" size="sm">
+                                    Valuations
+                                </Button>
+                            </Link>
+                        </div>
                     }
                 />
 

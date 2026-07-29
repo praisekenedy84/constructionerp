@@ -19,7 +19,7 @@ interface DashboardPageProps extends PageProps {
 }
 
 export default function Dashboard() {
-    const { auth, stats, charts, flash } = usePage<DashboardPageProps>().props;
+    const { auth, stats, charts } = usePage<DashboardPageProps>().props;
 
     const cards = [
         {
@@ -75,17 +75,6 @@ export default function Dashboard() {
                         Executive overview of projects, budget, cash, and approvals.
                     </p>
                 </div>
-
-                {flash.success && (
-                    <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
-                        {flash.success}
-                    </div>
-                )}
-                {flash.error && (
-                    <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-                        {flash.error}
-                    </div>
-                )}
 
                 <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
                     {cards.map((card) => (

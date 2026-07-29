@@ -1,4 +1,5 @@
 import AppShell from '@/Components/Layout/AppShell';
+import InventoryNav from '@/Components/Inventory/InventoryNav';
 import DataPanel from '@/Components/Shared/DataPanel';
 import ListToolbar from '@/Components/Shared/ListToolbar';
 import PaginationLinks from '@/Components/Shared/PaginationLinks';
@@ -8,7 +9,7 @@ import { Dialog } from '@/Components/ui/dialog';
 import { confirmDiscardIfDirty, DialogFormActions } from '@/Components/ui/dialog-form';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
-import { formatCurrency, formatDate } from '@/lib/formatters';
+import { formatCurrency, formatDate, formatQuantity } from '@/lib/formatters';
 import {
     InventoryIssue,
     InventoryItem,
@@ -18,8 +19,8 @@ import {
     StockLocation,
     User,
 } from '@/types';
-import { Head, useForm, usePage } from '@inertiajs/react';
-import { Plus } from 'lucide-react';
+import { Head, Link, useForm, usePage } from '@inertiajs/react';
+import { PackageMinus } from 'lucide-react';
 import { FormEvent, useState } from 'react';
 
 interface IssuesProps extends PageProps {
@@ -73,19 +74,20 @@ export default function Issues() {
     }
 
     return (
-        <AppShell title="Inventory Issues">
-            <Head title="Inventory Issues" />
+        <AppShell title="Hand Over">
+            <Head title="Hand Over" />
             <div className="space-y-6">
                 <PageHeader
-                    title="Inventory Issues"
-                    description="Stock issued against requisitions."
+                    title="3. Hand over"
+                    description="Issue stock from a store to a person or site. Quantity leaves On Hand."
                     actions={
                         <Button onClick={openDialog}>
-                            <Plus className="mr-2 h-4 w-4" />
-                            Issue Stock
+                            <PackageMinus className="mr-2 h-4 w-4" />
+                            Hand over stock
                         </Button>
                     }
                 />
+                <InventoryNav active="issues" />
 
                 <ListToolbar
                     baseUrl="/inventory/issues"
@@ -98,7 +100,7 @@ export default function Issues() {
                     ]}
                 />
 
-                <DataPanel title="Issue History" noPadding>
+                <DataPanel title="Handover history" noPadding>
                     <table className="w-full text-sm">
                         <thead>
                             <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs text-slate-500">
@@ -113,7 +115,11 @@ export default function Issues() {
                             {rows.length === 0 ? (
                                 <tr>
                                     <td colSpan={5} className="px-6 py-12 text-center text-slate-500">
-                                        No issues found.
+                                        No handovers yet. Receive stock under{' '}
+                                        <Link href="/inventory/balances" className="text-blue-700 underline">
+                                            On Hand
+                                        </Link>{' '}
+                                        first, then hand it over here.
                                     </td>
                                 </tr>
                             ) : (
@@ -126,7 +132,7 @@ export default function Issues() {
                                                     ? `#${issue.requisition_id}`
                                                     : '—')}
                                         </td>
-                                        <td className="px-6 py-4">{issue.quantity}</td>
+                                        <td className="px-6 py-4">{formatQuantity(issue.quantity)}</td>
                                         <td className="px-6 py-4 text-right font-medium">
                                             {formatCurrency(issue.value)}
                                         </td>
@@ -143,8 +149,8 @@ export default function Issues() {
             <Dialog
                 open={open}
                 onOpenChange={(next) => (next ? openDialog() : closeDialog())}
-                title="Issue Stock"
-                description="Issue inventory from a stock location to a recipient."
+                title="Hand over stock"
+                description="Give stock to a recipient. This reduces On Hand immediately."
             >
                 <form onSubmit={submit} className="space-y-4">
                     <div className="space-y-2">
@@ -168,7 +174,7 @@ export default function Issues() {
                         )}
                     </div>
                     <div className="space-y-2">
-                        <Label htmlFor="issue-location">Location</Label>
+                        <Label htmlFor="issue-location">From location</Label>
                         <select
                             id="issue-location"
                             className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-800"
@@ -176,13 +182,26 @@ export default function Issues() {
                             onChange={(e) => setData('stock_location_id', e.target.value)}
                             required
                         >
-                            <option value="">Select location</option>
+                            <option value="">
+                                {stock_locations.length === 0
+                                    ? 'No locations yet'
+                                    : 'Select location'}
+                            </option>
                             {stock_locations.map((loc) => (
                                 <option key={loc.id} value={loc.id}>
                                     {loc.name}
                                 </option>
                             ))}
                         </select>
+                        {stock_locations.length === 0 && (
+                            <p className="text-xs text-slate-500">
+                                Create one under{' '}
+                                <Link href="/inventory/balances" className="text-blue-700 underline">
+                                    On Hand → Add location
+                                </Link>
+                                .
+                            </p>
+                        )}
                         {errors.stock_location_id && (
                             <p className="text-sm text-red-600">{errors.stock_location_id}</p>
                         )}
@@ -192,7 +211,7 @@ export default function Issues() {
                         <Input
                             id="issue-qty"
                             type="number"
-                            step="0.0001"
+                            step="0.001"
                             min="0"
                             value={data.quantity}
                             onChange={(e) => setData('quantity', e.target.value)}
@@ -240,8 +259,8 @@ export default function Issues() {
                     <DialogFormActions
                         onCancel={closeDialog}
                         processing={processing}
-                        submitLabel="Issue Stock"
-                        processingLabel="Issuing…"
+                        submitLabel="Hand over"
+                        processingLabel="Saving…"
                     />
                 </form>
             </Dialog>

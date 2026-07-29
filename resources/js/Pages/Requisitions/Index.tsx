@@ -9,7 +9,7 @@ import { hasPermission } from '@/lib/permissions';
 import { formatCurrency, formatDate } from '@/lib/formatters';
 import { ListingFilters, PageProps, Paginated, Requisition, RequisitionStatus } from '@/types';
 import { Head, Link, usePage } from '@inertiajs/react';
-import { Eye, Plus } from 'lucide-react';
+import { Eye, Pencil, Plus, ClipboardCheck } from 'lucide-react';
 
 interface RequisitionsIndexProps extends PageProps {
     requisitions: Paginated<Requisition>;
@@ -25,10 +25,21 @@ const statusOptions: RequisitionStatus[] = [
     'rejected', 'fulfilled', 'closed', 'cancelled',
 ];
 
+function isEditableStatus(status: string): boolean {
+    return status === 'draft' || status === 'rejected';
+}
+
+function pendingStepId(req: Requisition): number | null {
+    const steps = req.approval_steps ?? [];
+    const pending = steps.find((step) => step.status === 'pending');
+    return pending?.id ?? null;
+}
+
 export default function RequisitionsIndex() {
     const { requisitions, filters, auth } = usePage<RequisitionsIndexProps>().props;
     const rows = requisitions.data ?? [];
     const canCreate = hasPermission(auth.user, 'requisitions', 'create');
+    const canUpdate = hasPermission(auth.user, 'requisitions', 'update');
     const canApprove = hasPermission(auth.user, 'requisitions', 'approve');
     const canFulfill = hasPermission(auth.user, 'requisitions', 'fulfill');
 
@@ -38,7 +49,7 @@ export default function RequisitionsIndex() {
             <div className="space-y-6">
                 <PageHeader
                     title="Requisitions"
-                    description="Full requisition book with search and filters."
+                    description="Drafts stay private to the author until published for approval. Approvers use Decide or the Review Queue."
                     actions={
                         <>
                             {canApprove && (
@@ -94,48 +105,82 @@ export default function RequisitionsIndex() {
                             <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs text-slate-500">
                                 <th className="px-6 py-3 font-medium">Requisition No</th>
                                 <th className="px-6 py-3 font-medium">Project</th>
+                                <th className="px-6 py-3 font-medium">Resource</th>
                                 <th className="px-6 py-3 font-medium">Department</th>
                                 <th className="px-6 py-3 font-medium">Status</th>
                                 <th className="px-6 py-3 text-right font-medium">Amount</th>
                                 <th className="px-6 py-3 font-medium">Date</th>
-                                <th className="px-6 py-3" />
+                                <th className="px-6 py-3 text-right font-medium">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {rows.length === 0 ? (
                                 <tr>
-                                    <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
+                                    <td colSpan={8} className="px-6 py-12 text-center text-slate-500">
                                         No requisitions found.
                                     </td>
                                 </tr>
                             ) : (
-                                rows.map((req) => (
-                                    <tr key={req.id} className="hover:bg-slate-50">
-                                        <td className="px-6 py-4 font-mono text-slate-900">
-                                            {req.requisition_no}
-                                        </td>
-                                        <td className="px-6 py-4 text-slate-600">
-                                            {req.project?.name ?? '—'}
-                                        </td>
-                                        <td className="px-6 py-4 text-slate-600">{req.department}</td>
-                                        <td className="px-6 py-4">
-                                            <StatusBadge status={String(req.status)} />
-                                        </td>
-                                        <td className="px-6 py-4 text-right font-medium text-slate-900">
-                                            {formatCurrency(req.amended_amount ?? req.original_amount)}
-                                        </td>
-                                        <td className="px-6 py-4 text-slate-600">
-                                            {formatDate(req.created_at)}
-                                        </td>
-                                        <td className="px-6 py-4 text-right">
-                                            <IconLink
-                                                href={`/requisitions/${req.id}`}
-                                                icon={Eye}
-                                                label="View requisition"
-                                            />
-                                        </td>
-                                    </tr>
-                                ))
+                                rows.map((req) => {
+                                    const status = String(req.status);
+                                    const canDecide =
+                                        canApprove &&
+                                        status === 'under_review' &&
+                                        pendingStepId(req) !== null &&
+                                        req.requestor_id !== auth.user?.id;
+
+                                    return (
+                                        <tr key={req.id} className="hover:bg-slate-50">
+                                            <td className="px-6 py-4 font-mono text-slate-900">
+                                                {req.requisition_no}
+                                            </td>
+                                            <td className="px-6 py-4 text-slate-600">
+                                                {req.project?.name ?? '—'}
+                                            </td>
+                                            <td className="px-6 py-4 capitalize text-slate-600">
+                                                {String(req.resource_type ?? '—').replace(/_/g, ' ')}
+                                            </td>
+                                            <td className="px-6 py-4 text-slate-600">{req.department}</td>
+                                            <td className="px-6 py-4">
+                                                <StatusBadge status={status} />
+                                            </td>
+                                            <td className="px-6 py-4 text-right font-medium text-slate-900">
+                                                {formatCurrency(
+                                                    req.amended_amount ?? req.original_amount,
+                                                )}
+                                            </td>
+                                            <td className="px-6 py-4 text-slate-600">
+                                                {formatDate(req.created_at)}
+                                            </td>
+                                            <td className="px-6 py-4 text-right">
+                                                <div className="flex items-center justify-end gap-1">
+                                                    {canDecide && (
+                                                        <IconLink
+                                                            href={`/requisitions/review-queue?requisition_id=${req.id}`}
+                                                            icon={ClipboardCheck}
+                                                            label="Decide — approve, amend, or reject"
+                                                            variant="outline"
+                                                        />
+                                                    )}
+                                                    {canUpdate &&
+                                                        isEditableStatus(status) &&
+                                                        req.requestor_id === auth.user?.id && (
+                                                            <IconLink
+                                                                href={`/requisitions/${req.id}/edit`}
+                                                                icon={Pencil}
+                                                                label="Edit requisition"
+                                                            />
+                                                        )}
+                                                    <IconLink
+                                                        href={`/requisitions/${req.id}`}
+                                                        icon={Eye}
+                                                        label="View requisition"
+                                                    />
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                })
                             )}
                         </tbody>
                     </table>

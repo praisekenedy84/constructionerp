@@ -18,7 +18,7 @@ interface PermissionDeniedProps {
 const statusCopy: Record<number, { title: string; hint: string }> = {
     403: {
         title: 'Access restricted',
-        hint: 'Your role does not include the permission required for this action. Contact your system administrator if you need access.',
+        hint: 'You are not allowed to perform this action with your current account.',
     },
     404: {
         title: 'Page not found',

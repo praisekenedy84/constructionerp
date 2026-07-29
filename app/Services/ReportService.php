@@ -5,7 +5,9 @@ namespace App\Services;
 use App\Enums\ApprovalStepStatus;
 use App\Enums\CashAllocationStatus;
 use App\Enums\ExpenseCategory;
+use App\Enums\FulfillmentType;
 use App\Enums\ProjectStatus;
+use App\Enums\RequisitionAddressedTo;
 use App\Enums\RequisitionStatus;
 use App\Models\ApprovalStep;
 use App\Models\AuditLog;
@@ -257,6 +259,16 @@ class ReportService
                 RequisitionStatus::Approved,
                 RequisitionStatus::Amended,
             ])
+            ->where(function ($query) {
+                $query->where('addressed_to', RequisitionAddressedTo::Finance->value)
+                    ->orWhere(function ($inner) {
+                        $inner->whereNull('addressed_to')
+                            ->whereIn('fulfillment_type', [
+                                FulfillmentType::CashDisbursement->value,
+                                FulfillmentType::DirectSupplierPayment->value,
+                            ]);
+                    });
+            })
             ->get();
 
         $committed = '0';

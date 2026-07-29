@@ -14,7 +14,7 @@ class SupplierController extends Controller
 {
     public function index(Request $request): Response
     {
-        $this->authorizeRoles($request->user(), ['Procurement Officer', 'Storekeeper']);
+        $this->authorizePermission($request->user(), 'procurement', 'read');
 
         $listing = ListingQuery::for(Supplier::query(), $request)
             ->search(['name', 'contact_info'])
@@ -29,7 +29,7 @@ class SupplierController extends Controller
 
     public function store(StoreSupplierRequest $request): RedirectResponse
     {
-        $this->authorizeRoles($request->user(), ['Procurement Officer']);
+        $this->authorizePermission($request->user(), 'procurement', 'create');
 
         Supplier::create($request->validated());
 

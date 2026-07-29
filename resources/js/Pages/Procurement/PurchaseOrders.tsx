@@ -4,6 +4,7 @@ import ListToolbar from '@/Components/Shared/ListToolbar';
 import PaginationLinks from '@/Components/Shared/PaginationLinks';
 import PageHeader from '@/Components/Shared/PageHeader';
 import StatusBadge from '@/Components/Shared/StatusBadge';
+import { AmountInput } from '@/Components/ui/amount-input';
 import { Button } from '@/Components/ui/button';
 import { Dialog } from '@/Components/ui/dialog';
 import { confirmDiscardIfDirty, DialogFormActions } from '@/Components/ui/dialog-form';
@@ -170,7 +171,7 @@ export default function PurchaseOrders() {
                         <Input
                             id="po-quantity"
                             type="number"
-                            step="0.0001"
+                            step="0.001"
                             value={data.quantity}
                             onChange={(e) => setData('quantity', e.target.value)}
                             required
@@ -178,12 +179,10 @@ export default function PurchaseOrders() {
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="po-unit-cost">Unit Cost</Label>
-                        <Input
+                        <AmountInput
                             id="po-unit-cost"
-                            type="number"
-                            step="0.01"
                             value={data.unit_cost}
-                            onChange={(e) => setData('unit_cost', e.target.value)}
+                            onValueChange={(v) => setData('unit_cost', v)}
                             required
                         />
                         {errors.unit_cost && (

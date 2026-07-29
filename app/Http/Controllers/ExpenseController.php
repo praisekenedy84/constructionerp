@@ -23,7 +23,7 @@ class ExpenseController extends Controller
 
     public function store(StoreExpenseRequest $request): RedirectResponse
     {
-        $this->authorizeRoles($request->user(), ['Finance Manager', 'Accountant', 'Project Manager']);
+        $this->authorizePermission($request->user(), 'budgets', 'create');
 
         $this->expenseService->store($request->validated(), $request->user());
 
@@ -32,7 +32,7 @@ class ExpenseController extends Controller
 
     public function index(Request $request): Response
     {
-        $this->authorizeRoles($request->user(), ['Finance Manager', 'Accountant']);
+        $this->authorizePermission($request->user(), 'budgets', 'read');
 
         $query = Expense::query()
             ->with('project')
@@ -63,7 +63,7 @@ class ExpenseController extends Controller
 
     public function overhead(Request $request): Response
     {
-        $this->authorizeRoles($request->user(), ['Finance Manager', 'Accountant']);
+        $this->authorizePermission($request->user(), 'budgets', 'read');
 
         // Posted runs created before salaries moved to overhead still only have PAYROLL
         // budget txs — migrate them so the ledger stays complete.

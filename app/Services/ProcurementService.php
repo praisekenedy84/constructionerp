@@ -26,7 +26,7 @@ class ProcurementService
             $requisition->load('items', 'boqItem');
 
             $quantity = $opts['quantity'] ?? $requisition->items->sum('quantity');
-            $quantity = bcadd((string) $quantity, '0', 4);
+            $quantity = bcadd((string) $quantity, '0', 3);
             $unitCost = bcadd(
                 (string) ($opts['unit_cost'] ?? $requisition->items->first()?->unit_cost ?? '0'),
                 '0',
@@ -74,7 +74,7 @@ class ProcurementService
     ): GoodsReceipt {
         return DB::transaction(function () use ($purchaseOrder, $quantityReceived, $receiver, $opts) {
             $purchaseOrder = PurchaseOrder::lockForUpdate()->findOrFail($purchaseOrder->id);
-            $qty = bcadd($quantityReceived, '0', 4);
+            $qty = bcadd($quantityReceived, '0', 3);
 
             $totalReceived = bcadd(
                 (string) $purchaseOrder->goodsReceipts()->sum('quantity_received'),
@@ -82,7 +82,7 @@ class ProcurementService
                 4
             );
 
-            if (bccomp($totalReceived, (string) $purchaseOrder->quantity, 4) === 1) {
+            if (bccomp($totalReceived, (string) $purchaseOrder->quantity, 3) === 1) {
                 throw new \InvalidArgumentException('Received quantity exceeds purchase order quantity.');
             }
 
@@ -97,7 +97,7 @@ class ProcurementService
 
             $purchaseOrder->boqItem?->increment('received_qty', $qty);
 
-            $newStatus = bccomp($totalReceived, (string) $purchaseOrder->quantity, 4) === 0
+            $newStatus = bccomp($totalReceived, (string) $purchaseOrder->quantity, 3) === 0
                 ? PurchaseOrderStatus::FullyReceived
                 : PurchaseOrderStatus::PartiallyReceived;
 

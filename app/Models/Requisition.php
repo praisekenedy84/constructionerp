@@ -3,8 +3,11 @@
 namespace App\Models;
 
 use App\Enums\FulfillmentType;
+use App\Enums\RequisitionAddressedTo;
+use App\Enums\RequisitionResourceType;
 use App\Enums\RequisitionStatus;
 use App\Traits\LogsActivity;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -19,9 +22,11 @@ class Requisition extends Model
         'project_id',
         'boq_item_id',
         'department',
+        'resource_type',
         'requestor_id',
         'status',
         'fulfillment_type',
+        'addressed_to',
         'original_amount',
         'amended_amount',
     ];
@@ -30,10 +35,66 @@ class Requisition extends Model
     {
         return [
             'status' => RequisitionStatus::class,
+            'resource_type' => RequisitionResourceType::class,
             'fulfillment_type' => FulfillmentType::class,
+            'addressed_to' => RequisitionAddressedTo::class,
             'original_amount' => 'decimal:2',
             'amended_amount' => 'decimal:2',
         ];
+    }
+
+    public function isAddressedToFinance(): bool
+    {
+        return $this->addressed_to === RequisitionAddressedTo::Finance
+            || (
+                $this->addressed_to === null
+                && $this->fulfillment_type !== FulfillmentType::StockIssue
+            );
+    }
+
+    public function isAddressedToStorekeeper(): bool
+    {
+        return $this->addressed_to === RequisitionAddressedTo::Storekeeper
+            || (
+                $this->addressed_to === null
+                && $this->fulfillment_type === FulfillmentType::StockIssue
+            );
+    }
+
+    /**
+     * Drafts stay private to the author until published for approval.
+     *
+     * @param  Builder<Requisition>  $query
+     * @return Builder<Requisition>
+     */
+    public function scopeVisibleTo(Builder $query, User $user): Builder
+    {
+        if ($user->isSuperUser()) {
+            return $query;
+        }
+
+        return $query->where(function (Builder $inner) use ($user) {
+            $inner->where('status', '!=', RequisitionStatus::Draft->value)
+                ->orWhere('requestor_id', $user->id);
+        });
+    }
+
+    public function isVisibleTo(User $user): bool
+    {
+        if ($user->isSuperUser()) {
+            return true;
+        }
+
+        if ($this->status !== RequisitionStatus::Draft) {
+            return true;
+        }
+
+        return (int) $this->requestor_id === (int) $user->id;
+    }
+
+    public function isOwnedBy(User $user): bool
+    {
+        return (int) $this->requestor_id === (int) $user->id;
     }
 
     public function project(): BelongsTo

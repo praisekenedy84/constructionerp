@@ -1,4 +1,5 @@
 import AppShell from '@/Components/Layout/AppShell';
+import AmendRequisitionForm from '@/Components/Domain/AmendRequisitionForm';
 import DataPanel from '@/Components/Shared/DataPanel';
 import ListToolbar from '@/Components/Shared/ListToolbar';
 import PaginationLinks from '@/Components/Shared/PaginationLinks';
@@ -10,18 +11,20 @@ import { Button } from '@/Components/ui/button';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
 import { canOverrideLimits, hasPermission } from '@/lib/permissions';
-import { formatCurrency } from '@/lib/formatters';
+import { formatCurrency, formatQuantity } from '@/lib/formatters';
 import { ApprovalStep, ListingFilters, PageProps, Paginated } from '@/types';
 import { Head, useForm, usePage } from '@inertiajs/react';
 import { FormEvent, useEffect, useState } from 'react';
 
 interface RequisitionsReviewProps extends PageProps {
     approvalSteps: Paginated<ApprovalStep>;
-    filters: ListingFilters;
+    filters: ListingFilters & { requisition_id?: string };
+    focusRequisitionId?: number | null;
 }
 
 export default function RequisitionsReview() {
-    const { approvalSteps, filters, auth } = usePage<RequisitionsReviewProps>().props;
+    const { approvalSteps, filters, auth, focusRequisitionId } =
+        usePage<RequisitionsReviewProps>().props;
     const steps = approvalSteps.data ?? [];
     const [selectedId, setSelectedId] = useState<number | null>(null);
     const selected = steps.find((s) => s.id === selectedId);
@@ -29,17 +32,20 @@ export default function RequisitionsReview() {
     const showOverride = canOverrideLimits(auth.user);
 
     useEffect(() => {
-        setSelectedId(steps.length > 0 ? steps[0].id : null);
-    }, [approvalSteps.current_page, approvalSteps.total]);
+        const currentSteps = approvalSteps.data ?? [];
+        if (focusRequisitionId) {
+            const match = currentSteps.find(
+                (step) => Number(step.requisition?.id ?? step.requisition_id) === focusRequisitionId,
+            );
+            if (match) {
+                setSelectedId(match.id);
+                return;
+            }
+        }
+        setSelectedId(currentSteps.length > 0 ? currentSteps[0].id : null);
+    }, [approvalSteps.current_page, approvalSteps.total, approvalSteps.data, focusRequisitionId]);
 
     const approveForm = useForm({ action: 'approved', comment: '', override: false });
-    const amendForm = useForm({
-        action: 'amended',
-        amended_amount: '',
-        amendment_reason: '',
-        comment: '',
-        override: false,
-    });
     const rejectForm = useForm({ action: 'rejected', comment: '' });
 
     function submitResolve(
@@ -72,7 +78,7 @@ export default function RequisitionsReview() {
             <div className="space-y-6">
                 <PageHeader
                     title="Approval Queue"
-                    description="Resolve pending approval steps for requisitions under review."
+                    description="Only published requisitions appear here. Approve, amend, or reject pending requests."
                 />
 
                 <ListToolbar
@@ -111,6 +117,10 @@ export default function RequisitionsReview() {
                                                     {step.requisition?.project?.name} ·{' '}
                                                     {step.required_role}
                                                 </p>
+                                                <p className="text-xs text-slate-600">
+                                                    From:{' '}
+                                                    {step.requisition?.requestor?.name ?? 'Unknown'}
+                                                </p>
                                                 <p className="mt-1 text-sm font-medium text-slate-700">
                                                     {formatCurrency(
                                                         step.requisition?.original_amount ?? '0',
@@ -129,11 +139,8 @@ export default function RequisitionsReview() {
                         {requisition && selected ? (
                             <>
                                 <DataPanel title={requisition.requisition_no}>
-                                    <div className="mb-4 flex items-center gap-3">
+                                    <div className="mb-4 flex flex-wrap items-center gap-3">
                                         <StatusBadge status={String(requisition.status)} />
-                                        <span className="text-sm text-slate-500">
-                                            {requisition.requestor?.name}
-                                        </span>
                                         <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
                                             Step: {selected.required_role}
                                         </span>
@@ -141,12 +148,65 @@ export default function RequisitionsReview() {
                                             Full details
                                         </LinkButton>
                                     </div>
+                                    <dl className="mb-4 grid gap-3 sm:grid-cols-2">
+                                        <div>
+                                            <dt className="text-xs text-slate-500">Requested by</dt>
+                                            <dd className="text-sm font-medium text-slate-900">
+                                                {requisition.requestor?.name ?? 'Unknown'}
+                                            </dd>
+                                            {requisition.requestor?.email && (
+                                                <dd className="text-xs text-slate-500">
+                                                    {requisition.requestor.email}
+                                                </dd>
+                                            )}
+                                        </div>
+                                        <div>
+                                            <dt className="text-xs text-slate-500">Department</dt>
+                                            <dd className="text-sm font-medium text-slate-900">
+                                                {requisition.department}
+                                            </dd>
+                                        </div>
+                                        <div>
+                                            <dt className="text-xs text-slate-500">Project</dt>
+                                            <dd className="text-sm font-medium text-slate-900">
+                                                {requisition.project?.name ?? '—'}
+                                            </dd>
+                                        </div>
+                                        <div>
+                                            <dt className="text-xs text-slate-500">Resource</dt>
+                                            <dd className="text-sm font-medium capitalize text-slate-900">
+                                                {String(requisition.resource_type ?? '—').replace(
+                                                    /_/g,
+                                                    ' ',
+                                                )}
+                                            </dd>
+                                        </div>
+                                    </dl>
                                     <p className="text-2xl font-bold text-slate-900">
                                         {formatCurrency(requisition.original_amount)}
                                     </p>
+                                    {(requisition.items ?? []).length > 0 && (
+                                        <ul className="mt-3 divide-y divide-slate-100 text-sm">
+                                            {(requisition.items ?? []).map((item) => (
+                                                <li
+                                                    key={item.id}
+                                                    className="flex justify-between gap-3 py-2"
+                                                >
+                                                    <span className="text-slate-700">
+                                                        {item.description}
+                                                    </span>
+                                                    <span className="shrink-0 text-slate-600">
+                                                        {formatQuantity(item.quantity)} ×{' '}
+                                                        {formatCurrency(item.unit_cost)}
+                                                    </span>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    )}
                                     {requisition.boq_item && (
                                         <p className="mt-2 text-sm text-green-700">
-                                            BOQ available: {requisition.boq_item.available_qty}{' '}
+                                            BOQ available:{' '}
+                                            {formatQuantity(requisition.boq_item.available_qty)}{' '}
                                             {requisition.boq_item.unit}
                                         </p>
                                     )}
@@ -194,66 +254,15 @@ export default function RequisitionsReview() {
                                 {hasPermission(auth.user, 'requisitions', 'amend') && (
                                     <DataPanel
                                         title="Amend"
-                                        description="Requires amended amount and reason."
+                                        description="Edit line quantities and costs. Total is derived from the amended lines."
                                     >
-                                        <form
-                                            onSubmit={(e) => submitResolve(amendForm, e)}
-                                            className="space-y-3"
-                                        >
-                                            <div className="grid gap-3 sm:grid-cols-2">
-                                                <div className="space-y-2">
-                                                    <Label>Amended Amount</Label>
-                                                    <Input
-                                                        type="number"
-                                                        step="0.01"
-                                                        value={amendForm.data.amended_amount}
-                                                        onChange={(e) =>
-                                                            amendForm.setData(
-                                                                'amended_amount',
-                                                                e.target.value,
-                                                            )
-                                                        }
-                                                        required
-                                                    />
-                                                </div>
-                                                <div className="space-y-2">
-                                                    <Label>Amendment Reason</Label>
-                                                    <Input
-                                                        value={amendForm.data.amendment_reason}
-                                                        onChange={(e) =>
-                                                            amendForm.setData(
-                                                                'amendment_reason',
-                                                                e.target.value,
-                                                            )
-                                                        }
-                                                        required
-                                                    />
-                                                </div>
-                                            </div>
-                                            {showOverride && (
-                                                <label className="flex items-center gap-2 text-sm">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={amendForm.data.override}
-                                                        onChange={(e) =>
-                                                            amendForm.setData(
-                                                                'override',
-                                                                e.target.checked,
-                                                            )
-                                                        }
-                                                    />
-                                                    Override BOQ / cash limits
-                                                </label>
-                                            )}
-                                            <Button
-                                                type="submit"
-                                                variant="outline"
-                                                disabled={amendForm.processing}
-                                                className="border-amber-300 text-amber-800 hover:bg-amber-50"
-                                            >
-                                                Amend
-                                            </Button>
-                                        </form>
+                                        <AmendRequisitionForm
+                                            key={selected.id}
+                                            items={requisition.items ?? []}
+                                            originalAmount={String(requisition.original_amount)}
+                                            resolveUrl={`/approvals/steps/${selected.id}/resolve`}
+                                            showOverride={showOverride}
+                                        />
                                     </DataPanel>
                                 )}
 

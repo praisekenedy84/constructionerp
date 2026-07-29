@@ -22,7 +22,7 @@ class StockBalance extends Model
     protected function casts(): array
     {
         return [
-            'quantity_on_hand' => 'decimal:4',
+            'quantity_on_hand' => 'decimal:3',
             'average_cost' => 'decimal:2',
             'updated_at' => 'datetime',
         ];

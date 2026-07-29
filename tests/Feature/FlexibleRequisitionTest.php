@@ -1,0 +1,330 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Enums\RequisitionResourceType;
+use App\Enums\RequisitionStatus;
+use App\Models\BoqItem;
+use App\Models\InventoryItem;
+use App\Models\Project;
+use App\Models\Requisition;
+use App\Models\Tenant;
+use App\Services\AuthService;
+use App\Services\PermissionService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+class FlexibleRequisitionTest extends TestCase
+{
+    use RefreshDatabase;
+
+    private function seedTenant(): Tenant
+    {
+        $tenant = Tenant::create([
+            'name' => 'Flexible Req Co',
+            'slug' => 'flexible-req-co',
+        ]);
+
+        $auth = app(AuthService::class);
+        $auth->createUser($tenant, [
+            'name' => 'Engineer',
+            'email' => 'engineer@flexible.local',
+            'password' => 'password',
+            'role' => 'Site Engineer',
+        ]);
+
+        $tenant->run(function () {
+            app(PermissionService::class)->syncTenantPermissions();
+
+            Project::create([
+                'code' => 'FX-001',
+                'name' => 'Flexible Project',
+                'client' => 'Client',
+                'location' => 'Site',
+                'contract_amount' => '10000000.00',
+                'wht_percentage' => '5.00',
+                'physical_progress_pct' => '0.00',
+                'start_date' => now(),
+                'end_date' => now()->addYear(),
+                'status' => 'active',
+            ]);
+
+            InventoryItem::create([
+                'code' => 'CEM-50',
+                'name' => 'Cement 50kg',
+                'unit' => 'bag',
+                'category' => 'materials',
+                'reorder_point' => '10.000',
+            ]);
+        });
+
+        tenancy()->end();
+
+        return $tenant;
+    }
+
+    public function test_can_create_requisition_without_boq_using_new_item(): void
+    {
+        $this->seedTenant();
+
+        $this->post('/login', [
+            'email' => 'engineer@flexible.local',
+            'password' => 'password',
+        ])->assertRedirect();
+
+        $this->post('/requisitions', [
+            'project_id' => 1,
+            'boq_item_id' => null,
+            'department' => 'Site',
+            'resource_type' => RequisitionResourceType::Cash->value,
+            'fulfillment_type' => 'cash_disbursement',
+            'addressed_to' => 'finance',
+            'items' => [
+                [
+                    'description' => 'Petty cash for local transport',
+                    'estimated_amount' => '150000',
+                ],
+            ],
+        ])->assertRedirect();
+
+        $tenant = Tenant::where('slug', 'flexible-req-co')->firstOrFail();
+        $tenant->run(function () {
+            $req = Requisition::with('items')->first();
+            $this->assertNotNull($req);
+            $this->assertNull($req->boq_item_id);
+            $this->assertSame(RequisitionResourceType::Cash, $req->resource_type);
+            $this->assertSame(RequisitionStatus::Draft, $req->status);
+            $this->assertSame('150000.00', (string) $req->original_amount);
+            $this->assertCount(1, $req->items);
+            $this->assertNull($req->items->first()->boq_item_id);
+            $this->assertNull($req->items->first()->inventory_item_id);
+            $this->assertSame('Petty cash for local transport', $req->items->first()->description);
+            $this->assertSame('lump', $req->items->first()->unit);
+            $this->assertSame('150000.00', $req->items->first()->details['estimated_amount']);
+        });
+    }
+
+    public function test_can_create_requisition_from_inventory_catalog(): void
+    {
+        $this->seedTenant();
+
+        $this->post('/login', [
+            'email' => 'engineer@flexible.local',
+            'password' => 'password',
+        ])->assertRedirect();
+
+        $this->post('/requisitions', [
+            'project_id' => 1,
+            'department' => 'Stores',
+            'resource_type' => RequisitionResourceType::Materials->value,
+            'fulfillment_type' => 'stock_issue',
+            'addressed_to' => 'storekeeper',
+            'items' => [
+                [
+                    'inventory_item_id' => 1,
+                    'description' => 'Cement 50kg',
+                    'unit' => 'bag',
+                    'quantity' => '20',
+                    'unit_cost' => '18000',
+                ],
+            ],
+        ])->assertRedirect();
+
+        $tenant = Tenant::where('slug', 'flexible-req-co')->firstOrFail();
+        $tenant->run(function () {
+            $req = Requisition::with('items')->first();
+            $this->assertNotNull($req);
+            $this->assertNull($req->boq_item_id);
+            $this->assertSame(1, $req->items->first()->inventory_item_id);
+            $this->assertSame('360000.00', (string) $req->original_amount);
+            $this->assertCount(0, BoqItem::all());
+        });
+    }
+
+    public function test_can_create_labor_requisition_with_worker_day_estimate(): void
+    {
+        $this->seedTenant();
+
+        $this->post('/login', [
+            'email' => 'engineer@flexible.local',
+            'password' => 'password',
+        ])->assertRedirect();
+
+        $this->post('/requisitions', [
+            'project_id' => 1,
+            'department' => 'Site',
+            'resource_type' => RequisitionResourceType::Labor->value,
+            'fulfillment_type' => 'cash_disbursement',
+            'addressed_to' => 'finance',
+            'items' => [
+                [
+                    'description' => 'Casual workers for excavation',
+                    'workers' => '10',
+                    'days' => '5',
+                    'rate_per_day' => '25000',
+                ],
+            ],
+        ])->assertRedirect();
+
+        $tenant = Tenant::where('slug', 'flexible-req-co')->firstOrFail();
+        $tenant->run(function () {
+            $req = Requisition::with('items')->first();
+            $this->assertNotNull($req);
+            $this->assertSame(RequisitionResourceType::Labor, $req->resource_type);
+            $this->assertSame('1250000.00', (string) $req->original_amount);
+            $item = $req->items->first();
+            $this->assertSame('50.000', (string) $item->quantity);
+            $this->assertSame('worker-day', $item->unit);
+            $this->assertSame('25000.00', (string) $item->unit_cost);
+            $this->assertSame('10.000', $item->details['workers']);
+            $this->assertSame('5.000', $item->details['days']);
+            $this->assertSame('25000.00', $item->details['rate_per_day']);
+        });
+    }
+
+    public function test_can_update_draft_requisition(): void
+    {
+        $this->seedTenant();
+
+        $this->post('/login', [
+            'email' => 'engineer@flexible.local',
+            'password' => 'password',
+        ])->assertRedirect();
+
+        $this->post('/requisitions', [
+            'project_id' => 1,
+            'department' => 'Site',
+            'resource_type' => RequisitionResourceType::Labor->value,
+            'fulfillment_type' => 'cash_disbursement',
+            'addressed_to' => 'finance',
+            'items' => [
+                [
+                    'description' => 'Casual workers',
+                    'workers' => '4',
+                    'days' => '2',
+                    'rate_per_day' => '20000',
+                ],
+            ],
+        ])->assertRedirect();
+
+        $tenant = Tenant::where('slug', 'flexible-req-co')->firstOrFail();
+        $requisitionId = null;
+        $tenant->run(function () use (&$requisitionId) {
+            $requisitionId = Requisition::firstOrFail()->id;
+        });
+
+        $this->put("/requisitions/{$requisitionId}", [
+            'project_id' => 1,
+            'department' => 'Site Updated',
+            'resource_type' => RequisitionResourceType::Labor->value,
+            'fulfillment_type' => 'cash_disbursement',
+            'addressed_to' => 'finance',
+            'items' => [
+                [
+                    'description' => 'Casual workers for concrete pour',
+                    'workers' => '8',
+                    'days' => '3',
+                    'rate_per_day' => '25000',
+                ],
+            ],
+        ])->assertRedirect();
+
+        $tenant->run(function () {
+            $req = Requisition::with('items')->firstOrFail();
+            $this->assertSame('Site Updated', $req->department);
+            $this->assertSame('600000.00', (string) $req->original_amount);
+            $this->assertSame('Casual workers for concrete pour', $req->items->first()->description);
+            $this->assertSame('8.000', $req->items->first()->details['workers']);
+            $this->assertSame('3.000', $req->items->first()->details['days']);
+        });
+    }
+
+    public function test_cannot_edit_non_draft_requisition(): void
+    {
+        $this->seedTenant();
+
+        $tenant = Tenant::where('slug', 'flexible-req-co')->firstOrFail();
+        $tenant->run(function () {
+            Requisition::create([
+                'requisition_no' => 'REQ-2026-00999',
+                'project_id' => 1,
+                'department' => 'Site',
+                'resource_type' => RequisitionResourceType::Cash,
+                'requestor_id' => 1,
+                'status' => RequisitionStatus::UnderReview,
+                'fulfillment_type' => 'cash_disbursement',
+                'addressed_to' => 'finance',
+                'original_amount' => '100000.00',
+            ]);
+        });
+        tenancy()->end();
+
+        $this->post('/login', [
+            'email' => 'engineer@flexible.local',
+            'password' => 'password',
+        ])->assertRedirect();
+
+        $this->get('/requisitions/1/edit')->assertRedirect('/requisitions/1');
+
+        $this->put('/requisitions/1', [
+            'project_id' => 1,
+            'department' => 'Hacked',
+            'resource_type' => RequisitionResourceType::Cash->value,
+            'fulfillment_type' => 'cash_disbursement',
+            'addressed_to' => 'finance',
+            'items' => [
+                [
+                    'description' => 'Should fail',
+                    'estimated_amount' => '1',
+                ],
+            ],
+        ])->assertRedirect('/requisitions/1');
+
+        $tenant->run(function () {
+            $this->assertSame('Site', Requisition::firstOrFail()->department);
+            $this->assertSame(RequisitionStatus::UnderReview, Requisition::firstOrFail()->status);
+        });
+    }
+
+    public function test_can_create_requisition_with_multiple_lines_same_resource_type(): void
+    {
+        $this->seedTenant();
+
+        $this->post('/login', [
+            'email' => 'engineer@flexible.local',
+            'password' => 'password',
+        ])->assertRedirect();
+
+        $this->post('/requisitions', [
+            'project_id' => 1,
+            'department' => 'Site',
+            'resource_type' => RequisitionResourceType::Labor->value,
+            'fulfillment_type' => 'cash_disbursement',
+            'addressed_to' => 'finance',
+            'items' => [
+                [
+                    'description' => 'Casual excavation support',
+                    'workers' => '10',
+                    'days' => '5',
+                    'rate_per_day' => '25000',
+                ],
+                [
+                    'description' => 'Skilled masons',
+                    'workers' => '4',
+                    'days' => '3',
+                    'rate_per_day' => '40000',
+                ],
+            ],
+        ])->assertRedirect();
+
+        $tenant = Tenant::where('slug', 'flexible-req-co')->firstOrFail();
+        $tenant->run(function () {
+            $req = Requisition::with('items')->firstOrFail();
+            $this->assertCount(2, $req->items);
+            // 10*5*25000 + 4*3*40000 = 1,250,000 + 480,000
+            $this->assertSame('1730000.00', (string) $req->original_amount);
+            $this->assertSame('Casual excavation support', $req->items[0]->description);
+            $this->assertSame('Skilled masons', $req->items[1]->description);
+        });
+    }
+}

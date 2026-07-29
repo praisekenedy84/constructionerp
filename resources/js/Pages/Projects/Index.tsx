@@ -6,9 +6,10 @@ import PageHeader from '@/Components/Shared/PageHeader';
 import StatusBadge from '@/Components/Shared/StatusBadge';
 import { Button } from '@/Components/ui/button';
 import { formatCurrency, formatDate, formatPercent } from '@/lib/formatters';
+import { hasPermission } from '@/lib/permissions';
 import { ListingFilters, PageProps, Paginated, Project } from '@/types';
-import { Head, Link, usePage } from '@inertiajs/react';
-import { Eye, Plus } from 'lucide-react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
+import { Eye, Pencil, Plus, Trash2 } from 'lucide-react';
 
 interface ProjectsIndexProps extends PageProps {
     projects: Paginated<Project>;
@@ -16,8 +17,19 @@ interface ProjectsIndexProps extends PageProps {
 }
 
 export default function ProjectsIndex() {
-    const { projects, filters } = usePage<ProjectsIndexProps>().props;
+    const { projects, filters, auth } = usePage<ProjectsIndexProps>().props;
     const rows = projects.data ?? [];
+    const canCreate = hasPermission(auth.user, 'projects', 'create');
+    const canUpdate = hasPermission(auth.user, 'projects', 'update');
+    const canDelete = hasPermission(auth.user, 'projects', 'delete-soft');
+
+    function archiveProject(project: Project) {
+        if (!confirm(`Archive project "${project.code} — ${project.name}"?`)) {
+            return;
+        }
+
+        router.delete(`/projects/${project.id}`);
+    }
 
     return (
         <AppShell title="Projects">
@@ -27,12 +39,14 @@ export default function ProjectsIndex() {
                     title="Projects"
                     description="Manage construction projects, budgets, and BOQ."
                     actions={
-                        <Link href="/projects/create">
-                            <Button>
-                                <Plus className="h-4 w-4" />
-                                New Project
-                            </Button>
-                        </Link>
+                        canCreate ? (
+                            <Link href="/projects/create">
+                                <Button>
+                                    <Plus className="h-4 w-4" />
+                                    New Project
+                                </Button>
+                            </Link>
+                        ) : undefined
                     }
                 />
 
@@ -61,7 +75,7 @@ export default function ProjectsIndex() {
                                 <th className="px-6 py-3 text-right font-medium">Net Budget</th>
                                 <th className="px-6 py-3 text-right font-medium">Progress</th>
                                 <th className="px-6 py-3 font-medium">End Date</th>
-                                <th className="px-6 py-3" />
+                                <th className="px-6 py-3 text-right font-medium">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -70,9 +84,11 @@ export default function ProjectsIndex() {
                                     <td colSpan={8} className="px-6 py-12 text-center text-slate-500">
                                         <div className="flex flex-col items-center gap-3">
                                             <span>No projects yet.</span>
-                                            <LinkButton href="/projects/create" size="default">
-                                                Create your first project
-                                            </LinkButton>
+                                            {canCreate && (
+                                                <LinkButton href="/projects/create" size="default">
+                                                    Create your first project
+                                                </LinkButton>
+                                            )}
                                         </div>
                                     </td>
                                 </tr>
@@ -99,11 +115,33 @@ export default function ProjectsIndex() {
                                             {formatDate(project.end_date)}
                                         </td>
                                         <td className="px-6 py-4 text-right">
-                                            <IconLink
-                                                href={`/projects/${project.id}`}
-                                                icon={Eye}
-                                                label="View project"
-                                            />
+                                            <div className="flex items-center justify-end gap-1">
+                                                <IconLink
+                                                    href={`/projects/${project.id}`}
+                                                    icon={Eye}
+                                                    label="View project"
+                                                />
+                                                {canUpdate && (
+                                                    <IconLink
+                                                        href={`/projects/${project.id}/edit`}
+                                                        icon={Pencil}
+                                                        label="Edit project"
+                                                    />
+                                                )}
+                                                {canDelete && (
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                                                        title="Archive project"
+                                                        aria-label="Archive project"
+                                                        onClick={() => archiveProject(project)}
+                                                    >
+                                                        <Trash2 className="h-4 w-4" />
+                                                    </Button>
+                                                )}
+                                            </div>
                                         </td>
                                     </tr>
                                 ))

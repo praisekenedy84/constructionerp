@@ -19,16 +19,9 @@ class ApprovalController extends Controller
     {
         $this->authorizePermission($request->user(), 'requisitions', 'approve');
 
-        $user = $request->user();
-
         $query = ApprovalStep::query()
             ->with(['requisition.project', 'requisition.requestor'])
             ->where('status', 'pending');
-
-        if (! $user->isSuperUser()) {
-            $roles = $user->getRoleNames()->toArray();
-            $query->whereIn('required_role', $roles);
-        }
 
         $listing = ListingQuery::for($query, $request)
             ->search(['required_role', 'requisition.requisition_no', 'requisition.department', 'requisition.project.name'])
@@ -45,13 +38,25 @@ class ApprovalController extends Controller
     {
         $step = ApprovalStep::findOrFail($id);
 
-        $this->approvalService->resolve(
-            $step,
-            $request->user(),
-            $request->validated('action'),
-            $request->validated(),
-        );
+        try {
+            $this->approvalService->resolve(
+                $step,
+                $request->user(),
+                $request->validated('action'),
+                $request->validated(),
+            );
+        } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+            return redirect()
+                ->route('requisitions.review-queue')
+                ->with('error', $e->getMessage());
+        } catch (\App\Exceptions\BOQLimitExceededException|\App\Exceptions\InsufficientCashException|\InvalidArgumentException $e) {
+            return redirect()
+                ->route('requisitions.review-queue')
+                ->with('error', $e->getMessage());
+        }
 
-        return back()->with('success', 'Approval step resolved.');
+        return redirect()
+            ->route('requisitions.review-queue')
+            ->with('success', 'Approval step resolved.');
     }
 }

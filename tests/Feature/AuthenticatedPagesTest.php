@@ -79,7 +79,7 @@ class AuthenticatedPagesTest extends TestCase
         $this->get('/finance')->assertRedirect('/finance/approvals');
         $this->get('/payroll')->assertRedirect('/payroll/employees');
         $this->get('/procurement')->assertRedirect('/procurement/suppliers');
-        $this->get('/inventory')->assertRedirect('/inventory/balances');
+        $this->get('/inventory')->assertRedirect('/inventory/items');
 
         $this->get('/finance/approvals')->assertOk();
         $this->get('/finance/expenses')->assertOk();

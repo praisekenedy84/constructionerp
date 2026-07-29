@@ -18,7 +18,7 @@ class GoodsReceiptController extends Controller
 
     public function index(Request $request): Response
     {
-        $this->authorizeRoles($request->user(), ['Storekeeper', 'Procurement Officer']);
+        $this->authorizePermission($request->user(), 'procurement', 'read');
 
         $listing = ListingQuery::for(
             GoodsReceipt::query()->with(['purchaseOrder.supplier']),
@@ -41,7 +41,7 @@ class GoodsReceiptController extends Controller
 
     public function store(StoreGoodsReceiptRequest $request): RedirectResponse
     {
-        $this->authorizeRoles($request->user(), ['Storekeeper', 'Procurement Officer']);
+        $this->authorizePermission($request->user(), 'procurement', 'receive');
 
         $grn = $this->procurementService->recordGoodsReceipt(
             $request->validated(),

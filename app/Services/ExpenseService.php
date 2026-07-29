@@ -9,6 +9,7 @@ use App\Enums\PaymentMethod;
 use App\Exceptions\InsufficientCashException;
 use App\Models\CashAllocation;
 use App\Models\CashDisbursement;
+use App\Models\BudgetTransaction;
 use App\Models\Expense;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -50,10 +51,10 @@ class ExpenseService
                 throw new \InvalidArgumentException('Direct expenses require a project_id.');
             }
 
-            $allocation = $category === ExpenseCategory::Direct
+            $allocation = ! empty($data['cash_allocation_id'])
                 ? $this->lockSpendableFloat(
                     $data['cash_allocation_id'] ?? null,
-                    (int) $data['project_id'],
+                    $category === ExpenseCategory::Direct ? (int) $data['project_id'] : null,
                     $amount,
                 )
                 : null;
@@ -88,7 +89,9 @@ class ExpenseService
             // A project float already charged the project budget when it was funded
             // (CASH_ALLOCATION), so charging again here would double-count the spend.
             // Organisation-wide floats never touched a project budget, so those still post.
-            if ($allocation && $allocation->isOrganizationWide()) {
+            if ($category === ExpenseCategory::Direct
+                && $allocation
+                && $allocation->isOrganizationWide()) {
                 $this->budgetService->createTransaction((int) $data['project_id'], [
                     'type' => BudgetTransactionType::DirectExpense,
                     'amount' => $amount,
@@ -103,11 +106,11 @@ class ExpenseService
         });
     }
 
-    /**
-     * Resolve the float a direct expense is paid from, holding a row lock so two
-     * concurrent expenses cannot both spend the same remaining balance.
-     */
-    private function lockSpendableFloat(mixed $allocationId, int $projectId, string $amount): CashAllocation
+    private function lockSpendableFloat(
+        mixed $allocationId,
+        ?int $projectId,
+        string $amount,
+    ): CashAllocation
     {
         if (empty($allocationId)) {
             throw new \InvalidArgumentException(
@@ -123,7 +126,15 @@ class ExpenseService
             );
         }
 
-        if (! $allocation->isOrganizationWide() && (int) $allocation->project_id !== $projectId) {
+        if ($projectId === null && ! $allocation->isOrganizationWide()) {
+            throw new \InvalidArgumentException(
+                'Indirect expenses must be paid from an organisation-wide cash float.'
+            );
+        }
+
+        if ($projectId !== null
+            && ! $allocation->isOrganizationWide()
+            && (int) $allocation->project_id !== $projectId) {
             throw new \InvalidArgumentException(
                 'That cash float belongs to another project.'
             );
@@ -138,6 +149,125 @@ class ExpenseService
         }
 
         return $allocation;
+    }
+
+    public function update(Expense $expense, array $data, User $user): Expense
+    {
+        return DB::transaction(function () use ($expense, $data, $user) {
+            $expense = Expense::lockForUpdate()->findOrFail($expense->id);
+            $oldDisbursement = CashDisbursement::query()
+                ->where('expense_id', $expense->id)
+                ->lockForUpdate()
+                ->first();
+
+            if ($oldDisbursement) {
+                CashAllocation::whereKey($oldDisbursement->cash_allocation_id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+                $oldDisbursement->delete();
+            }
+
+            $this->reverseDirectExpenseBudget($expense, $user);
+
+            $category = $data['category'] instanceof ExpenseCategory
+                ? $data['category']
+                : ExpenseCategory::from($data['category']);
+            $amount = bcadd((string) $data['amount'], '0', 2);
+            $projectId = $category === ExpenseCategory::Direct
+                ? (int) $data['project_id']
+                : null;
+            $allocation = $this->lockSpendableFloat(
+                $data['cash_allocation_id'] ?? null,
+                $projectId,
+                $amount,
+            );
+
+            $expense->update([
+                'project_id' => $projectId,
+                'boq_item_id' => $data['boq_item_id'] ?? null,
+                'category' => $category,
+                'sub_type' => $data['sub_type'],
+                'activity_ref' => $data['activity_ref'] ?? null,
+                'asset_reg_no' => $data['asset_reg_no'] ?? null,
+                'amount' => $amount,
+                'description' => $data['description'] ?? null,
+                'expense_date' => $data['expense_date'],
+            ]);
+
+            CashDisbursement::create([
+                'expense_id' => $expense->id,
+                'cash_allocation_id' => $allocation->id,
+                'amount' => $amount,
+                'method' => $data['method'] ?? PaymentMethod::Cash->value,
+                'payee' => $data['payee'] ?? null,
+                'reference_no' => $data['reference_no'] ?? null,
+                'disbursed_by' => $user->id,
+                'disbursed_at' => $data['expense_date'],
+                'created_at' => now(),
+            ]);
+
+            if ($category === ExpenseCategory::Direct && $allocation->isOrganizationWide()) {
+                $this->postDirectExpenseBudget($expense, $user);
+            }
+
+            return $expense->refresh();
+        });
+    }
+
+    public function destroy(Expense $expense, User $user): void
+    {
+        DB::transaction(function () use ($expense, $user) {
+            $expense = Expense::lockForUpdate()->findOrFail($expense->id);
+            $disbursement = CashDisbursement::query()
+                ->where('expense_id', $expense->id)
+                ->lockForUpdate()
+                ->first();
+
+            if ($disbursement) {
+                CashAllocation::whereKey($disbursement->cash_allocation_id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+                $disbursement->delete();
+            }
+
+            $this->reverseDirectExpenseBudget($expense, $user);
+            $expense->delete();
+        });
+    }
+
+    private function postDirectExpenseBudget(Expense $expense, User $user): void
+    {
+        $this->budgetService->createTransaction((int) $expense->project_id, [
+            'type' => BudgetTransactionType::DirectExpense,
+            'amount' => (string) $expense->amount,
+            'boq_item_id' => $expense->boq_item_id,
+            'reference_entity_type' => 'expense',
+            'reference_entity_id' => $expense->id,
+            'created_by' => $user->id,
+        ]);
+    }
+
+    private function reverseDirectExpenseBudget(Expense $expense, User $user): void
+    {
+        $netPosted = (string) BudgetTransaction::query()
+            ->where('type', BudgetTransactionType::DirectExpense)
+            ->where('reference_entity_type', 'expense')
+            ->where('reference_entity_id', $expense->id)
+            ->sum('amount');
+
+        if (bccomp($netPosted, '0', 2) === 0 || ! $expense->project_id) {
+            return;
+        }
+
+        $this->budgetService->createTransaction((int) $expense->project_id, [
+            'type' => BudgetTransactionType::DirectExpense,
+            'amount' => bcmul($netPosted, '-1', 2),
+            'boq_item_id' => $expense->boq_item_id,
+            'reference_entity_type' => 'expense',
+            'reference_entity_id' => $expense->id,
+            'reason' => 'Expense edited or deleted; reversing prior budget charge.',
+            'created_by' => $user->id,
+        ]);
     }
 
     public function store(array $data, User $user): Expense

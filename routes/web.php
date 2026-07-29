@@ -104,6 +104,8 @@ Route::middleware('auth')->group(function () {
     Route::post('/finance/cash-requests/{id}/reject', [CashController::class, 'reject'])->name('finance.cash.reject');
     Route::post('/finance/cash-requests/{id}/receive', [CashController::class, 'receive'])->name('finance.cash.receive');
     Route::post('/finance/expenses', [ExpenseController::class, 'store'])->name('finance.expenses.store');
+    Route::put('/finance/expenses/{id}', [ExpenseController::class, 'update'])->name('finance.expenses.update');
+    Route::delete('/finance/expenses/{id}', [ExpenseController::class, 'destroy'])->name('finance.expenses.destroy');
     Route::get('/finance/expenses', [ExpenseController::class, 'index'])->name('finance.expenses.index');
     Route::get('/finance/overhead', [ExpenseController::class, 'overhead'])->name('finance.overhead');
 

@@ -30,9 +30,9 @@ class StoreExpenseRequest extends FormRequest
                 'nullable',
                 'integer',
                 'exists:cash_allocations,id',
-                'required_if:category,direct',
+                'required',
             ],
-            'method' => ['nullable', Rule::enum(PaymentMethod::class), 'required_if:category,direct'],
+            'method' => ['required', Rule::enum(PaymentMethod::class)],
             'payee' => ['nullable', 'string', 'max:150'],
             'reference_no' => ['nullable', 'string', 'max:100'],
         ];

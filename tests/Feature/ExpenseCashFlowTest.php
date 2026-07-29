@@ -281,9 +281,24 @@ class ExpenseCashFlowTest extends TestCase
         });
     }
 
-    public function test_indirect_expense_does_not_require_cash_float(): void
+    public function test_indirect_expense_uses_organisation_cash_float(): void
     {
         $this->seedTenant();
+
+        Tenant::where('slug', 'expense-cash-co')->first()->run(function () {
+            CashAllocation::create([
+                'project_id' => null,
+                'requested_amount' => '200000.00',
+                'received_amount' => '200000.00',
+                'utilized_amount' => '0.00',
+                'status' => CashAllocationStatus::Received,
+                'requested_by' => 1,
+                'approved_by' => 1,
+                'requested_at' => now(),
+                'received_at' => now(),
+                'decided_at' => now(),
+            ]);
+        });
 
         $this->post('/login', [
             'email' => 'admin@expensecash.local',
@@ -296,13 +311,127 @@ class ExpenseCashFlowTest extends TestCase
             'amount' => '150000',
             'expense_date' => now()->toDateString(),
             'description' => 'Office rent',
+            'cash_allocation_id' => 1,
+            'method' => 'bank',
         ])->assertRedirect();
 
         Tenant::where('slug', 'expense-cash-co')->first()->run(function () {
             $expense = Expense::first();
             $this->assertSame(ExpenseCategory::Indirect, $expense->category);
             $this->assertNull($expense->project_id);
+            $this->assertSame(1, CashDisbursement::count());
+            $this->assertSame('150000.00', (string) CashAllocation::first()->utilized_amount);
+        });
+    }
+
+    public function test_editing_and_deleting_direct_expense_adjusts_cash_on_hand(): void
+    {
+        $this->seedTenant();
+
+        Tenant::where('slug', 'expense-cash-co')->first()->run(function () {
+            CashAllocation::create([
+                'project_id' => 1,
+                'requested_amount' => '200000.00',
+                'received_amount' => '200000.00',
+                'utilized_amount' => '0.00',
+                'status' => CashAllocationStatus::Received,
+                'requested_by' => 1,
+                'approved_by' => 1,
+                'requested_at' => now(),
+                'received_at' => now(),
+                'decided_at' => now(),
+            ]);
+        });
+
+        $this->post('/login', [
+            'email' => 'admin@expensecash.local',
+            'password' => 'password',
+        ]);
+
+        $payload = [
+            'category' => 'direct',
+            'project_id' => 1,
+            'cash_allocation_id' => 1,
+            'method' => 'cash',
+            'sub_type' => 'Fuel',
+            'amount' => '75000',
+            'expense_date' => now()->toDateString(),
+        ];
+
+        $this->post('/finance/expenses', $payload)->assertRedirect();
+        $this->put('/finance/expenses/1', [
+            ...$payload,
+            'amount' => '100000',
+        ])->assertRedirect();
+
+        Tenant::where('slug', 'expense-cash-co')->first()->run(function () {
+            $this->assertSame('100000.00', (string) Expense::first()->amount);
+            $this->assertSame('100000.00', (string) CashAllocation::first()->utilized_amount);
+            $this->assertSame('100000.00', (string) CashAllocation::first()->balance);
+        });
+
+        $this->delete('/finance/expenses/1')->assertRedirect();
+
+        Tenant::where('slug', 'expense-cash-co')->first()->run(function () {
+            $this->assertNull(Expense::find(1));
+            $this->assertNotNull(Expense::withTrashed()->find(1));
+            $this->assertSame('0.00', (string) CashAllocation::first()->utilized_amount);
+            $this->assertSame('200000.00', (string) CashAllocation::first()->balance);
             $this->assertSame(0, CashDisbursement::count());
+        });
+    }
+
+    public function test_editing_and_deleting_indirect_expense_adjusts_cash_on_hand(): void
+    {
+        $this->seedTenant();
+
+        Tenant::where('slug', 'expense-cash-co')->first()->run(function () {
+            CashAllocation::create([
+                'project_id' => null,
+                'requested_amount' => '300000.00',
+                'received_amount' => '300000.00',
+                'utilized_amount' => '0.00',
+                'status' => CashAllocationStatus::Received,
+                'requested_by' => 1,
+                'approved_by' => 1,
+                'requested_at' => now(),
+                'received_at' => now(),
+                'decided_at' => now(),
+            ]);
+        });
+
+        $this->post('/login', [
+            'email' => 'admin@expensecash.local',
+            'password' => 'password',
+        ]);
+
+        $payload = [
+            'category' => 'indirect',
+            'cash_allocation_id' => 1,
+            'method' => 'bank',
+            'sub_type' => 'Rent',
+            'amount' => '150000',
+            'expense_date' => now()->toDateString(),
+        ];
+
+        $this->post('/finance/expenses', $payload)->assertRedirect();
+        $this->put('/finance/expenses/1', [
+            ...$payload,
+            'amount' => '90000',
+        ])->assertRedirect();
+
+        Tenant::where('slug', 'expense-cash-co')->first()->run(function () {
+            $this->assertSame('90000.00', (string) Expense::first()->amount);
+            $this->assertSame('90000.00', (string) CashAllocation::first()->utilized_amount);
+            $this->assertSame('210000.00', (string) CashAllocation::first()->balance);
+        });
+
+        $this->delete('/finance/expenses/1')->assertRedirect();
+
+        Tenant::where('slug', 'expense-cash-co')->first()->run(function () {
+            $this->assertNull(Expense::find(1));
+            $this->assertSame('0.00', (string) CashAllocation::first()->utilized_amount);
+            $this->assertSame('300000.00', (string) CashAllocation::first()->balance);
         });
     }
 

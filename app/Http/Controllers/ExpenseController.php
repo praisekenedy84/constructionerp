@@ -33,9 +33,30 @@ class ExpenseController extends Controller
             return back()->withErrors(['cash_allocation_id' => $e->getMessage()]);
         }
 
-        return back()->with('success', $expense->category === ExpenseCategory::Direct
-            ? 'Expense recorded and cash on hand reduced.'
-            : 'Expense recorded.');
+        return back()->with('success', 'Expense recorded and cash on hand reduced.');
+    }
+
+    public function update(StoreExpenseRequest $request, int $id): RedirectResponse
+    {
+        $this->authorizePermission($request->user(), 'budgets', 'update');
+        $expense = Expense::findOrFail($id);
+
+        try {
+            $this->expenseService->update($expense, $request->validated(), $request->user());
+        } catch (\App\Exceptions\InsufficientCashException|\InvalidArgumentException $e) {
+            return back()->withErrors(['cash_allocation_id' => $e->getMessage()]);
+        }
+
+        return back()->with('success', 'Expense updated and cash on hand adjusted.');
+    }
+
+    public function destroy(Request $request, int $id): RedirectResponse
+    {
+        $this->authorizePermission($request->user(), 'budgets', 'update');
+        $expense = Expense::findOrFail($id);
+        $this->expenseService->destroy($expense, $request->user());
+
+        return back()->with('success', 'Expense deleted and cash returned to cash on hand.');
     }
 
     public function index(Request $request): Response
@@ -78,7 +99,9 @@ class ExpenseController extends Controller
         // budget txs — migrate them so the ledger stays complete.
         $this->payrollService->backfillLegacyPayrollOverhead($request->user());
 
-        $query = Expense::query()->where('category', ExpenseCategory::Indirect);
+        $query = Expense::query()
+            ->with('cashDisbursement.cashAllocation:id,project_id,reference_no')
+            ->where('category', ExpenseCategory::Indirect);
 
         if ($request->filled('sub_type')) {
             $query->where('sub_type', $request->string('sub_type'));
@@ -92,6 +115,7 @@ class ExpenseController extends Controller
         return Inertia::render('Finance/Overhead', [
             'expenses' => $listing->paginate(25),
             'total_overhead' => $this->expenseService->overheadTotal($request->all()),
+            'cash_floats' => $this->spendableFloats(),
             'filters' => $listing->filters(['sub_type' => $request->input('sub_type')]),
         ]);
     }
@@ -117,7 +141,6 @@ class ExpenseController extends Controller
             ->where('status', CashAllocationStatus::Received)
             ->orderByDesc('received_at')
             ->get()
-            ->filter(fn (CashAllocation $allocation) => bccomp($allocation->balance, '0', 2) === 1)
             ->map(fn (CashAllocation $allocation) => [
                 'id' => $allocation->id,
                 'project_id' => $allocation->project_id,

@@ -11,9 +11,10 @@ import { confirmDiscardIfDirty, DialogFormActions } from '@/Components/ui/dialog
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
 import { formatCurrency, formatDate } from '@/lib/formatters';
+import { hasPermission } from '@/lib/permissions';
 import { Expense, ListingFilters, PageProps, Paginated, Project, SpendableCashFloat } from '@/types';
-import { Head, useForm, usePage } from '@inertiajs/react';
-import { Plus } from 'lucide-react';
+import { Head, router, useForm, usePage } from '@inertiajs/react';
+import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { FormEvent, useMemo, useState } from 'react';
 
 interface ExpensesProps extends PageProps {
@@ -24,10 +25,11 @@ interface ExpensesProps extends PageProps {
 }
 
 export default function Expenses() {
-    const { expenses, filters, projects, cash_floats } = usePage<ExpensesProps>().props;
+    const { expenses, filters, projects, cash_floats, auth } = usePage<ExpensesProps>().props;
     const rows = expenses.data ?? [];
     const [open, setOpen] = useState(false);
-    const { data, setData, post, processing, errors, reset, clearErrors, isDirty } = useForm({
+    const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+    const { data, setData, post, put, processing, errors, reset, clearErrors, isDirty } = useForm({
         category: 'direct' as const,
         project_id: '',
         boq_item_id: '',
@@ -40,6 +42,7 @@ export default function Expenses() {
         payee: '',
         reference_no: '',
     });
+    const canUpdate = hasPermission(auth.user, 'budgets', 'update');
 
     const availableFloats = useMemo(() => {
         if (!data.project_id) {
@@ -58,7 +61,29 @@ export default function Expenses() {
     );
 
     function openDialog() {
+        setEditingExpense(null);
+        reset();
         clearErrors();
+        setOpen(true);
+    }
+
+    function editExpense(expense: Expense) {
+        const disbursement = expense.cash_disbursement;
+        setEditingExpense(expense);
+        clearErrors();
+        setData({
+            category: 'direct',
+            project_id: String(expense.project_id ?? ''),
+            boq_item_id: String(expense.boq_item_id ?? ''),
+            sub_type: expense.sub_type,
+            amount: expense.amount,
+            description: expense.description ?? '',
+            expense_date: expense.expense_date.slice(0, 10),
+            cash_allocation_id: String(disbursement?.cash_allocation?.id ?? ''),
+            method: disbursement?.method ?? 'cash',
+            payee: disbursement?.payee ?? '',
+            reference_no: disbursement?.reference_no ?? '',
+        });
         setOpen(true);
     }
 
@@ -67,6 +92,7 @@ export default function Expenses() {
             return;
         }
         setOpen(false);
+        setEditingExpense(null);
         reset();
         clearErrors();
     }
@@ -81,12 +107,27 @@ export default function Expenses() {
 
     function submit(e: FormEvent) {
         e.preventDefault();
-        post('/finance/expenses', {
+        const options = {
             onSuccess: () => {
                 reset();
+                setEditingExpense(null);
                 setOpen(false);
             },
-        });
+        };
+
+        if (editingExpense) {
+            put(`/finance/expenses/${editingExpense.id}`, options);
+        } else {
+            post('/finance/expenses', options);
+        }
+    }
+
+    function deleteExpense(expense: Expense) {
+        if (!confirm(`Delete ${expense.sub_type} expense of ${formatCurrency(expense.amount)}? The amount will be returned to cash on hand.`)) {
+            return;
+        }
+
+        router.delete(`/finance/expenses/${expense.id}`);
     }
 
     function floatLabel(float: SpendableCashFloat): string {
@@ -151,12 +192,13 @@ export default function Expenses() {
                                 <th className="px-6 py-3 text-right font-medium">Amount</th>
                                 <th className="px-6 py-3 font-medium">Paid from</th>
                                 <th className="px-6 py-3 font-medium">Description</th>
+                                {canUpdate && <th className="px-6 py-3 text-right font-medium">Actions</th>}
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {rows.length === 0 ? (
                                 <tr>
-                                    <td colSpan={6} className="px-6 py-12 text-center text-slate-500">
+                                    <td colSpan={canUpdate ? 7 : 6} className="px-6 py-12 text-center text-slate-500">
                                         No expenses found.
                                     </td>
                                 </tr>
@@ -184,6 +226,33 @@ export default function Expenses() {
                                         <td className="px-6 py-4 text-slate-600">
                                             {exp.description ?? '—'}
                                         </td>
+                                        {canUpdate && (
+                                            <td className="px-6 py-4">
+                                                <div className="flex items-center justify-end gap-1">
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        title="Edit expense"
+                                                        aria-label="Edit expense"
+                                                        onClick={() => editExpense(exp)}
+                                                    >
+                                                        <Pencil className="h-4 w-4" />
+                                                    </Button>
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                                                        title="Delete expense"
+                                                        aria-label="Delete expense"
+                                                        onClick={() => deleteExpense(exp)}
+                                                    >
+                                                        <Trash2 className="h-4 w-4" />
+                                                    </Button>
+                                                </div>
+                                            </td>
+                                        )}
                                     </tr>
                                 ))
                             )}
@@ -196,8 +265,8 @@ export default function Expenses() {
             <Dialog
                 open={open}
                 onOpenChange={(next) => (next ? openDialog() : closeDialog())}
-                title="Create New Expense"
-                description="Post a direct project expense paid from a cash float."
+                title={editingExpense ? 'Edit Expense' : 'Create New Expense'}
+                description={editingExpense ? 'Adjust the expense and its cash-on-hand effect.' : 'Post a direct project expense paid from a cash float.'}
             >
                 <form onSubmit={submit} className="space-y-4">
                     <div className="space-y-2">
@@ -330,8 +399,8 @@ export default function Expenses() {
                     <DialogFormActions
                         onCancel={closeDialog}
                         processing={processing}
-                        submitLabel="Post Expense"
-                        processingLabel="Posting…"
+                        submitLabel={editingExpense ? 'Save Changes' : 'Post Expense'}
+                        processingLabel={editingExpense ? 'Saving…' : 'Posting…'}
                     />
                 </form>
             </Dialog>

@@ -11,31 +11,60 @@ import { confirmDiscardIfDirty, DialogFormActions } from '@/Components/ui/dialog
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
 import { formatCurrency, formatDate } from '@/lib/formatters';
-import { Expense, ListingFilters, PageProps, Paginated } from '@/types';
-import { Head, useForm, usePage } from '@inertiajs/react';
-import { Plus } from 'lucide-react';
+import { hasPermission } from '@/lib/permissions';
+import { Expense, ListingFilters, PageProps, Paginated, SpendableCashFloat } from '@/types';
+import { Head, router, useForm, usePage } from '@inertiajs/react';
+import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { FormEvent, useState } from 'react';
 
 interface OverheadProps extends PageProps {
     expenses: Paginated<Expense>;
     filters: ListingFilters & { sub_type?: string };
     total_overhead: string;
+    cash_floats: SpendableCashFloat[];
 }
 
 export default function Overhead() {
-    const { expenses, filters, total_overhead } = usePage<OverheadProps>().props;
+    const { expenses, filters, total_overhead, cash_floats, auth } = usePage<OverheadProps>().props;
     const rows = expenses.data ?? [];
+    const orgFloats = cash_floats.filter((float) => float.project_id === null);
     const [open, setOpen] = useState(false);
-    const { data, setData, post, processing, errors, reset, clearErrors, isDirty } = useForm({
+    const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+    const { data, setData, post, put, processing, errors, reset, clearErrors, isDirty } = useForm({
         category: 'indirect' as const,
         sub_type: '',
         amount: '',
         description: '',
         expense_date: new Date().toISOString().split('T')[0],
+        cash_allocation_id: '',
+        method: 'cash',
+        payee: '',
+        reference_no: '',
     });
+    const canUpdate = hasPermission(auth.user, 'budgets', 'update');
 
     function openDialog() {
+        setEditingExpense(null);
+        reset();
         clearErrors();
+        setOpen(true);
+    }
+
+    function editExpense(expense: Expense) {
+        const disbursement = expense.cash_disbursement;
+        setEditingExpense(expense);
+        clearErrors();
+        setData({
+            category: 'indirect',
+            sub_type: expense.sub_type,
+            amount: expense.amount,
+            description: expense.description ?? '',
+            expense_date: expense.expense_date.slice(0, 10),
+            cash_allocation_id: String(disbursement?.cash_allocation?.id ?? ''),
+            method: disbursement?.method ?? 'cash',
+            payee: disbursement?.payee ?? '',
+            reference_no: disbursement?.reference_no ?? '',
+        });
         setOpen(true);
     }
 
@@ -44,18 +73,34 @@ export default function Overhead() {
             return;
         }
         setOpen(false);
+        setEditingExpense(null);
         reset();
         clearErrors();
     }
 
     function submit(e: FormEvent) {
         e.preventDefault();
-        post('/finance/expenses', {
+        const options = {
             onSuccess: () => {
                 reset();
+                setEditingExpense(null);
                 setOpen(false);
             },
-        });
+        };
+
+        if (editingExpense) {
+            put(`/finance/expenses/${editingExpense.id}`, options);
+        } else {
+            post('/finance/expenses', options);
+        }
+    }
+
+    function deleteExpense(expense: Expense) {
+        if (!confirm(`Delete ${expense.sub_type} expense of ${formatCurrency(expense.amount)}? Any cash payment will be returned to cash on hand.`)) {
+            return;
+        }
+
+        router.delete(`/finance/expenses/${expense.id}`);
     }
 
     return (
@@ -64,7 +109,7 @@ export default function Overhead() {
             <div className="space-y-6">
                 <PageHeader
                     title="Overhead Expenses"
-                    description="Indirect company expenses — no budget transaction, no project."
+                    description="Indirect company expenses paid from organisation-wide cash on hand."
                     actions={
                         <Button onClick={openDialog}>
                             <Plus className="mr-2 h-4 w-4" />
@@ -100,12 +145,13 @@ export default function Overhead() {
                                 <th className="px-6 py-3 font-medium">Type</th>
                                 <th className="px-6 py-3 text-right font-medium">Amount</th>
                                 <th className="px-6 py-3 font-medium">Description</th>
+                                {canUpdate && <th className="px-6 py-3 text-right font-medium">Actions</th>}
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {rows.length === 0 ? (
                                 <tr>
-                                    <td colSpan={4} className="px-6 py-12 text-center text-slate-500">
+                                    <td colSpan={canUpdate ? 5 : 4} className="px-6 py-12 text-center text-slate-500">
                                         No overhead expenses found.
                                     </td>
                                 </tr>
@@ -123,6 +169,33 @@ export default function Overhead() {
                                         <td className="px-6 py-4 text-slate-600">
                                             {exp.description ?? '—'}
                                         </td>
+                                        {canUpdate && (
+                                            <td className="px-6 py-4">
+                                                <div className="flex items-center justify-end gap-1">
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        title="Edit overhead expense"
+                                                        aria-label="Edit overhead expense"
+                                                        onClick={() => editExpense(exp)}
+                                                    >
+                                                        <Pencil className="h-4 w-4" />
+                                                    </Button>
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                                                        title="Delete overhead expense"
+                                                        aria-label="Delete overhead expense"
+                                                        onClick={() => deleteExpense(exp)}
+                                                    >
+                                                        <Trash2 className="h-4 w-4" />
+                                                    </Button>
+                                                </div>
+                                            </td>
+                                        )}
                                     </tr>
                                 ))
                             )}
@@ -135,10 +208,47 @@ export default function Overhead() {
             <Dialog
                 open={open}
                 onOpenChange={(next) => (next ? openDialog() : closeDialog())}
-                title="Record Overhead Expense"
-                description="Log an indirect company expense."
+                title={editingExpense ? 'Edit Overhead Expense' : 'Record Overhead Expense'}
+                description={editingExpense ? 'Adjust the overhead and its cash-on-hand effect.' : 'Pay an indirect expense from organisation-wide cash on hand.'}
             >
                 <form onSubmit={submit} className="space-y-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="overhead-float">Organisation cash float</Label>
+                        <select
+                            id="overhead-float"
+                            className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-800"
+                            value={data.cash_allocation_id}
+                            onChange={(e) => setData('cash_allocation_id', e.target.value)}
+                            required
+                        >
+                            <option value="">
+                                {orgFloats.length ? 'Select cash float' : 'No organisation cash on hand'}
+                            </option>
+                            {orgFloats.map((float) => (
+                                <option key={float.id} value={float.id}>
+                                    {float.reference_no ? `${float.reference_no} · ` : ''}
+                                    available {formatCurrency(float.balance)}
+                                </option>
+                            ))}
+                        </select>
+                        {errors.cash_allocation_id && (
+                            <p className="text-sm text-red-600">{errors.cash_allocation_id}</p>
+                        )}
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="overhead-method">Payment method</Label>
+                        <select
+                            id="overhead-method"
+                            className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-800"
+                            value={data.method}
+                            onChange={(e) => setData('method', e.target.value)}
+                            required
+                        >
+                            <option value="cash">Cash</option>
+                            <option value="mobile">Mobile money</option>
+                            <option value="bank">Bank transfer</option>
+                        </select>
+                    </div>
                     <div className="space-y-2">
                         <Label htmlFor="overhead-sub-type">Sub Type</Label>
                         <Input
@@ -175,10 +285,28 @@ export default function Overhead() {
                             onChange={(e) => setData('description', e.target.value)}
                         />
                     </div>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="space-y-2">
+                            <Label htmlFor="overhead-payee">Payee</Label>
+                            <Input
+                                id="overhead-payee"
+                                value={data.payee}
+                                onChange={(e) => setData('payee', e.target.value)}
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="overhead-reference">Receipt / reference</Label>
+                            <Input
+                                id="overhead-reference"
+                                value={data.reference_no}
+                                onChange={(e) => setData('reference_no', e.target.value)}
+                            />
+                        </div>
+                    </div>
                     <DialogFormActions
                         onCancel={closeDialog}
                         processing={processing}
-                        submitLabel="Record Overhead"
+                        submitLabel={editingExpense ? 'Save Changes' : 'Record Overhead'}
                         processingLabel="Saving…"
                     />
                 </form>

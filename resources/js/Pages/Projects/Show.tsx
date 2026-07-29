@@ -85,7 +85,7 @@ export default function ProjectsShow() {
                     </DataPanel>
                     <DataPanel title="Remaining">
                         <p className="text-2xl font-bold text-green-700">
-                            {formatCurrency(project.remaining_budget ?? project.net_budget)}
+                            {formatCurrency(project.remaining_budget)}
                         </p>
                     </DataPanel>
                     <DataPanel title="Contract Amount">
@@ -93,9 +93,9 @@ export default function ProjectsShow() {
                             {formatCurrency(project.contract_amount)}
                         </p>
                     </DataPanel>
-                    <DataPanel title="Progress">
+                    <DataPanel title="Profit">
                         <p className="text-2xl font-bold text-blue-700">
-                            {formatPercent(project.physical_progress_pct)}
+                            {formatPercent(project.profit_percentage)}
                         </p>
                     </DataPanel>
                 </div>

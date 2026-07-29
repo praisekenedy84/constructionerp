@@ -28,7 +28,7 @@ export default function Reconciliation() {
             <div className="space-y-6">
                 <PageHeader
                     title="Cash Reconciliation"
-                    description={`${project.code} — Outstanding = Committed − Disbursed`}
+                    description={`${project.code} — Outstanding is cash still owed on approved finance requests`}
                     actions={
                         <ExportButton
                             slug="cash-reconciliation"
@@ -58,16 +58,25 @@ export default function Reconciliation() {
                     />
                 </DataPanel>
 
-                <DataPanel title="Reconciliation Formula">
-                    <div className="space-y-2 font-mono text-sm text-slate-700">
-                        <p>Outstanding = Committed − Disbursed</p>
+                <DataPanel title="What each figure means">
+                    <div className="space-y-3 text-sm text-slate-700">
                         <p>
-                            {formatCurrency(summary.outstanding)} ={' '}
-                            {formatCurrency(summary.committed)} −{' '}
-                            {formatCurrency(summary.disbursed)}
+                            <span className="font-semibold">Committed</span> — approved or
+                            amended finance requests not yet fulfilled (cash still reserved).
                         </p>
-                        <p className="mt-4 text-slate-500">
-                            Cash on Hand = Received − Utilized (independent query)
+                        <p>
+                            <span className="font-semibold">Disbursed</span> — total cash
+                            already paid out on this project (historical).
+                        </p>
+                        <p>
+                            <span className="font-semibold">Outstanding</span> — remaining
+                            amount still to pay from committed finance requests (
+                            {formatCurrency(summary.outstanding)}).
+                        </p>
+                        <p>
+                            <span className="font-semibold">Cash on Hand</span> — money
+                            floated to finance that has not yet been utilized (
+                            {formatCurrency(summary.cash_on_hand)}).
                         </p>
                     </div>
                 </DataPanel>

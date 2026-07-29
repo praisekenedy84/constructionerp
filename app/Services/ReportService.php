@@ -282,7 +282,16 @@ class ReportService
             })
             ->sum('amount');
 
-        $outstanding = bcsub($committed, $disbursed, 2);
+        // Outstanding compares like with like: only payments already made against
+        // requisitions that are still committed. Fulfilled ones leave both sides.
+        $paidAgainstCommitted = '0.00';
+        if ($committedReqs->isNotEmpty()) {
+            $paidAgainstCommitted = (string) CashDisbursement::query()
+                ->whereIn('requisition_id', $committedReqs->modelKeys())
+                ->sum('amount');
+        }
+
+        $outstanding = bcsub($committed, $paidAgainstCommitted, 2);
 
         return [
             'generated_at' => now()->toIso8601String(),

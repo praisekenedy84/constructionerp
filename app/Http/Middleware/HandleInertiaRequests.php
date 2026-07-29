@@ -17,6 +17,14 @@ class HandleInertiaRequests extends Middleware
 
     public function version(Request $request): ?string
     {
+        // Prefer an explicit deploy stamp so PHP-only releases still invalidate
+        // stale browser tabs. Fall back to the Vite manifest hash.
+        $deployVersion = config('app.asset_version');
+
+        if (is_string($deployVersion) && $deployVersion !== '') {
+            return $deployVersion;
+        }
+
         return parent::version($request);
     }
 

@@ -56,6 +56,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Asset Version
+    |--------------------------------------------------------------------------
+    |
+    | Bumped on every production deploy (e.g. git SHA). Inertia compares this
+    | to the X-Inertia-Version header and returns 409 when it changes, which
+    | forces a full page reload onto the new JS/CSS bundle.
+    |
+    */
+
+    'asset_version' => env('ASSET_VERSION'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |

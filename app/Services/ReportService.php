@@ -278,7 +278,10 @@ class ReportService
 
         $disbursed = (string) CashDisbursement::query()
             ->when($projectId, function ($q) use ($projectId) {
-                $q->whereHas('requisition', fn ($rq) => $rq->where('project_id', $projectId));
+                $q->where(function ($inner) use ($projectId) {
+                    $inner->whereHas('requisition', fn ($rq) => $rq->where('project_id', $projectId))
+                        ->orWhereHas('expense', fn ($eq) => $eq->where('project_id', $projectId));
+                });
             })
             ->sum('amount');
 

@@ -11,19 +11,20 @@ import { confirmDiscardIfDirty, DialogFormActions } from '@/Components/ui/dialog
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
 import { formatCurrency, formatDate } from '@/lib/formatters';
-import { Expense, ListingFilters, PageProps, Paginated, Project } from '@/types';
+import { Expense, ListingFilters, PageProps, Paginated, Project, SpendableCashFloat } from '@/types';
 import { Head, useForm, usePage } from '@inertiajs/react';
 import { Plus } from 'lucide-react';
-import { FormEvent, useState } from 'react';
+import { FormEvent, useMemo, useState } from 'react';
 
 interface ExpensesProps extends PageProps {
     expenses: Paginated<Expense>;
     filters: ListingFilters & { project_id?: string; category?: string };
     projects: Project[];
+    cash_floats: SpendableCashFloat[];
 }
 
 export default function Expenses() {
-    const { expenses, filters, projects } = usePage<ExpensesProps>().props;
+    const { expenses, filters, projects, cash_floats } = usePage<ExpensesProps>().props;
     const rows = expenses.data ?? [];
     const [open, setOpen] = useState(false);
     const { data, setData, post, processing, errors, reset, clearErrors, isDirty } = useForm({
@@ -34,7 +35,27 @@ export default function Expenses() {
         amount: '',
         description: '',
         expense_date: new Date().toISOString().split('T')[0],
+        cash_allocation_id: '',
+        method: 'cash',
+        payee: '',
+        reference_no: '',
     });
+
+    const availableFloats = useMemo(() => {
+        if (!data.project_id) {
+            return [];
+        }
+
+        const projectId = Number(data.project_id);
+
+        return cash_floats.filter(
+            (float) => float.project_id === null || float.project_id === projectId,
+        );
+    }, [cash_floats, data.project_id]);
+
+    const selectedFloat = availableFloats.find(
+        (float) => String(float.id) === data.cash_allocation_id,
+    );
 
     function openDialog() {
         clearErrors();
@@ -50,6 +71,14 @@ export default function Expenses() {
         clearErrors();
     }
 
+    function selectProject(projectId: string) {
+        setData({
+            ...data,
+            project_id: projectId,
+            cash_allocation_id: '',
+        });
+    }
+
     function submit(e: FormEvent) {
         e.preventDefault();
         post('/finance/expenses', {
@@ -60,13 +89,22 @@ export default function Expenses() {
         });
     }
 
+    function floatLabel(float: SpendableCashFloat): string {
+        const scope = float.project
+            ? `${float.project.code} — ${float.project.name}`
+            : 'Organisation-wide';
+        const ref = float.reference_no ? ` · ${float.reference_no}` : '';
+
+        return `${scope}${ref} · available ${formatCurrency(float.balance)}`;
+    }
+
     return (
         <AppShell title="Direct Expenses">
             <Head title="Direct Expenses" />
             <div className="space-y-6">
                 <PageHeader
                     title="Direct Expenses"
-                    description="Project expenses that create DIRECT_EXPENSE budget transactions."
+                    description="Project expenses paid from cash on hand. Recording an expense reduces the selected float and cannot exceed its balance."
                     actions={
                         <Button onClick={openDialog}>
                             <Plus className="mr-2 h-4 w-4" />
@@ -111,13 +149,14 @@ export default function Expenses() {
                                 <th className="px-6 py-3 font-medium">Project</th>
                                 <th className="px-6 py-3 font-medium">Type</th>
                                 <th className="px-6 py-3 text-right font-medium">Amount</th>
+                                <th className="px-6 py-3 font-medium">Paid from</th>
                                 <th className="px-6 py-3 font-medium">Description</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {rows.length === 0 ? (
                                 <tr>
-                                    <td colSpan={5} className="px-6 py-12 text-center text-slate-500">
+                                    <td colSpan={6} className="px-6 py-12 text-center text-slate-500">
                                         No expenses found.
                                     </td>
                                 </tr>
@@ -131,6 +170,16 @@ export default function Expenses() {
                                         </td>
                                         <td className="px-6 py-4 text-right font-medium">
                                             {formatCurrency(exp.amount)}
+                                        </td>
+                                        <td className="px-6 py-4 text-slate-600">
+                                            {exp.cash_disbursement
+                                                ? [
+                                                      exp.cash_disbursement.method,
+                                                      exp.cash_disbursement.cash_allocation?.reference_no,
+                                                  ]
+                                                      .filter(Boolean)
+                                                      .join(' · ') || 'Cash float'
+                                                : '—'}
                                         </td>
                                         <td className="px-6 py-4 text-slate-600">
                                             {exp.description ?? '—'}
@@ -148,7 +197,7 @@ export default function Expenses() {
                 open={open}
                 onOpenChange={(next) => (next ? openDialog() : closeDialog())}
                 title="Create New Expense"
-                description="Post a direct project expense."
+                description="Post a direct project expense paid from a cash float."
             >
                 <form onSubmit={submit} className="space-y-4">
                     <div className="space-y-2">
@@ -157,7 +206,7 @@ export default function Expenses() {
                             id="expense-project"
                             className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-800"
                             value={data.project_id}
-                            onChange={(e) => setData('project_id', e.target.value)}
+                            onChange={(e) => selectProject(e.target.value)}
                             required
                         >
                             <option value="">Select project</option>
@@ -170,6 +219,53 @@ export default function Expenses() {
                         {errors.project_id && (
                             <p className="text-sm text-red-600">{errors.project_id}</p>
                         )}
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="expense-float">Cash float</Label>
+                        <select
+                            id="expense-float"
+                            className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-800"
+                            value={data.cash_allocation_id}
+                            onChange={(e) => setData('cash_allocation_id', e.target.value)}
+                            required
+                            disabled={!data.project_id}
+                        >
+                            <option value="">
+                                {data.project_id
+                                    ? availableFloats.length > 0
+                                        ? 'Select cash float'
+                                        : 'No cash on hand for this project'
+                                    : 'Select a project first'}
+                            </option>
+                            {availableFloats.map((float) => (
+                                <option key={float.id} value={float.id}>
+                                    {floatLabel(float)}
+                                </option>
+                            ))}
+                        </select>
+                        {selectedFloat && (
+                            <p className="text-xs text-slate-500">
+                                Available on this float: {formatCurrency(selectedFloat.balance)}
+                            </p>
+                        )}
+                        {errors.cash_allocation_id && (
+                            <p className="text-sm text-red-600">{errors.cash_allocation_id}</p>
+                        )}
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="expense-method">Payment method</Label>
+                        <select
+                            id="expense-method"
+                            className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-800"
+                            value={data.method}
+                            onChange={(e) => setData('method', e.target.value)}
+                            required
+                        >
+                            <option value="cash">Cash</option>
+                            <option value="mobile">Mobile money</option>
+                            <option value="bank">Bank transfer</option>
+                        </select>
+                        {errors.method && <p className="text-sm text-red-600">{errors.method}</p>}
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="expense-sub-type">Sub Type</Label>
@@ -190,6 +286,28 @@ export default function Expenses() {
                             required
                         />
                         {errors.amount && <p className="text-sm text-red-600">{errors.amount}</p>}
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="space-y-2">
+                            <Label htmlFor="expense-payee">Payee</Label>
+                            <Input
+                                id="expense-payee"
+                                value={data.payee}
+                                onChange={(e) => setData('payee', e.target.value)}
+                            />
+                            {errors.payee && <p className="text-sm text-red-600">{errors.payee}</p>}
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="expense-reference">Receipt / reference</Label>
+                            <Input
+                                id="expense-reference"
+                                value={data.reference_no}
+                                onChange={(e) => setData('reference_no', e.target.value)}
+                            />
+                            {errors.reference_no && (
+                                <p className="text-sm text-red-600">{errors.reference_no}</p>
+                            )}
+                        </div>
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="expense-date">Expense Date</Label>

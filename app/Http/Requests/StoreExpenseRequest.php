@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Enums\ExpenseCategory;
+use App\Enums\PaymentMethod;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -25,6 +26,27 @@ class StoreExpenseRequest extends FormRequest
             'amount' => ['required', 'numeric', 'gt:0'],
             'description' => ['nullable', 'string', 'max:2000'],
             'expense_date' => ['required', 'date'],
+            'cash_allocation_id' => [
+                'nullable',
+                'integer',
+                'exists:cash_allocations,id',
+                'required_if:category,direct',
+            ],
+            'method' => ['nullable', Rule::enum(PaymentMethod::class), 'required_if:category,direct'],
+            'payee' => ['nullable', 'string', 'max:150'],
+            'reference_no' => ['nullable', 'string', 'max:100'],
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function attributes(): array
+    {
+        return [
+            'cash_allocation_id' => 'cash float',
+            'method' => 'payment method',
+            'reference_no' => 'receipt number',
         ];
     }
 }

@@ -291,6 +291,25 @@ export interface Expense {
     expense_date: string;
     recorded_by: number;
     project?: Project;
+    cash_disbursement?: {
+        id: number;
+        amount: string;
+        method: string;
+        payee: string | null;
+        reference_no: string | null;
+        cash_allocation?: Pick<CashAllocation, 'id' | 'project_id' | 'reference_no'> | null;
+    } | null;
+}
+
+export interface SpendableCashFloat {
+    id: number;
+    project_id: number | null;
+    received_amount: string;
+    utilized_amount: string;
+    balance: string;
+    reference_no: string | null;
+    received_at: string | null;
+    project: Pick<Project, 'id' | 'code' | 'name'> | null;
 }
 
 export interface Supplier {

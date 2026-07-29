@@ -3,7 +3,12 @@
 namespace App\Services;
 
 use App\Enums\BudgetTransactionType;
+use App\Enums\CashAllocationStatus;
 use App\Enums\ExpenseCategory;
+use App\Enums\PaymentMethod;
+use App\Exceptions\InsufficientCashException;
+use App\Models\CashAllocation;
+use App\Models\CashDisbursement;
 use App\Models\Expense;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -26,6 +31,10 @@ class ExpenseService
      *     description?: string|null,
      *     expense_date: string,
      *     recorded_by: int,
+     *     cash_allocation_id?: int|null,
+     *     method?: string|null,
+     *     payee?: string|null,
+     *     reference_no?: string|null,
      * }  $data
      */
     public function create(array $data): Expense
@@ -41,6 +50,14 @@ class ExpenseService
                 throw new \InvalidArgumentException('Direct expenses require a project_id.');
             }
 
+            $allocation = $category === ExpenseCategory::Direct
+                ? $this->lockSpendableFloat(
+                    $data['cash_allocation_id'] ?? null,
+                    (int) $data['project_id'],
+                    $amount,
+                )
+                : null;
+
             $expense = Expense::create([
                 'project_id' => $category === ExpenseCategory::Direct ? $data['project_id'] : null,
                 'boq_item_id' => $data['boq_item_id'] ?? null,
@@ -54,7 +71,24 @@ class ExpenseService
                 'recorded_by' => $data['recorded_by'],
             ]);
 
-            if ($category === ExpenseCategory::Direct) {
+            if ($allocation) {
+                CashDisbursement::create([
+                    'expense_id' => $expense->id,
+                    'cash_allocation_id' => $allocation->id,
+                    'amount' => $amount,
+                    'method' => $data['method'] ?? PaymentMethod::Cash->value,
+                    'payee' => $data['payee'] ?? null,
+                    'reference_no' => $data['reference_no'] ?? null,
+                    'disbursed_by' => $data['recorded_by'],
+                    'disbursed_at' => $data['expense_date'],
+                    'created_at' => now(),
+                ]);
+            }
+
+            // A project float already charged the project budget when it was funded
+            // (CASH_ALLOCATION), so charging again here would double-count the spend.
+            // Organisation-wide floats never touched a project budget, so those still post.
+            if ($allocation && $allocation->isOrganizationWide()) {
                 $this->budgetService->createTransaction((int) $data['project_id'], [
                     'type' => BudgetTransactionType::DirectExpense,
                     'amount' => $amount,
@@ -67,6 +101,43 @@ class ExpenseService
 
             return $expense;
         });
+    }
+
+    /**
+     * Resolve the float a direct expense is paid from, holding a row lock so two
+     * concurrent expenses cannot both spend the same remaining balance.
+     */
+    private function lockSpendableFloat(mixed $allocationId, int $projectId, string $amount): CashAllocation
+    {
+        if (empty($allocationId)) {
+            throw new \InvalidArgumentException(
+                'Select the cash float this expense is paid from.'
+            );
+        }
+
+        $allocation = CashAllocation::lockForUpdate()->findOrFail((int) $allocationId);
+
+        if ($allocation->status !== CashAllocationStatus::Received) {
+            throw new \InvalidArgumentException(
+                'Cash can only be spent from a float that has been received.'
+            );
+        }
+
+        if (! $allocation->isOrganizationWide() && (int) $allocation->project_id !== $projectId) {
+            throw new \InvalidArgumentException(
+                'That cash float belongs to another project.'
+            );
+        }
+
+        if (bccomp($allocation->balance, $amount, 2) < 0) {
+            throw new InsufficientCashException(
+                $amount,
+                $allocation->balance,
+                'Reduce the expense to the available balance, or request additional funds.',
+            );
+        }
+
+        return $allocation;
     }
 
     public function store(array $data, User $user): Expense

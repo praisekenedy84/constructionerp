@@ -184,7 +184,7 @@ class ExpenseCashFlowTest extends TestCase
 
         $this->assertTrue(
             session()->has('errors'),
-            'Spending above the selected float balance should fail'
+            'Spending above total cash on hand should fail'
         );
 
         Tenant::where('slug', 'expense-cash-co')->first()->run(function () {
@@ -194,13 +194,13 @@ class ExpenseCashFlowTest extends TestCase
         });
     }
 
-    public function test_cannot_spend_another_projects_float(): void
+    public function test_expense_can_split_across_multiple_project_cash_allocations(): void
     {
         $this->seedTenant();
 
         Tenant::where('slug', 'expense-cash-co')->first()->run(function () {
             CashAllocation::create([
-                'project_id' => 2,
+                'project_id' => 1,
                 'requested_amount' => '100000.00',
                 'received_amount' => '100000.00',
                 'utilized_amount' => '0.00',
@@ -210,6 +210,19 @@ class ExpenseCashFlowTest extends TestCase
                 'requested_at' => now(),
                 'received_at' => now(),
                 'decided_at' => now(),
+            ]);
+
+            CashAllocation::create([
+                'project_id' => 1,
+                'requested_amount' => '200000.00',
+                'received_amount' => '200000.00',
+                'utilized_amount' => '0.00',
+                'status' => CashAllocationStatus::Received,
+                'requested_by' => 1,
+                'approved_by' => 1,
+                'requested_at' => now()->addSecond(),
+                'received_at' => now()->addSecond(),
+                'decided_at' => now()->addSecond(),
             ]);
         });
 
@@ -221,21 +234,21 @@ class ExpenseCashFlowTest extends TestCase
         $this->post('/finance/expenses', [
             'category' => 'direct',
             'project_id' => 1,
-            'cash_allocation_id' => 1,
             'method' => 'cash',
-            'sub_type' => 'Fuel',
-            'amount' => '10000',
+            'description' => 'Project pooled cash expense',
+            'amount' => '300000',
             'expense_date' => now()->toDateString(),
         ])->assertRedirect();
 
-        $this->assertTrue(session()->has('errors'));
-
         Tenant::where('slug', 'expense-cash-co')->first()->run(function () {
-            $this->assertSame(0, Expense::count());
+            $this->assertSame(1, Expense::count());
+            $this->assertSame(2, CashDisbursement::count());
+            $this->assertSame('100000.00', (string) CashAllocation::find(1)->utilized_amount);
+            $this->assertSame('200000.00', (string) CashAllocation::find(2)->utilized_amount);
         });
     }
 
-    public function test_org_wide_float_expense_posts_direct_budget_transaction(): void
+    public function test_direct_expense_cannot_use_organization_cash(): void
     {
         $this->seedTenant();
 
@@ -263,21 +276,53 @@ class ExpenseCashFlowTest extends TestCase
         $this->post('/finance/expenses', [
             'category' => 'direct',
             'project_id' => 1,
-            'cash_allocation_id' => 1,
             'method' => 'mobile',
             'sub_type' => 'Materials',
             'amount' => '40000',
             'expense_date' => now()->toDateString(),
-        ])->assertRedirect();
+        ])->assertSessionHasErrors(['amount']);
 
         Tenant::where('slug', 'expense-cash-co')->first()->run(function () {
-            $allocation = CashAllocation::first();
-            $this->assertSame('40000.00', (string) $allocation->utilized_amount);
+            $this->assertSame(0, Expense::count());
+            $this->assertSame('0.00', (string) CashAllocation::first()->utilized_amount);
+        });
+    }
 
-            $txn = BudgetTransaction::where('type', BudgetTransactionType::DirectExpense)->first();
-            $this->assertNotNull($txn);
-            $this->assertSame('40000.00', (string) $txn->amount);
-            $this->assertSame(1, $txn->project_id);
+    public function test_indirect_expense_cannot_use_project_cash(): void
+    {
+        $this->seedTenant();
+
+        Tenant::where('slug', 'expense-cash-co')->first()->run(function () {
+            CashAllocation::create([
+                'project_id' => 1,
+                'requested_amount' => '200000.00',
+                'received_amount' => '200000.00',
+                'utilized_amount' => '0.00',
+                'status' => CashAllocationStatus::Received,
+                'requested_by' => 1,
+                'approved_by' => 1,
+                'requested_at' => now(),
+                'received_at' => now(),
+                'decided_at' => now(),
+            ]);
+        });
+
+        $this->post('/login', [
+            'email' => 'admin@expensecash.local',
+            'password' => 'password',
+        ]);
+
+        $this->post('/finance/expenses', [
+            'category' => 'indirect',
+            'sub_type' => 'Rent',
+            'amount' => '50000',
+            'expense_date' => now()->toDateString(),
+            'method' => 'bank',
+        ])->assertSessionHasErrors(['amount']);
+
+        Tenant::where('slug', 'expense-cash-co')->first()->run(function () {
+            $this->assertSame(0, Expense::count());
+            $this->assertSame('0.00', (string) CashAllocation::first()->utilized_amount);
         });
     }
 
@@ -435,7 +480,7 @@ class ExpenseCashFlowTest extends TestCase
         });
     }
 
-    public function test_direct_expense_requires_cash_float(): void
+    public function test_direct_expense_requires_sufficient_total_cash_on_hand(): void
     {
         $this->seedTenant();
 
@@ -451,6 +496,6 @@ class ExpenseCashFlowTest extends TestCase
             'sub_type' => 'Fuel',
             'amount' => '10000',
             'expense_date' => now()->toDateString(),
-        ])->assertSessionHasErrors(['cash_allocation_id']);
+        ])->assertSessionHasErrors(['amount']);
     }
 }

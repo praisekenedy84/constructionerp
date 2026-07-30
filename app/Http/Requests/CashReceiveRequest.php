@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\PaymentMethod;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class CashReceiveRequest extends FormRequest
 {
@@ -15,7 +17,7 @@ class CashReceiveRequest extends FormRequest
     {
         return [
             'received_amount' => ['required', 'numeric', 'gt:0'],
-            'method' => ['nullable', 'string', 'max:100'],
+            'method' => ['nullable', Rule::enum(PaymentMethod::class)],
             'reference_no' => ['nullable', 'string', 'max:100'],
         ];
     }

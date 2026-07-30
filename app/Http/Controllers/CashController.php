@@ -56,7 +56,9 @@ class CashController extends Controller
             return back()->with('error', $e->getMessage());
         }
 
-        return back()->with('success', 'Fund request approved — amount added to finance cash on hand.');
+        return back()->with('success', $allocation->isOrganizationWide()
+            ? 'Organization fund approved — amount added to organization cash on hand.'
+            : 'Fund request approved — amount added to project cash on hand.');
     }
 
     public function reject(Request $request, int $id): RedirectResponse
@@ -125,6 +127,13 @@ class CashController extends Controller
             'project' => $project,
             'summary' => $this->cashService->reconciliation($project),
         ]);
+    }
+
+    public function organizationCash(Request $request): Response
+    {
+        $this->authorizePermission($request->user(), 'budgets', 'read');
+
+        return Inertia::render('Finance/OrganizationCash', $this->cashService->organizationOverview());
     }
 
     public function fundApprovals(Request $request): Response

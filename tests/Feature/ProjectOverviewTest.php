@@ -74,5 +74,12 @@ class ProjectOverviewTest extends TestCase
                 ->where('project.remaining_budget', '600.00')
                 ->where('project.profit_percentage', '60.00')
             );
+
+        $this->get('/projects')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Projects/Index')
+                ->where('projects.data.0.profit_percentage', '60.00')
+            );
     }
 }

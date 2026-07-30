@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\PaymentMethod;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class CashRequestRequest extends FormRequest
 {
@@ -17,7 +19,7 @@ class CashRequestRequest extends FormRequest
             // null / empty = organization-wide (general) fund request
             'project_id' => ['nullable', 'integer', 'exists:projects,id'],
             'requested_amount' => ['required', 'numeric', 'gt:0'],
-            'method' => ['nullable', 'string', 'max:100'],
+            'method' => ['nullable', Rule::enum(PaymentMethod::class)],
             'reference_no' => ['nullable', 'string', 'max:100'],
         ];
     }

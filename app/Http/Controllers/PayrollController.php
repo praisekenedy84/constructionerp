@@ -168,10 +168,15 @@ class PayrollController extends Controller
         $this->authorizePermission($request->user(), 'payroll', 'approve');
 
         $run = PayrollRun::findOrFail($id);
-        $this->payrollService->post($run, $request->user());
+
+        try {
+            $this->payrollService->post($run, $request->user());
+        } catch (\App\Exceptions\InsufficientCashException $e) {
+            return back()->with('error', $e->getMessage());
+        }
 
         return redirect()
             ->route('payroll.runs.show', $run->id)
-            ->with('success', 'Payroll posted. Salaries recorded as overhead expense.');
+            ->with('success', 'Payroll posted. Salaries paid from organization cash on hand.');
     }
 }

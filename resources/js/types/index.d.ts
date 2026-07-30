@@ -292,14 +292,14 @@ export interface Expense {
     expense_date: string;
     recorded_by: number;
     project?: Project;
-    cash_disbursement?: {
+    cash_disbursements?: Array<{
         id: number;
         amount: string;
         method: string;
         payee: string | null;
         reference_no: string | null;
         cash_allocation?: Pick<CashAllocation, 'id' | 'project_id' | 'reference_no'> | null;
-    } | null;
+    }>;
 }
 
 export interface SpendableCashFloat {

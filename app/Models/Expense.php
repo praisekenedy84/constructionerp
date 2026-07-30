@@ -6,7 +6,7 @@ use App\Enums\ExpenseCategory;
 use App\Traits\LogsActivity;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Expense extends Model
@@ -50,8 +50,8 @@ class Expense extends Model
         return $this->belongsTo(User::class, 'recorded_by');
     }
 
-    public function cashDisbursement(): HasOne
+    public function cashDisbursements(): HasMany
     {
-        return $this->hasOne(CashDisbursement::class);
+        return $this->hasMany(CashDisbursement::class);
     }
 }

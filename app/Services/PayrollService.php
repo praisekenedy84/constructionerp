@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\AttendanceStatus;
 use App\Enums\BudgetTransactionType;
 use App\Enums\ExpenseCategory;
+use App\Enums\PaymentMethod;
 use App\Enums\PayrollDeductionType;
 use App\Enums\PayrollRunStatus;
 use App\Enums\PayStructure;
@@ -18,6 +19,7 @@ use App\Models\PayrollItem;
 use App\Models\PayrollRun;
 use App\Models\Project;
 use App\Models\User;
+use App\Support\OrganizationFundUse;
 use Illuminate\Support\Facades\DB;
 
 class PayrollService
@@ -103,7 +105,7 @@ class PayrollService
             }
 
             DB::transaction(function () use ($run, $actor, &$created) {
-                if ($this->recordSalariesOverheadExpense($run, $actor)) {
+                if ($this->recordSalariesOverheadExpense($run, $actor, consumeCash: false)) {
                     $created++;
                 }
                 $this->removeLegacyPayrollBudgetTransactions($run);
@@ -116,7 +118,7 @@ class PayrollService
     /**
      * @return bool True when an overhead expense row was created.
      */
-    private function recordSalariesOverheadExpense(PayrollRun $run, User $actor): bool
+    private function recordSalariesOverheadExpense(PayrollRun $run, User $actor, bool $consumeCash = true): bool
     {
         $totalNetPay = '0';
         foreach ($run->items as $item) {
@@ -138,15 +140,23 @@ class PayrollService
             ? "{$run->project->code} — {$run->project->name}"
             : "project #{$run->project_id}";
 
-        $this->expenseService->create([
+        $payload = [
             'category' => ExpenseCategory::Indirect,
-            'sub_type' => 'Salaries',
+            'sub_type' => OrganizationFundUse::SALARIES,
             'amount' => $totalNetPay,
             'description' => "Payroll run #{$run->id} ({$projectLabel}, {$periodStart} to {$periodEnd})",
             'expense_date' => $periodEnd,
             'activity_ref' => $ref,
             'recorded_by' => $actor->id,
-        ]);
+        ];
+
+        if ($consumeCash) {
+            $payload['method'] = PaymentMethod::Bank->value;
+            $payload['payee'] = 'Payroll';
+            $payload['reference_no'] = "PAYROLL-{$run->id}";
+        }
+
+        $this->expenseService->create($payload);
 
         return true;
     }

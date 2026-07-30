@@ -6,10 +6,10 @@ use App\Http\Requests\StoreExpenseRequest;
 use App\Models\Project;
 use App\Services\ExpenseService;
 use App\Services\PayrollService;
+use App\Services\ReportService;
 use App\Support\ListingQuery;
-use App\Enums\CashAllocationStatus;
+use App\Support\OrganizationFundUse;
 use App\Enums\ExpenseCategory;
-use App\Models\CashAllocation;
 use App\Models\Expense;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -21,6 +21,7 @@ class ExpenseController extends Controller
     public function __construct(
         private ExpenseService $expenseService,
         private PayrollService $payrollService,
+        private ReportService $reportService,
     ) {}
 
     public function store(StoreExpenseRequest $request): RedirectResponse
@@ -30,7 +31,7 @@ class ExpenseController extends Controller
         try {
             $expense = $this->expenseService->store($request->validated(), $request->user());
         } catch (\App\Exceptions\InsufficientCashException|\InvalidArgumentException $e) {
-            return back()->withErrors(['cash_allocation_id' => $e->getMessage()]);
+            return back()->withErrors(['amount' => $e->getMessage()]);
         }
 
         return back()->with('success', 'Expense recorded and cash on hand reduced.');
@@ -44,7 +45,7 @@ class ExpenseController extends Controller
         try {
             $this->expenseService->update($expense, $request->validated(), $request->user());
         } catch (\App\Exceptions\InsufficientCashException|\InvalidArgumentException $e) {
-            return back()->withErrors(['cash_allocation_id' => $e->getMessage()]);
+            return back()->withErrors(['amount' => $e->getMessage()]);
         }
 
         return back()->with('success', 'Expense updated and cash on hand adjusted.');
@@ -64,7 +65,7 @@ class ExpenseController extends Controller
         $this->authorizePermission($request->user(), 'budgets', 'read');
 
         $query = Expense::query()
-            ->with(['project', 'cashDisbursement.cashAllocation:id,project_id,reference_no'])
+            ->with(['project', 'cashDisbursements'])
             ->where('category', ExpenseCategory::Direct);
 
         if ($request->filled('project_id')) {
@@ -83,7 +84,6 @@ class ExpenseController extends Controller
         return Inertia::render('Finance/Expenses', [
             'expenses' => $listing->paginate(25),
             'projects' => Project::orderBy('name')->get(['id', 'code', 'name']),
-            'cash_floats' => $this->spendableFloats(),
             'filters' => $listing->filters([
                 'project_id' => $request->input('project_id'),
                 'category' => $request->input('category'),
@@ -100,7 +100,7 @@ class ExpenseController extends Controller
         $this->payrollService->backfillLegacyPayrollOverhead($request->user());
 
         $query = Expense::query()
-            ->with('cashDisbursement.cashAllocation:id,project_id,reference_no')
+            ->with('cashDisbursements')
             ->where('category', ExpenseCategory::Indirect);
 
         if ($request->filled('sub_type')) {
@@ -115,49 +115,9 @@ class ExpenseController extends Controller
         return Inertia::render('Finance/Overhead', [
             'expenses' => $listing->paginate(25),
             'total_overhead' => $this->expenseService->overheadTotal($request->all()),
-            'cash_floats' => $this->spendableFloats(),
+            'organization_cash' => $this->reportService->cashPosition(['scope' => 'organization']),
+            'purpose_options' => OrganizationFundUse::subtypes(),
             'filters' => $listing->filters(['sub_type' => $request->input('sub_type')]),
         ]);
-    }
-
-    /**
-     * Received floats with remaining balance that a direct expense can be paid from.
-     *
-     * @return list<array{
-     *     id: int,
-     *     project_id: int|null,
-     *     received_amount: string,
-     *     utilized_amount: string,
-     *     balance: string,
-     *     reference_no: string|null,
-     *     received_at: string|null,
-     *     project: array{id: int, code: string, name: string}|null,
-     * }>
-     */
-    private function spendableFloats(): array
-    {
-        return CashAllocation::query()
-            ->with('project:id,code,name')
-            ->where('status', CashAllocationStatus::Received)
-            ->orderByDesc('received_at')
-            ->get()
-            ->map(fn (CashAllocation $allocation) => [
-                'id' => $allocation->id,
-                'project_id' => $allocation->project_id,
-                'received_amount' => (string) $allocation->received_amount,
-                'utilized_amount' => (string) $allocation->utilized_amount,
-                'balance' => $allocation->balance,
-                'reference_no' => $allocation->reference_no,
-                'received_at' => $allocation->received_at?->toDateString(),
-                'project' => $allocation->project
-                    ? [
-                        'id' => $allocation->project->id,
-                        'code' => $allocation->project->code,
-                        'name' => $allocation->project->name,
-                    ]
-                    : null,
-            ])
-            ->values()
-            ->all();
     }
 }

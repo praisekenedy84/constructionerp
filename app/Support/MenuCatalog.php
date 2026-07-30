@@ -37,6 +37,7 @@ class MenuCatalog
                 'group' => 'Finance',
                 'children' => [
                     ['key' => 'finance.approvals', 'label' => 'Fund Approvals', 'href' => '/finance/approvals', 'permission' => null],
+                    ['key' => 'finance.organization_cash', 'label' => 'Organization Cash', 'href' => '/finance/organization-cash', 'permission' => null],
                     ['key' => 'finance.expenses', 'label' => 'Expenses', 'href' => '/finance/expenses', 'permission' => null],
                     ['key' => 'finance.overhead', 'label' => 'Overhead', 'href' => '/finance/overhead', 'permission' => null],
                 ],

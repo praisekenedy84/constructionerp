@@ -10,22 +10,22 @@ import { Dialog } from '@/Components/ui/dialog';
 import { confirmDiscardIfDirty, DialogFormActions } from '@/Components/ui/dialog-form';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
+import { PaymentMethodSelect } from '@/Components/ui/payment-method-select';
 import { formatCurrency, formatDate } from '@/lib/formatters';
 import { hasPermission } from '@/lib/permissions';
-import { Expense, ListingFilters, PageProps, Paginated, Project, SpendableCashFloat } from '@/types';
+import { Expense, ListingFilters, PageProps, Paginated, Project } from '@/types';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useState } from 'react';
 
 interface ExpensesProps extends PageProps {
     expenses: Paginated<Expense>;
     filters: ListingFilters & { project_id?: string; category?: string };
     projects: Project[];
-    cash_floats: SpendableCashFloat[];
 }
 
 export default function Expenses() {
-    const { expenses, filters, projects, cash_floats, auth } = usePage<ExpensesProps>().props;
+    const { expenses, filters, projects, auth } = usePage<ExpensesProps>().props;
     const rows = expenses.data ?? [];
     const [open, setOpen] = useState(false);
     const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
@@ -33,32 +33,14 @@ export default function Expenses() {
         category: 'direct' as const,
         project_id: '',
         boq_item_id: '',
-        sub_type: '',
         amount: '',
         description: '',
         expense_date: new Date().toISOString().split('T')[0],
-        cash_allocation_id: '',
         method: 'cash',
         payee: '',
         reference_no: '',
     });
     const canUpdate = hasPermission(auth.user, 'budgets', 'update');
-
-    const availableFloats = useMemo(() => {
-        if (!data.project_id) {
-            return [];
-        }
-
-        const projectId = Number(data.project_id);
-
-        return cash_floats.filter(
-            (float) => float.project_id === null || float.project_id === projectId,
-        );
-    }, [cash_floats, data.project_id]);
-
-    const selectedFloat = availableFloats.find(
-        (float) => String(float.id) === data.cash_allocation_id,
-    );
 
     function openDialog() {
         setEditingExpense(null);
@@ -68,18 +50,16 @@ export default function Expenses() {
     }
 
     function editExpense(expense: Expense) {
-        const disbursement = expense.cash_disbursement;
+        const disbursement = expense.cash_disbursements?.[0];
         setEditingExpense(expense);
         clearErrors();
         setData({
             category: 'direct',
             project_id: String(expense.project_id ?? ''),
             boq_item_id: String(expense.boq_item_id ?? ''),
-            sub_type: expense.sub_type,
             amount: expense.amount,
             description: expense.description ?? '',
             expense_date: expense.expense_date.slice(0, 10),
-            cash_allocation_id: String(disbursement?.cash_allocation?.id ?? ''),
             method: disbursement?.method ?? 'cash',
             payee: disbursement?.payee ?? '',
             reference_no: disbursement?.reference_no ?? '',
@@ -101,7 +81,6 @@ export default function Expenses() {
         setData({
             ...data,
             project_id: projectId,
-            cash_allocation_id: '',
         });
     }
 
@@ -123,20 +102,11 @@ export default function Expenses() {
     }
 
     function deleteExpense(expense: Expense) {
-        if (!confirm(`Delete ${expense.sub_type} expense of ${formatCurrency(expense.amount)}? The amount will be returned to cash on hand.`)) {
+        if (!confirm(`Delete expense of ${formatCurrency(expense.amount)}? The amount will be returned to cash on hand.`)) {
             return;
         }
 
         router.delete(`/finance/expenses/${expense.id}`);
-    }
-
-    function floatLabel(float: SpendableCashFloat): string {
-        const scope = float.project
-            ? `${float.project.code} — ${float.project.name}`
-            : 'Organisation-wide';
-        const ref = float.reference_no ? ` · ${float.reference_no}` : '';
-
-        return `${scope}${ref} · available ${formatCurrency(float.balance)}`;
     }
 
     return (
@@ -214,13 +184,8 @@ export default function Expenses() {
                                             {formatCurrency(exp.amount)}
                                         </td>
                                         <td className="px-6 py-4 text-slate-600">
-                                            {exp.cash_disbursement
-                                                ? [
-                                                      exp.cash_disbursement.method,
-                                                      exp.cash_disbursement.cash_allocation?.reference_no,
-                                                  ]
-                                                      .filter(Boolean)
-                                                      .join(' · ') || 'Cash float'
+                                            {exp.cash_disbursements?.length
+                                                ? exp.cash_disbursements[0].method
                                                 : '—'}
                                         </td>
                                         <td className="px-6 py-4 text-slate-600">
@@ -266,7 +231,7 @@ export default function Expenses() {
                 open={open}
                 onOpenChange={(next) => (next ? openDialog() : closeDialog())}
                 title={editingExpense ? 'Edit Expense' : 'Create New Expense'}
-                description={editingExpense ? 'Adjust the expense and its cash-on-hand effect.' : 'Post a direct project expense paid from a cash float.'}
+                description={editingExpense ? 'Adjust the expense and its cash-on-hand effect.' : 'Post a direct project expense from total cash on hand.'}
             >
                 <form onSubmit={submit} className="space-y-4">
                     <div className="space-y-2">
@@ -290,61 +255,21 @@ export default function Expenses() {
                         )}
                     </div>
                     <div className="space-y-2">
-                        <Label htmlFor="expense-float">Cash float</Label>
-                        <select
-                            id="expense-float"
-                            className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-800"
-                            value={data.cash_allocation_id}
-                            onChange={(e) => setData('cash_allocation_id', e.target.value)}
-                            required
-                            disabled={!data.project_id}
-                        >
-                            <option value="">
-                                {data.project_id
-                                    ? availableFloats.length > 0
-                                        ? 'Select cash float'
-                                        : 'No cash on hand for this project'
-                                    : 'Select a project first'}
-                            </option>
-                            {availableFloats.map((float) => (
-                                <option key={float.id} value={float.id}>
-                                    {floatLabel(float)}
-                                </option>
-                            ))}
-                        </select>
-                        {selectedFloat && (
-                            <p className="text-xs text-slate-500">
-                                Available on this float: {formatCurrency(selectedFloat.balance)}
-                            </p>
-                        )}
-                        {errors.cash_allocation_id && (
-                            <p className="text-sm text-red-600">{errors.cash_allocation_id}</p>
-                        )}
-                    </div>
-                    <div className="space-y-2">
                         <Label htmlFor="expense-method">Payment method</Label>
-                        <select
+                        <PaymentMethodSelect
                             id="expense-method"
-                            className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-800"
                             value={data.method}
                             onChange={(e) => setData('method', e.target.value)}
-                            required
-                        >
-                            <option value="cash">Cash</option>
-                            <option value="mobile">Mobile money</option>
-                            <option value="bank">Bank transfer</option>
-                        </select>
+                        />
                         {errors.method && <p className="text-sm text-red-600">{errors.method}</p>}
                     </div>
                     <div className="space-y-2">
-                        <Label htmlFor="expense-sub-type">Sub Type</Label>
+                        <Label htmlFor="expense-description">Description</Label>
                         <Input
-                            id="expense-sub-type"
-                            value={data.sub_type}
-                            onChange={(e) => setData('sub_type', e.target.value)}
-                            required
+                            id="expense-description"
+                            value={data.description}
+                            onChange={(e) => setData('description', e.target.value)}
                         />
-                        {errors.sub_type && <p className="text-sm text-red-600">{errors.sub_type}</p>}
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="expense-amount">Amount (TZS)</Label>
@@ -386,14 +311,6 @@ export default function Expenses() {
                             value={data.expense_date}
                             onChange={(e) => setData('expense_date', e.target.value)}
                             required
-                        />
-                    </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="expense-description">Description</Label>
-                        <Input
-                            id="expense-description"
-                            value={data.description}
-                            onChange={(e) => setData('description', e.target.value)}
                         />
                     </div>
                     <DialogFormActions

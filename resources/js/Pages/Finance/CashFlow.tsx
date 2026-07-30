@@ -11,6 +11,7 @@ import { Dialog } from '@/Components/ui/dialog';
 import { confirmDiscardIfDirty, DialogFormActions } from '@/Components/ui/dialog-form';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
+import { PaymentMethodSelect } from '@/Components/ui/payment-method-select';
 import { formatCurrency, formatDate } from '@/lib/formatters';
 import { aggregateCashFlowTimeline } from '@/lib/chart-helpers';
 import { CashAllocation, ListingFilters, PageProps, Paginated, Project } from '@/types';
@@ -202,13 +203,14 @@ export default function CashFlow() {
                         )}
                     </div>
                     <div className="space-y-2">
-                        <Label htmlFor="cash-method">Method</Label>
-                        <Input
+                        <Label htmlFor="cash-method">Payment method</Label>
+                        <PaymentMethodSelect
                             id="cash-method"
                             value={data.method}
                             onChange={(e) => setData('method', e.target.value)}
-                            placeholder="Bank transfer"
+                            optional
                         />
+                        {errors.method && <p className="text-sm text-red-600">{errors.method}</p>}
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="cash-reference">Reference No</Label>

@@ -9,6 +9,7 @@ import { AmountInput } from '@/Components/ui/amount-input';
 import { Button } from '@/Components/ui/button';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
+import { PaymentMethodSelect } from '@/Components/ui/payment-method-select';
 import { formatCurrency, formatQuantity } from '@/lib/formatters';
 import { canOverrideLimits, hasPermission } from '@/lib/permissions';
 import {
@@ -807,18 +808,12 @@ export default function RequisitionsShow() {
                                         </div>
                                         <div className="space-y-2">
                                             <Label>Payment method</Label>
-                                            <select
-                                                className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm"
+                                            <PaymentMethodSelect
                                                 value={transitionForm.data.method}
                                                 onChange={(e) =>
                                                     transitionForm.setData('method', e.target.value)
                                                 }
-                                                required
-                                            >
-                                                <option value="cash">Cash</option>
-                                                <option value="mobile">Mobile money</option>
-                                                <option value="bank">Bank transfer</option>
-                                            </select>
+                                            />
                                             {transitionForm.errors.method && (
                                                 <p className="text-sm text-red-600">
                                                     {transitionForm.errors.method}

@@ -73,7 +73,7 @@ export default function ProjectsIndex() {
                                 <th className="px-6 py-3 font-medium">Client</th>
                                 <th className="px-6 py-3 font-medium">Status</th>
                                 <th className="px-6 py-3 text-right font-medium">Net Budget</th>
-                                <th className="px-6 py-3 text-right font-medium">Progress</th>
+                                <th className="px-6 py-3 text-right font-medium">Profit</th>
                                 <th className="px-6 py-3 font-medium">End Date</th>
                                 <th className="px-6 py-3 text-right font-medium">Actions</th>
                             </tr>
@@ -109,7 +109,7 @@ export default function ProjectsIndex() {
                                             {formatCurrency(project.net_budget)}
                                         </td>
                                         <td className="px-6 py-4 text-right text-slate-600">
-                                            {formatPercent(project.physical_progress_pct ?? 0)}
+                                            {formatPercent(project.profit_percentage ?? 0)}
                                         </td>
                                         <td className="px-6 py-4 text-slate-600">
                                             {formatDate(project.end_date)}

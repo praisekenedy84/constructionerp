@@ -242,10 +242,16 @@ class ReportService
 
     public function cashPosition(array $filters = []): array
     {
+        $scope = $filters['scope'] ?? null;
         $projectId = $filters['project_id'] ?? null;
 
+        // Explicit organization scope (do not treat missing project_id as "org only").
+        $organizationOnly = $scope === 'organization'
+            || ($filters['organization'] ?? false) === true;
+
         $allocations = CashAllocation::query()
-            ->when($projectId, fn ($q) => $q->where('project_id', $projectId))
+            ->when($organizationOnly, fn ($q) => $q->whereNull('project_id'))
+            ->when(! $organizationOnly && $projectId, fn ($q) => $q->where('project_id', $projectId))
             ->where('status', CashAllocationStatus::Received)
             ->get();
 
@@ -254,7 +260,8 @@ class ReportService
         $balance = bcsub($received, $utilized, 2);
 
         $committedReqs = Requisition::query()
-            ->when($projectId, fn ($q) => $q->where('project_id', $projectId))
+            ->when($organizationOnly, fn ($q) => $q->whereRaw('0 = 1'))
+            ->when(! $organizationOnly && $projectId, fn ($q) => $q->where('project_id', $projectId))
             ->whereIn('status', [
                 RequisitionStatus::Approved,
                 RequisitionStatus::Amended,
@@ -277,7 +284,10 @@ class ReportService
         }
 
         $disbursed = (string) CashDisbursement::query()
-            ->when($projectId, function ($q) use ($projectId) {
+            ->when($organizationOnly, function ($q) {
+                $q->whereHas('cashAllocation', fn ($aq) => $aq->whereNull('project_id'));
+            })
+            ->when(! $organizationOnly && $projectId, function ($q) use ($projectId) {
                 $q->where(function ($inner) use ($projectId) {
                     $inner->whereHas('requisition', fn ($rq) => $rq->where('project_id', $projectId))
                         ->orWhereHas('expense', fn ($eq) => $eq->where('project_id', $projectId));
@@ -298,7 +308,8 @@ class ReportService
 
         return [
             'generated_at' => now()->toIso8601String(),
-            'project_id' => $projectId,
+            'scope' => $organizationOnly ? 'organization' : ($projectId ? 'project' : 'all'),
+            'project_id' => $organizationOnly ? null : $projectId,
             'received' => $received,
             'utilized' => $utilized,
             'cash_on_hand' => $balance,

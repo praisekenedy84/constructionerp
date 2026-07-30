@@ -3,10 +3,13 @@
 namespace Tests\Feature;
 
 use App\Enums\BudgetTransactionType;
+use App\Enums\CashAllocationStatus;
 use App\Enums\ExpenseCategory;
 use App\Enums\PayrollRunStatus;
 use App\Enums\PayStructure;
 use App\Models\BudgetTransaction;
+use App\Models\CashAllocation;
+use App\Models\CashDisbursement;
 use App\Models\Employee;
 use App\Models\Expense;
 use App\Models\PayrollItem;
@@ -70,6 +73,19 @@ class PayrollOverheadTest extends TestCase
             'password' => 'password',
         ]);
 
+        CashAllocation::create([
+            'project_id' => null,
+            'requested_amount' => '1000000.00',
+            'received_amount' => '1000000.00',
+            'utilized_amount' => '0.00',
+            'status' => CashAllocationStatus::Received,
+            'requested_by' => 1,
+            'approved_by' => 1,
+            'requested_at' => now(),
+            'received_at' => now(),
+            'decided_at' => now(),
+        ]);
+
         $employee = Employee::create([
             'employee_no' => 'E-001',
             'name' => 'Worker One',
@@ -108,6 +124,8 @@ class PayrollOverheadTest extends TestCase
         ]);
 
         $this->assertSame(0, BudgetTransaction::where('type', BudgetTransactionType::Payroll)->count());
+        $this->assertSame(1, CashDisbursement::count());
+        $this->assertSame('500000.00', (string) CashAllocation::first()->utilized_amount);
 
         $this->get('/finance/overhead')
             ->assertOk()
@@ -116,7 +134,52 @@ class PayrollOverheadTest extends TestCase
                 ->has('expenses.data', 1)
                 ->where('expenses.data.0.sub_type', 'Salaries')
                 ->where('total_overhead', '500000.00')
+                ->where('organization_cash.cash_on_hand', '500000.00')
             );
+    }
+
+    public function test_posting_payroll_requires_organization_cash(): void
+    {
+        ['project' => $project] = $this->setupTenant();
+
+        $this->post('/login', [
+            'email' => 'finance@payroll.local',
+            'password' => 'password',
+        ]);
+
+        $employee = Employee::create([
+            'employee_no' => 'E-010',
+            'name' => 'Worker Ten',
+            'role' => 'Labourer',
+            'pay_structure' => PayStructure::Monthly,
+            'monthly_salary' => '100000',
+            'project_id' => $project->id,
+        ]);
+
+        $run = PayrollRun::create([
+            'project_id' => $project->id,
+            'period_start' => '2026-07-01',
+            'period_end' => '2026-07-31',
+            'status' => PayrollRunStatus::Draft,
+        ]);
+
+        PayrollItem::create([
+            'payroll_run_id' => $run->id,
+            'employee_id' => $employee->id,
+            'base' => '100000',
+            'overtime' => '0',
+            'allowances' => '0',
+            'deductions_total' => '0',
+            'net_pay' => '100000',
+            'created_at' => now(),
+        ]);
+
+        $this->post("/payroll/{$run->id}/post")
+            ->assertRedirect()
+            ->assertSessionHas('error');
+
+        $this->assertSame(PayrollRunStatus::Draft, $run->fresh()->status);
+        $this->assertSame(0, Expense::count());
     }
 
     public function test_overhead_page_backfills_legacy_payroll_budget_posts(): void

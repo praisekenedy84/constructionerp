@@ -12,8 +12,8 @@ enum PaymentMethod: string
     {
         return match ($this) {
             self::Cash => 'Cash',
-            self::Mobile => 'Mobile money',
-            self::Bank => 'Bank transfer',
+            self::Mobile => 'Mobile payment',
+            self::Bank => 'Bank',
         };
     }
 }

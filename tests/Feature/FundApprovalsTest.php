@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Models\CashAllocation;
 use App\Models\Project;
 use App\Models\Tenant;
 use App\Services\AuthService;
@@ -88,7 +87,7 @@ class FundApprovalsTest extends TestCase
 
         $this->post('/finance/cash-requests', [
             'requested_amount' => '75000',
-            'method' => 'Bank transfer',
+            'method' => 'bank',
             'reference_no' => 'ORG-001',
         ])->assertRedirect();
 
@@ -98,6 +97,7 @@ class FundApprovalsTest extends TestCase
             'reference_no' => 'ORG-001',
             'project_id' => null,
             'requested_amount' => '75000.00',
+            'method' => 'bank',
         ]);
 
         tenancy()->end();

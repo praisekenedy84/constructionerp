@@ -10,10 +10,11 @@ import { Dialog } from '@/Components/ui/dialog';
 import { confirmDiscardIfDirty, DialogFormActions } from '@/Components/ui/dialog-form';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
+import { PaymentMethodSelect } from '@/Components/ui/payment-method-select';
 import { formatCurrency } from '@/lib/formatters';
 import { hasPermission } from '@/lib/permissions';
 import { CashAllocation, ListingFilters, PageProps, Paginated, Project } from '@/types';
-import { Head, router, useForm, usePage } from '@inertiajs/react';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { Download, FileSpreadsheet, Plus } from 'lucide-react';
 import { FormEvent, useState } from 'react';
 
@@ -162,9 +163,12 @@ export default function FundApprovals() {
             <div className="space-y-6">
                 <PageHeader
                     title="Fund Approvals"
-                    description="Finance requests funds; manager approval deducts project budget and floats cash on hand for disbursements."
+                    description="Request project floats or organization (general) funds. Approval floats cash on hand in the matching wallet — project or organization."
                     actions={
                         <div className="flex flex-wrap gap-2">
+                            <Link href="/finance/organization-cash">
+                                <Button variant="outline">Organization Cash</Button>
+                            </Link>
                             {canRequest && (
                                 <Button onClick={openRequestDialog}>
                                     <Plus className="mr-2 h-4 w-4" />
@@ -239,6 +243,7 @@ export default function FundApprovals() {
                                             <th className="px-4 py-3 font-medium">Status</th>
                                             <th className="px-4 py-3 text-right font-medium">Requested</th>
                                             <th className="px-4 py-3 text-right font-medium">Received</th>
+                                            <th className="px-4 py-3 text-right font-medium">Balance</th>
                                             <th className="px-4 py-3 font-medium">Dates</th>
                                             <th className="px-4 py-3 font-medium">Approver</th>
                                             <th className="px-4 py-3 text-right font-medium">Actions</th>
@@ -270,6 +275,11 @@ export default function FundApprovals() {
                                                 </td>
                                                 <td className="px-4 py-4 text-right text-slate-600">
                                                     {formatCurrency(allocation.received_amount)}
+                                                </td>
+                                                <td className="px-4 py-4 text-right text-slate-600">
+                                                    {allocation.status === 'received'
+                                                        ? formatCurrency(allocation.balance ?? '0')
+                                                        : '—'}
                                                 </td>
                                                 <td className="px-4 py-4 text-xs text-slate-500">
                                                     <p>
@@ -357,7 +367,9 @@ export default function FundApprovals() {
 
                                                         {allocation.status === 'received' && (
                                                             <span className="text-xs text-green-700">
-                                                                Floated to cash on hand
+                                                                {allocation.project_id == null
+                                                                    ? 'Floated to organization cash'
+                                                                    : 'Floated to project cash'}
                                                             </span>
                                                         )}
 
@@ -378,12 +390,12 @@ export default function FundApprovals() {
                                                                     value={approveAmount}
                                                                     onValueChange={setApproveAmount}
                                                                 />
-                                                                <Input
-                                                                    placeholder="Method (optional)"
+                                                                <PaymentMethodSelect
                                                                     value={approveMethod}
                                                                     onChange={(e) =>
                                                                         setApproveMethod(e.target.value)
                                                                     }
+                                                                    optional
                                                                 />
                                                                 <Input
                                                                     placeholder="Reference (optional)"
@@ -428,12 +440,12 @@ export default function FundApprovals() {
                                                                     value={receiveAmount}
                                                                     onValueChange={setReceiveAmount}
                                                                 />
-                                                                <Input
-                                                                    placeholder="Method (optional)"
+                                                                <PaymentMethodSelect
                                                                     value={receiveMethod}
                                                                     onChange={(e) =>
                                                                         setReceiveMethod(e.target.value)
                                                                     }
+                                                                    optional
                                                                 />
                                                                 <Input
                                                                     placeholder="Reference (optional)"
@@ -509,12 +521,12 @@ export default function FundApprovals() {
                             )}
                         </div>
                         <div className="space-y-2">
-                            <Label htmlFor="request-method">Method</Label>
-                            <Input
+                            <Label htmlFor="request-method">Payment method</Label>
+                            <PaymentMethodSelect
                                 id="request-method"
                                 value={requestData.method}
                                 onChange={(e) => setRequestData('method', e.target.value)}
-                                placeholder="Bank transfer"
+                                optional
                             />
                             {requestErrors.method && (
                                 <p className="text-sm text-red-600">{requestErrors.method}</p>

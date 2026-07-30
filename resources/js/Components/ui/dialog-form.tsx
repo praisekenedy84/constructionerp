@@ -15,18 +15,20 @@ export function DialogFormActions({
     processing,
     submitLabel,
     processingLabel = 'Saving…',
+    disabled = false,
 }: {
     onCancel: () => void;
     processing: boolean;
     submitLabel: string;
     processingLabel?: string;
+    disabled?: boolean;
 }) {
     return (
         <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-4 dark:border-slate-800">
             <Button type="button" variant="outline" onClick={onCancel}>
                 Cancel
             </Button>
-            <Button type="submit" disabled={processing}>
+            <Button type="submit" disabled={processing || disabled}>
                 {processing ? processingLabel : submitLabel}
             </Button>
         </div>

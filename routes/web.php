@@ -99,6 +99,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/finance', [HubController::class, 'finance'])->name('finance.hub');
     Route::get('/finance/approvals', [CashController::class, 'fundApprovals'])->name('finance.approvals');
     Route::get('/finance/approvals/export', [CashController::class, 'exportFundApprovals'])->name('finance.approvals.export');
+    Route::get('/finance/organization-cash', [CashController::class, 'organizationCash'])->name('finance.organization-cash');
     Route::post('/finance/cash-requests', [CashController::class, 'request'])->name('finance.cash.request');
     Route::post('/finance/cash-requests/{id}/approve', [CashController::class, 'approve'])->name('finance.cash.approve');
     Route::post('/finance/cash-requests/{id}/reject', [CashController::class, 'reject'])->name('finance.cash.reject');

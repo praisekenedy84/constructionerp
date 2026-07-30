@@ -29,8 +29,11 @@ class ProjectController extends Controller
             ->dateRange('created_at')
             ->sort(['name', 'code', 'client', 'status', 'net_budget', 'created_at']);
 
+        $projects = $listing->paginate(20);
+        $projects->getCollection()->transform(fn (Project $project) => $this->withBudgetSummary($project));
+
         return Inertia::render('Projects/Index', [
-            'projects' => $listing->paginate(20),
+            'projects' => $projects,
             'filters' => $listing->filters(),
         ]);
     }
@@ -60,16 +63,9 @@ class ProjectController extends Controller
     public function show(Request $request, int $id): Response
     {
         $project = Project::with(['complianceRules', 'withholdingTaxRates'])->findOrFail($id);
-        $remainingBudget = $this->budgetService->remainingBudget($project);
-        $profitPercentage = bccomp((string) $project->net_budget, '0', 2) === 0
-            ? '0.00'
-            : bcmul(bcdiv($remainingBudget, (string) $project->net_budget, 4), '100', 2);
-
-        $project->setAttribute('remaining_budget', $remainingBudget);
-        $project->setAttribute('profit_percentage', $profitPercentage);
 
         return Inertia::render('Projects/Show', [
-            'project' => $project,
+            'project' => $this->withBudgetSummary($project),
         ]);
     }
 
@@ -152,6 +148,19 @@ class ProjectController extends Controller
         $project->update($request->validated());
 
         return back()->with('success', 'Project progress updated.');
+    }
+
+    private function withBudgetSummary(Project $project): Project
+    {
+        $remainingBudget = $this->budgetService->remainingBudget($project);
+        $profitPercentage = bccomp((string) $project->net_budget, '0', 2) === 0
+            ? '0.00'
+            : bcmul(bcdiv($remainingBudget, (string) $project->net_budget, 4), '100', 2);
+
+        $project->setAttribute('remaining_budget', $remainingBudget);
+        $project->setAttribute('profit_percentage', $profitPercentage);
+
+        return $project;
     }
 
     /**

@@ -220,7 +220,7 @@ class SeedDemoCommand extends Command
                         'status' => CashAllocationStatus::Received,
                         'requested_by' => $admin->id,
                         'approved_by' => $admin->id,
-                        'method' => 'bank_transfer',
+                        'method' => 'bank',
                         'requested_at' => now()->subWeeks(2),
                         'received_at' => now()->subWeeks(2),
                     ],

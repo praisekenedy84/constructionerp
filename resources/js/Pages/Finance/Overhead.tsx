@@ -10,10 +10,11 @@ import { Dialog } from '@/Components/ui/dialog';
 import { confirmDiscardIfDirty, DialogFormActions } from '@/Components/ui/dialog-form';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
+import { PaymentMethodSelect } from '@/Components/ui/payment-method-select';
 import { formatCurrency, formatDate } from '@/lib/formatters';
 import { hasPermission } from '@/lib/permissions';
-import { Expense, ListingFilters, PageProps, Paginated, SpendableCashFloat } from '@/types';
-import { Head, router, useForm, usePage } from '@inertiajs/react';
+import { Expense, ListingFilters, PageProps, Paginated } from '@/types';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { FormEvent, useState } from 'react';
 
@@ -21,27 +22,47 @@ interface OverheadProps extends PageProps {
     expenses: Paginated<Expense>;
     filters: ListingFilters & { sub_type?: string };
     total_overhead: string;
-    cash_floats: SpendableCashFloat[];
+    organization_cash: {
+        cash_on_hand: string;
+        received: string;
+        utilized: string;
+    };
+    purpose_options: string[];
 }
 
 export default function Overhead() {
-    const { expenses, filters, total_overhead, cash_floats, auth } = usePage<OverheadProps>().props;
+    const {
+        expenses,
+        filters,
+        total_overhead,
+        organization_cash,
+        purpose_options,
+        auth,
+    } = usePage<OverheadProps>().props;
     const rows = expenses.data ?? [];
-    const orgFloats = cash_floats.filter((float) => float.project_id === null);
     const [open, setOpen] = useState(false);
     const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
     const { data, setData, post, put, processing, errors, reset, clearErrors, isDirty } = useForm({
         category: 'indirect' as const,
-        sub_type: '',
+        sub_type: 'General',
         amount: '',
         description: '',
         expense_date: new Date().toISOString().split('T')[0],
-        cash_allocation_id: '',
         method: 'cash',
         payee: '',
         reference_no: '',
     });
     const canUpdate = hasPermission(auth.user, 'budgets', 'update');
+
+    // Editing releases the overhead's own payment back to the wallet first,
+    // so its already-paid amount is spendable again.
+    const paidForEditing = (editingExpense?.cash_disbursements ?? []).reduce(
+        (total, disbursement) => total + (parseFloat(disbursement.amount) || 0),
+        0,
+    );
+    const availableCash = (parseFloat(organization_cash.cash_on_hand) || 0) + paidForEditing;
+    const enteredAmount = parseFloat(data.amount) || 0;
+    const exceedsAvailable = enteredAmount > availableCash;
 
     function openDialog() {
         setEditingExpense(null);
@@ -51,16 +72,15 @@ export default function Overhead() {
     }
 
     function editExpense(expense: Expense) {
-        const disbursement = expense.cash_disbursement;
+        const disbursement = expense.cash_disbursements?.[0];
         setEditingExpense(expense);
         clearErrors();
         setData({
             category: 'indirect',
-            sub_type: expense.sub_type,
+            sub_type: expense.sub_type || 'General',
             amount: expense.amount,
             description: expense.description ?? '',
             expense_date: expense.expense_date.slice(0, 10),
-            cash_allocation_id: String(disbursement?.cash_allocation?.id ?? ''),
             method: disbursement?.method ?? 'cash',
             payee: disbursement?.payee ?? '',
             reference_no: disbursement?.reference_no ?? '',
@@ -96,7 +116,11 @@ export default function Overhead() {
     }
 
     function deleteExpense(expense: Expense) {
-        if (!confirm(`Delete ${expense.sub_type} expense of ${formatCurrency(expense.amount)}? Any cash payment will be returned to cash on hand.`)) {
+        if (
+            !confirm(
+                `Delete overhead expense of ${formatCurrency(expense.amount)}? Any cash payment will be returned to organization cash on hand.`,
+            )
+        ) {
             return;
         }
 
@@ -109,20 +133,37 @@ export default function Overhead() {
             <div className="space-y-6">
                 <PageHeader
                     title="Overhead Expenses"
-                    description="Indirect company expenses paid from organisation-wide cash on hand."
+                    description="Indirect company costs paid only from organization cash on hand — not from project floats."
                     actions={
-                        <Button onClick={openDialog}>
-                            <Plus className="mr-2 h-4 w-4" />
-                            Record Overhead
-                        </Button>
+                        <div className="flex flex-wrap gap-2">
+                            <Link href="/finance/organization-cash">
+                                <Button variant="outline">Organization Cash</Button>
+                            </Link>
+                            <Button onClick={openDialog}>
+                                <Plus className="mr-2 h-4 w-4" />
+                                Record Overhead
+                            </Button>
+                        </div>
                     }
                 />
 
-                <DataPanel title="Total Overhead">
-                    <p className="text-3xl font-bold text-slate-900">
-                        {formatCurrency(total_overhead)}
-                    </p>
-                </DataPanel>
+                <div className="grid gap-4 sm:grid-cols-3">
+                    <DataPanel title="Organization Cash on Hand">
+                        <p className="text-2xl font-bold text-green-700">
+                            {formatCurrency(organization_cash.cash_on_hand)}
+                        </p>
+                    </DataPanel>
+                    <DataPanel title="Org Funds Received">
+                        <p className="text-2xl font-bold text-slate-900">
+                            {formatCurrency(organization_cash.received)}
+                        </p>
+                    </DataPanel>
+                    <DataPanel title="Total Overhead (ledger)">
+                        <p className="text-2xl font-bold text-slate-900">
+                            {formatCurrency(total_overhead)}
+                        </p>
+                    </DataPanel>
+                </div>
 
                 <ListToolbar
                     baseUrl="/finance/overhead"
@@ -145,13 +186,18 @@ export default function Overhead() {
                                 <th className="px-6 py-3 font-medium">Type</th>
                                 <th className="px-6 py-3 text-right font-medium">Amount</th>
                                 <th className="px-6 py-3 font-medium">Description</th>
-                                {canUpdate && <th className="px-6 py-3 text-right font-medium">Actions</th>}
+                                {canUpdate && (
+                                    <th className="px-6 py-3 text-right font-medium">Actions</th>
+                                )}
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {rows.length === 0 ? (
                                 <tr>
-                                    <td colSpan={canUpdate ? 5 : 4} className="px-6 py-12 text-center text-slate-500">
+                                    <td
+                                        colSpan={canUpdate ? 5 : 4}
+                                        className="px-6 py-12 text-center text-slate-500"
+                                    >
                                         No overhead expenses found.
                                     </td>
                                 </tr>
@@ -161,7 +207,9 @@ export default function Overhead() {
                                         <td className="px-6 py-4">{formatDate(exp.expense_date)}</td>
                                         <td className="px-6 py-4">
                                             <StatusBadge status="indirect" />
-                                            <span className="ml-2 text-slate-600">{exp.sub_type}</span>
+                                            <span className="ml-2 text-slate-600">
+                                                {exp.sub_type}
+                                            </span>
                                         </td>
                                         <td className="px-6 py-4 text-right font-medium">
                                             {formatCurrency(exp.amount)}
@@ -209,53 +257,57 @@ export default function Overhead() {
                 open={open}
                 onOpenChange={(next) => (next ? openDialog() : closeDialog())}
                 title={editingExpense ? 'Edit Overhead Expense' : 'Record Overhead Expense'}
-                description={editingExpense ? 'Adjust the overhead and its cash-on-hand effect.' : 'Pay an indirect expense from organisation-wide cash on hand.'}
+                description={
+                    editingExpense
+                        ? 'Adjust the overhead and its organization cash effect.'
+                        : 'Pay an indirect expense from organization cash on hand.'
+                }
             >
                 <form onSubmit={submit} className="space-y-4">
-                    <div className="space-y-2">
-                        <Label htmlFor="overhead-float">Organisation cash float</Label>
-                        <select
-                            id="overhead-float"
-                            className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-800"
-                            value={data.cash_allocation_id}
-                            onChange={(e) => setData('cash_allocation_id', e.target.value)}
-                            required
-                        >
-                            <option value="">
-                                {orgFloats.length ? 'Select cash float' : 'No organisation cash on hand'}
-                            </option>
-                            {orgFloats.map((float) => (
-                                <option key={float.id} value={float.id}>
-                                    {float.reference_no ? `${float.reference_no} · ` : ''}
-                                    available {formatCurrency(float.balance)}
-                                </option>
-                            ))}
-                        </select>
-                        {errors.cash_allocation_id && (
-                            <p className="text-sm text-red-600">{errors.cash_allocation_id}</p>
-                        )}
+                    <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800/60">
+                        <div className="flex items-center justify-between">
+                            <span className="text-slate-600 dark:text-slate-300">
+                                Available organization cash
+                            </span>
+                            <span className="font-semibold text-green-700">
+                                {formatCurrency(availableCash.toFixed(2))}
+                            </span>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-500">
+                            Overhead cannot exceed the funds finance received from the manager.
+                        </p>
                     </div>
                     <div className="space-y-2">
-                        <Label htmlFor="overhead-method">Payment method</Label>
+                        <Label htmlFor="overhead-purpose">Purpose</Label>
                         <select
-                            id="overhead-method"
+                            id="overhead-purpose"
                             className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-800"
-                            value={data.method}
-                            onChange={(e) => setData('method', e.target.value)}
-                            required
-                        >
-                            <option value="cash">Cash</option>
-                            <option value="mobile">Mobile money</option>
-                            <option value="bank">Bank transfer</option>
-                        </select>
-                    </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="overhead-sub-type">Sub Type</Label>
-                        <Input
-                            id="overhead-sub-type"
                             value={data.sub_type}
                             onChange={(e) => setData('sub_type', e.target.value)}
                             required
+                        >
+                            {purpose_options.map((option) => (
+                                <option key={option} value={option}>
+                                    {option}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="overhead-method">Payment method</Label>
+                        <PaymentMethodSelect
+                            id="overhead-method"
+                            value={data.method}
+                            onChange={(e) => setData('method', e.target.value)}
+                        />
+                        {errors.method && <p className="text-sm text-red-600">{errors.method}</p>}
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="overhead-description">Description</Label>
+                        <Input
+                            id="overhead-description"
+                            value={data.description}
+                            onChange={(e) => setData('description', e.target.value)}
                         />
                     </div>
                     <div className="space-y-2">
@@ -267,6 +319,13 @@ export default function Overhead() {
                             required
                         />
                         {errors.amount && <p className="text-sm text-red-600">{errors.amount}</p>}
+                        {!errors.amount && exceedsAvailable && (
+                            <p className="text-sm text-red-600">
+                                Exceeds available organization cash of{' '}
+                                {formatCurrency(availableCash.toFixed(2))}. Request more
+                                organization funds or reduce the amount.
+                            </p>
+                        )}
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="overhead-date">Date</Label>
@@ -275,14 +334,6 @@ export default function Overhead() {
                             type="date"
                             value={data.expense_date}
                             onChange={(e) => setData('expense_date', e.target.value)}
-                        />
-                    </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="overhead-description">Description</Label>
-                        <Input
-                            id="overhead-description"
-                            value={data.description}
-                            onChange={(e) => setData('description', e.target.value)}
                         />
                     </div>
                     <div className="grid gap-4 sm:grid-cols-2">
@@ -308,6 +359,7 @@ export default function Overhead() {
                         processing={processing}
                         submitLabel={editingExpense ? 'Save Changes' : 'Record Overhead'}
                         processingLabel="Saving…"
+                        disabled={exceedsAvailable}
                     />
                 </form>
             </Dialog>

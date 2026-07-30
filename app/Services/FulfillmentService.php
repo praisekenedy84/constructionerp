@@ -60,6 +60,18 @@ class FulfillmentService
                 throw new InsufficientCashException($normalizedAmount, '0');
             }
 
+            if ($allocation->isOrganizationWide() || (int) $allocation->project_id !== (int) $req->project_id) {
+                throw ValidationException::withMessages([
+                    'cash_allocation_id' => 'Project requisitions must be paid from that project’s cash float, not organization funds.',
+                ]);
+            }
+
+            if ($allocation->status !== CashAllocationStatus::Received) {
+                throw ValidationException::withMessages([
+                    'cash_allocation_id' => 'Only received cash floats can be disbursed.',
+                ]);
+            }
+
             if (bccomp($allocation->balance, $normalizedAmount, 2) < 0) {
                 throw new InsufficientCashException($normalizedAmount, $allocation->balance);
             }

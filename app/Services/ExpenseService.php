@@ -7,12 +7,20 @@ use App\Enums\CashAllocationStatus;
 use App\Enums\ExpenseCategory;
 use App\Enums\PaymentMethod;
 use App\Exceptions\InsufficientCashException;
+use App\Exports\ExpenseExport;
 use App\Models\CashAllocation;
 use App\Models\CashDisbursement;
 use App\Models\BudgetTransaction;
 use App\Models\Expense;
+use App\Models\Project;
 use App\Models\User;
+use App\Support\ListingQuery;
+use App\Support\OrganizationFundUse;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Maatwebsite\Excel\Facades\Excel;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class ExpenseService
 {
@@ -296,5 +304,186 @@ class ExpenseService
         }
 
         return $total;
+    }
+
+    /**
+     * @return Builder<Expense>
+     */
+    public function filteredQuery(ExpenseCategory $category, Request $request): Builder
+    {
+        $query = Expense::query()->where('category', $category);
+
+        if ($request->filled('project_id')) {
+            $query->where('project_id', $request->integer('project_id'));
+        }
+
+        $subType = $request->input('sub_type') ?: $request->input('category');
+        if (filled($subType)) {
+            $query->where('sub_type', $subType);
+        }
+
+        if ($request->filled('recorded_by')) {
+            $query->where('recorded_by', $request->integer('recorded_by'));
+        }
+
+        $source = (string) $request->input('source', '');
+        if ($source === 'requisition') {
+            $query->whereNotNull('requisition_id');
+        } elseif ($source === 'manual') {
+            $query->whereNull('requisition_id');
+        }
+
+        return $query;
+    }
+
+    /**
+     * @return array{
+     *     total_amount: string,
+     *     from_requisitions: string,
+     *     manual_amount: string,
+     *     cash_disbursed: string,
+     *     expense_count: int,
+     *     requisition_count: int,
+     *     manual_count: int
+     * }
+     */
+    public function summary(ExpenseCategory $category, Request $request): array
+    {
+        $query = $this->filteredQuery($category, $request);
+        ListingQuery::for($query, $request)
+            ->search($this->searchColumns($category))
+            ->dateRange('expense_date');
+
+        $aggregates = (clone $query)
+            ->toBase()
+            ->reorder()
+            ->selectRaw('count(*) as expense_count')
+            ->selectRaw('coalesce(sum(amount), 0) as total_amount')
+            ->selectRaw('coalesce(sum(case when requisition_id is not null then amount else 0 end), 0) as from_requisitions')
+            ->selectRaw('coalesce(sum(case when requisition_id is null then amount else 0 end), 0) as manual_amount')
+            ->selectRaw('coalesce(sum(case when requisition_id is not null then 1 else 0 end), 0) as requisition_count')
+            ->selectRaw('coalesce(sum(case when requisition_id is null then 1 else 0 end), 0) as manual_count')
+            ->first();
+
+        $cashDisbursed = (string) CashDisbursement::query()
+            ->whereIn('expense_id', (clone $query)->select('expenses.id'))
+            ->sum('amount');
+
+        return [
+            'total_amount' => bcadd((string) ($aggregates->total_amount ?? '0'), '0', 2),
+            'from_requisitions' => bcadd((string) ($aggregates->from_requisitions ?? '0'), '0', 2),
+            'manual_amount' => bcadd((string) ($aggregates->manual_amount ?? '0'), '0', 2),
+            'cash_disbursed' => bcadd($cashDisbursed, '0', 2),
+            'expense_count' => (int) ($aggregates->expense_count ?? 0),
+            'requisition_count' => (int) ($aggregates->requisition_count ?? 0),
+            'manual_count' => (int) ($aggregates->manual_count ?? 0),
+        ];
+    }
+
+    /**
+     * @return array{
+     *     projects: list<array{id: int, code: string, name: string}>,
+     *     sub_types: list<string>,
+     *     recorders: list<array{id: int, name: string}>
+     * }
+     */
+    public function filterOptions(ExpenseCategory $category): array
+    {
+        $subTypes = Expense::query()
+            ->where('category', $category)
+            ->whereNotNull('sub_type')
+            ->where('sub_type', '!=', '')
+            ->distinct()
+            ->orderBy('sub_type')
+            ->pluck('sub_type')
+            ->all();
+
+        if ($category === ExpenseCategory::Indirect) {
+            $subTypes = collect([...OrganizationFundUse::subtypes(), ...$subTypes])
+                ->unique()
+                ->sort()
+                ->values()
+                ->all();
+        }
+
+        return [
+            'projects' => $category === ExpenseCategory::Direct
+                ? Project::query()->orderBy('name')->get(['id', 'code', 'name'])->all()
+                : [],
+            'sub_types' => array_values($subTypes),
+            'recorders' => User::query()
+                ->whereIn('id', Expense::query()->where('category', $category)->select('recorded_by'))
+                ->orderBy('name')
+                ->get(['id', 'name'])
+                ->all(),
+        ];
+    }
+
+    public function exportExcel(ExpenseCategory $category, Request $request): BinaryFileResponse
+    {
+        $query = $this->filteredQuery($category, $request)
+            ->with([
+                'project:id,code,name',
+                'boqItem:id,description',
+                'requisition:id,requisition_no',
+                'recorder:id,name',
+                'cashDisbursements',
+            ]);
+
+        ListingQuery::for($query, $request)
+            ->search($this->searchColumns($category))
+            ->dateRange('expense_date')
+            ->sort(['expense_date', 'amount', 'sub_type', 'created_at'], 'expense_date');
+
+        $rows = $query->get()->map(function (Expense $expense) {
+            $disbursement = $expense->cashDisbursements->first();
+
+            return [
+                optional($expense->expense_date)?->toDateString(),
+                $expense->category instanceof ExpenseCategory
+                    ? $expense->category->value
+                    : (string) $expense->category,
+                $expense->project?->code,
+                $expense->project?->name,
+                $expense->sub_type,
+                $expense->description,
+                $expense->requisition_id ? 'Requisition' : 'Manual',
+                $expense->requisition?->requisition_no,
+                $disbursement?->method,
+                $disbursement?->payee ?? $disbursement?->account_name,
+                $disbursement?->reference_no,
+                (string) $expense->amount,
+                $expense->recorder?->name,
+                $expense->activity_ref,
+                $expense->boqItem?->description,
+            ];
+        });
+
+        $label = $category === ExpenseCategory::Indirect ? 'overhead' : 'direct-expenses';
+        $title = $category === ExpenseCategory::Indirect ? 'Overhead' : 'Direct Expenses';
+
+        return Excel::download(
+            new ExpenseExport($rows, $title),
+            $label.'-'.now()->format('Y-m-d-His').'.xlsx',
+        );
+    }
+
+    /** @return list<string> */
+    private function searchColumns(ExpenseCategory $category): array
+    {
+        $columns = [
+            'description',
+            'sub_type',
+            'activity_ref',
+            'requisition.requisition_no',
+            'recorder.name',
+        ];
+
+        if ($category === ExpenseCategory::Direct) {
+            $columns[] = 'project.name';
+            $columns[] = 'project.code';
+        }
+
+        return $columns;
     }
 }

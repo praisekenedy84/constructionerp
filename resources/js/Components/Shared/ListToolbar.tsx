@@ -30,7 +30,7 @@ interface ListToolbarProps {
     extraFilters?: ReactNode;
 }
 
-const CORE_KEYS = ['search', 'from', 'to', 'sort', 'direction'];
+const CORE_KEYS = ['search', 'from', 'to', 'sort', 'direction', 'per_page'];
 
 export default function ListToolbar({
     baseUrl,
@@ -87,6 +87,7 @@ export default function ListToolbar({
             to: to || undefined,
             sort,
             direction,
+            per_page: filters.per_page ? String(filters.per_page) : undefined,
         };
 
         Object.keys(payload).forEach((key) => {
@@ -109,6 +110,10 @@ export default function ListToolbar({
                 preserved[key] = value;
             }
         });
+
+        if (filters.per_page) {
+            preserved.per_page = String(filters.per_page);
+        }
 
         setSearch('');
         setFrom('');

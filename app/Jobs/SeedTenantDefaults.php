@@ -63,6 +63,8 @@ class SeedTenantDefaults
                         'nav_overrides' => [
                             'hidden' => [],
                             'role_hidden' => [],
+                            'order' => [],
+                            'child_order' => [],
                         ],
                     ],
                     'updated_at' => now(),

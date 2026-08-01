@@ -2,21 +2,23 @@ import AppShell from '@/Components/Layout/AppShell';
 import SimpleBarChart from '@/Components/Charts/SimpleBarChart';
 import DataPanel from '@/Components/Shared/DataPanel';
 import PageHeader from '@/Components/Shared/PageHeader';
+import PaginationLinks from '@/Components/Shared/PaginationLinks';
 import { formatCurrency } from '@/lib/formatters';
 import { hasPermission } from '@/lib/permissions';
-import { CashAllocation, PageProps, Project, ReconciliationSummary } from '@/types';
+import { CashAllocation, PageProps, Paginated, Project, ReconciliationSummary } from '@/types';
 import { Head, Link, usePage } from '@inertiajs/react';
 
 interface FinanceIndexProps extends PageProps {
     project: Project;
     reconciliation: ReconciliationSummary;
-    recent_allocations: CashAllocation[];
+    recent_allocations: Paginated<CashAllocation>;
 }
 
 export default function FinanceIndex() {
     const { project, reconciliation, recent_allocations, auth } =
         usePage<FinanceIndexProps>().props;
     const canApproveFunds = hasPermission(auth.user, 'budgets', 'approve');
+    const allocationRows = recent_allocations.data ?? [];
 
     const reconciliationChart = [
         { name: 'Committed', amount: parseFloat(reconciliation.committed) || 0 },
@@ -108,7 +110,7 @@ export default function FinanceIndex() {
                     </Link>
                 </div>
 
-                <DataPanel title="Recent Cash Allocations" noPadding>
+                <DataPanel title="Cash Allocations" noPadding>
                     <table className="w-full text-sm">
                         <thead>
                             <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs text-slate-500">
@@ -119,14 +121,14 @@ export default function FinanceIndex() {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                            {recent_allocations.length === 0 ? (
+                            {allocationRows.length === 0 ? (
                                 <tr>
                                     <td colSpan={4} className="px-6 py-8 text-center text-slate-500">
                                         No cash allocations yet.
                                     </td>
                                 </tr>
                             ) : (
-                                recent_allocations.map((alloc) => (
+                                allocationRows.map((alloc) => (
                                     <tr key={alloc.id}>
                                         <td className="px-6 py-3">
                                             {formatCurrency(alloc.requested_amount)}
@@ -143,6 +145,7 @@ export default function FinanceIndex() {
                             )}
                         </tbody>
                     </table>
+                    <PaginationLinks paginator={recent_allocations} />
                 </DataPanel>
             </div>
         </AppShell>

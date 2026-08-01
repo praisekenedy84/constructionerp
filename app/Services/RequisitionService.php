@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\ApprovalStepStatus;
 use App\Enums\BudgetTransactionType;
+use App\Enums\ExpenseCategory;
 use App\Enums\FulfillmentType;
 use App\Enums\RequisitionAddressedTo;
 use App\Enums\RequisitionResourceType;
@@ -14,6 +15,8 @@ use App\Exceptions\InsufficientCashException;
 use App\Exceptions\InvalidTransitionException;
 use App\Models\ApprovalStep;
 use App\Models\BoqItem;
+use App\Models\CashDisbursement;
+use App\Models\Expense;
 use App\Models\InventoryItem;
 use App\Models\Notification;
 use App\Models\Requisition;
@@ -36,9 +39,10 @@ class RequisitionService
 
     /**
      * @param  array{
-     *     project_id: int,
+     *     project_id?: int|null,
      *     boq_item_id?: int|null,
      *     department: string,
+     *     department_id?: int|null,
      *     resource_type: RequisitionResourceType|string,
      *     requestor_id: int,
      *     fulfillment_type: FulfillmentType|string,
@@ -49,11 +53,12 @@ class RequisitionService
     {
         return DB::transaction(function () use ($data) {
             $originalAmount = '0';
-            $headerBoqId = $data['boq_item_id'] ?? null;
+            $projectId = isset($data['project_id']) && $data['project_id'] !== ''
+                ? (int) $data['project_id']
+                : null;
+            $headerBoqId = $projectId ? ($data['boq_item_id'] ?? null) : null;
 
-            $resourceType = $data['resource_type'] instanceof RequisitionResourceType
-                ? $data['resource_type']
-                : RequisitionResourceType::from($data['resource_type']);
+            $resourceType = RequisitionResourceType::Other;
 
             $fulfillmentType = $data['fulfillment_type'] instanceof FulfillmentType
                 ? $data['fulfillment_type']
@@ -64,16 +69,18 @@ class RequisitionService
             $normalizedItems = [];
 
             foreach ($data['items'] as $item) {
-                $normalized = $this->normalizeItem($resourceType, $item, $headerBoqId);
+                $normalized = $this->normalizeItem($item, $headerBoqId);
                 $originalAmount = bcadd($originalAmount, $normalized['line_total'], 2);
                 $normalizedItems[] = $normalized;
             }
 
             $requisition = Requisition::create([
                 'requisition_no' => $this->generateRequisitionNo(),
-                'project_id' => $data['project_id'],
+                'project_id' => $projectId,
                 'boq_item_id' => $headerBoqId,
                 'department' => $data['department'],
+                'department_id' => $data['department_id'] ?? null,
+                'requisition_category_id' => $data['requisition_category_id'] ?? null,
                 'resource_type' => $resourceType,
                 'requestor_id' => $data['requestor_id'],
                 'status' => RequisitionStatus::Draft,
@@ -95,9 +102,10 @@ class RequisitionService
 
     /**
      * @param  array{
-     *     project_id: int,
+     *     project_id?: int|null,
      *     boq_item_id?: int|null,
      *     department: string,
+     *     department_id?: int|null,
      *     resource_type: RequisitionResourceType|string,
      *     fulfillment_type: FulfillmentType|string,
      *     items: array<int, array<string, mixed>>,
@@ -113,11 +121,12 @@ class RequisitionService
 
         return DB::transaction(function () use ($requisition, $data) {
             $originalAmount = '0';
-            $headerBoqId = $data['boq_item_id'] ?? null;
+            $projectId = array_key_exists('project_id', $data)
+                ? (isset($data['project_id']) && $data['project_id'] !== '' ? (int) $data['project_id'] : null)
+                : $requisition->project_id;
+            $headerBoqId = $projectId ? ($data['boq_item_id'] ?? null) : null;
 
-            $resourceType = $data['resource_type'] instanceof RequisitionResourceType
-                ? $data['resource_type']
-                : RequisitionResourceType::from($data['resource_type']);
+            $resourceType = RequisitionResourceType::Other;
 
             $fulfillmentType = $data['fulfillment_type'] instanceof FulfillmentType
                 ? $data['fulfillment_type']
@@ -128,15 +137,17 @@ class RequisitionService
             $normalizedItems = [];
 
             foreach ($data['items'] as $item) {
-                $normalized = $this->normalizeItem($resourceType, $item, $headerBoqId);
+                $normalized = $this->normalizeItem($item, $headerBoqId);
                 $originalAmount = bcadd($originalAmount, $normalized['line_total'], 2);
                 $normalizedItems[] = $normalized;
             }
 
             $requisition->update([
-                'project_id' => $data['project_id'],
+                'project_id' => $projectId,
                 'boq_item_id' => $headerBoqId,
                 'department' => $data['department'],
+                'department_id' => $data['department_id'] ?? $requisition->department_id,
+                'requisition_category_id' => $data['requisition_category_id'] ?? $requisition->requisition_category_id,
                 'resource_type' => $resourceType,
                 'fulfillment_type' => $fulfillmentType,
                 'addressed_to' => $addressedTo,
@@ -226,7 +237,16 @@ class RequisitionService
             $disbursement->delete();
         }
 
-        if (! $this->spendsCashFloat($req)) {
+        Expense::query()
+            ->where('requisition_id', $req->id)
+            ->get()
+            ->each(function (Expense $expense) {
+                $expense->cashDisbursements()->delete();
+                $expense->delete();
+            });
+
+        // Stock / non-cash project requisitions post budget on approve; reverse that after fulfill.
+        if (! $this->spendsCashFloat($req) && $req->project_id) {
             $amount = (string) ($req->amended_amount ?? $req->original_amount);
             $this->budgetService->createTransaction($req->project_id, [
                 'type' => $req->amended_amount
@@ -255,7 +275,7 @@ class RequisitionService
      *     details: array<string, mixed>|null,
      * }
      */
-    private function normalizeItem(RequisitionResourceType $resourceType, array $item, ?int $headerBoqId): array
+    private function normalizeItem(array $item, ?int $headerBoqId): array
     {
         $inventoryItemId = $item['inventory_item_id'] ?? null;
         $description = trim((string) ($item['description'] ?? ''));
@@ -271,114 +291,11 @@ class RequisitionService
             }
         }
 
-        $base = [
+        return $this->normalizeQuantityCostItem([
             'boq_item_id' => $item['boq_item_id'] ?? $headerBoqId,
             'inventory_item_id' => $inventoryItemId,
             'description' => $description,
-        ];
-
-        return match ($resourceType) {
-            RequisitionResourceType::Labor => $this->normalizeLaborItem($base, $item),
-            RequisitionResourceType::Cash => $this->normalizeCashItem($base, $item),
-            RequisitionResourceType::Equipment => $this->normalizeEquipmentItem($base, $item),
-            RequisitionResourceType::Transport => $this->normalizeTransportItem($base, $item),
-            default => $this->normalizeQuantityCostItem($base, $item, $unit),
-        };
-    }
-
-    /**
-     * @param  array{boq_item_id: int|null, inventory_item_id: int|null, description: string}  $base
-     * @param  array<string, mixed>  $item
-     * @return array<string, mixed>
-     */
-    private function normalizeLaborItem(array $base, array $item): array
-    {
-        $workers = bcadd((string) $item['workers'], '0', 3);
-        $days = bcadd((string) $item['days'], '0', 3);
-        $rate = bcadd((string) $item['rate_per_day'], '0', 2);
-        $quantity = bcmul($workers, $days, 3);
-
-        return [
-            ...$base,
-            'unit' => 'worker-day',
-            'quantity' => $quantity,
-            'unit_cost' => $rate,
-            'line_total' => bcmul($quantity, $rate, 2),
-            'details' => [
-                'workers' => $workers,
-                'days' => $days,
-                'rate_per_day' => $rate,
-            ],
-        ];
-    }
-
-    /**
-     * @param  array{boq_item_id: int|null, inventory_item_id: int|null, description: string}  $base
-     * @param  array<string, mixed>  $item
-     * @return array<string, mixed>
-     */
-    private function normalizeCashItem(array $base, array $item): array
-    {
-        $amount = bcadd((string) $item['estimated_amount'], '0', 2);
-
-        return [
-            ...$base,
-            'unit' => 'lump',
-            'quantity' => '1.0000',
-            'unit_cost' => $amount,
-            'line_total' => $amount,
-            'details' => [
-                'estimated_amount' => $amount,
-            ],
-        ];
-    }
-
-    /**
-     * @param  array{boq_item_id: int|null, inventory_item_id: int|null, description: string}  $base
-     * @param  array<string, mixed>  $item
-     * @return array<string, mixed>
-     */
-    private function normalizeEquipmentItem(array $base, array $item): array
-    {
-        $duration = bcadd((string) $item['duration'], '0', 3);
-        $rate = bcadd((string) $item['rate'], '0', 2);
-        $durationUnit = (string) ($item['duration_unit'] ?? 'day');
-
-        return [
-            ...$base,
-            'unit' => $durationUnit,
-            'quantity' => $duration,
-            'unit_cost' => $rate,
-            'line_total' => bcmul($duration, $rate, 2),
-            'details' => [
-                'duration' => $duration,
-                'duration_unit' => $durationUnit,
-                'rate' => $rate,
-            ],
-        ];
-    }
-
-    /**
-     * @param  array{boq_item_id: int|null, inventory_item_id: int|null, description: string}  $base
-     * @param  array<string, mixed>  $item
-     * @return array<string, mixed>
-     */
-    private function normalizeTransportItem(array $base, array $item): array
-    {
-        $trips = bcadd((string) $item['trips'], '0', 3);
-        $cost = bcadd((string) $item['cost_per_trip'], '0', 2);
-
-        return [
-            ...$base,
-            'unit' => 'trip',
-            'quantity' => $trips,
-            'unit_cost' => $cost,
-            'line_total' => bcmul($trips, $cost, 2),
-            'details' => [
-                'trips' => $trips,
-                'cost_per_trip' => $cost,
-            ],
-        ];
+        ], $item, $unit);
     }
 
     /**
@@ -522,8 +439,9 @@ class RequisitionService
         }
 
         // Cash / supplier payment spends finance cash float (already drawn from
-        // project budget via fund approval). Only non-cash fulfillments post budget.
-        if (! $this->spendsCashFloat($req)) {
+        // project or organization budget via fund approval). Only non-cash
+        // project fulfillments post a project budget commitment.
+        if (! $this->spendsCashFloat($req) && $req->project_id) {
             $this->budgetService->createTransaction($req->project_id, [
                 'type' => BudgetTransactionType::ApprovedRequisition,
                 'amount' => $amount,
@@ -659,7 +577,7 @@ class RequisitionService
 
         $req->update(['amended_amount' => $amendedTotal]);
 
-        if (! $this->spendsCashFloat($req)) {
+        if (! $this->spendsCashFloat($req) && $req->project_id) {
             $this->budgetService->createTransaction($req->project_id, [
                 'type' => BudgetTransactionType::AmendedRequisition,
                 'amount' => $amendedTotal,
@@ -712,13 +630,66 @@ class RequisitionService
             $boqItem->increment('consumed_qty', $qty);
         }
 
+        $disbursement = null;
+
         if ($req->isAddressedToStorekeeper()) {
             $this->fulfillmentService->fulfillStock($req, $actor, $opts);
-
-            return;
+        } else {
+            $disbursement = $this->fulfillmentService->fulfillCash($req, $actor, $amount, $opts);
         }
 
-        $this->fulfillmentService->fulfillCash($req, $actor, $amount, $opts);
+        $this->recordExpenseFromRequisition($req, $actor, $disbursement);
+    }
+
+    /**
+     * Fulfilled requisitions become expenses:
+     * project-scoped → direct; organization-wide → overhead (indirect).
+     */
+    private function recordExpenseFromRequisition(
+        Requisition $req,
+        User $actor,
+        ?CashDisbursement $disbursement = null,
+    ): Expense {
+        $req->loadMissing(['category', 'items']);
+
+        $amount = (string) ($req->amended_amount ?? $req->original_amount);
+        $category = $req->isOrganizationWide()
+            ? ExpenseCategory::Indirect
+            : ExpenseCategory::Direct;
+
+        $lineDescriptions = $req->items
+            ->pluck('description')
+            ->filter()
+            ->take(3)
+            ->implode('; ');
+
+        if ($req->items->count() > 3) {
+            $lineDescriptions .= '…';
+        }
+
+        $description = trim($lineDescriptions) !== ''
+            ? trim($lineDescriptions).' ['.$req->requisition_no.']'
+            : 'Requisition '.$req->requisition_no;
+
+        $expense = Expense::create([
+            'project_id' => $req->project_id,
+            'boq_item_id' => $req->boq_item_id,
+            'requisition_id' => $req->id,
+            'category' => $category,
+            'sub_type' => $req->category?->name
+                ?? ($req->department !== '' ? $req->department : 'Requisition'),
+            'activity_ref' => $req->requisition_no,
+            'amount' => $amount,
+            'description' => $description,
+            'expense_date' => now()->toDateString(),
+            'recorded_by' => $actor->id,
+        ]);
+
+        if ($disbursement) {
+            $disbursement->update(['expense_id' => $expense->id]);
+        }
+
+        return $expense;
     }
 
     private function onCancelled(Requisition $req, User $actor): void
@@ -734,7 +705,7 @@ class RequisitionService
                 ->decrement('reserved_qty', $qty);
         }
 
-        if (! $this->spendsCashFloat($req)) {
+        if (! $this->spendsCashFloat($req) && $req->project_id) {
             $this->budgetService->createTransaction($req->project_id, [
                 'type' => $type,
                 'amount' => bcsub('0', $amount, 2),
@@ -778,9 +749,9 @@ class RequisitionService
 
     private function assertCanTransition(User $actor, Requisition $req, string $toStatus): void
     {
-        if ($toStatus === 'under_review' && ! $req->isOwnedBy($actor) && ! $actor->isPlatformAdmin()) {
+        if ($toStatus === 'under_review' && ! $req->isOwnedBy($actor) && ! $actor->isSuperUser()) {
             throw new AuthorizationException(
-                'Only the author can publish this requisition for approval.'
+                'Only the author or an administrator can publish this requisition for approval.'
             );
         }
 
@@ -803,13 +774,15 @@ class RequisitionService
             return;
         }
 
-        $position = $this->reportService->cashPosition(['project_id' => $req->project_id]);
+        $position = $this->reportService->cashPosition(
+            $req->isOrganizationWide()
+                ? ['scope' => 'organization']
+                : ['project_id' => $req->project_id]
+        );
         $cashOnHand = (string) $position['cash_on_hand'];
 
         // Cash already promised to other approved/amended cash requests is not free to re-approve.
-        $committedElsewhere = '0';
-        foreach (Requisition::query()
-            ->where('project_id', $req->project_id)
+        $committedQuery = Requisition::query()
             ->where('id', '!=', $req->id)
             ->whereIn('status', [RequisitionStatus::Approved, RequisitionStatus::Amended])
             ->where(function ($query) {
@@ -821,8 +794,16 @@ class RequisitionService
                                 FulfillmentType::DirectSupplierPayment->value,
                             ]);
                     });
-            })
-            ->get() as $other) {
+            });
+
+        if ($req->isOrganizationWide()) {
+            $committedQuery->whereNull('project_id');
+        } else {
+            $committedQuery->where('project_id', $req->project_id);
+        }
+
+        $committedElsewhere = '0';
+        foreach ($committedQuery->get() as $other) {
             $committedElsewhere = bcadd(
                 $committedElsewhere,
                 (string) ($other->amended_amount ?? $other->original_amount),
@@ -847,6 +828,7 @@ class RequisitionService
             'available' => $available,
             'cash_on_hand' => $cashOnHand,
             'committed' => $committedElsewhere,
+            'scope' => $req->isOrganizationWide() ? 'organization' : 'project',
         ]);
 
         throw new InsufficientCashException($amount, $available);

@@ -76,23 +76,26 @@ class FlexibleRequisitionTest extends TestCase
             'project_id' => 1,
             'boq_item_id' => null,
             'department' => 'Site',
-            'resource_type' => RequisitionResourceType::Cash->value,
+            'resource_type' => 'cash',
             'fulfillment_type' => 'cash_disbursement',
             'addressed_to' => 'finance',
             'items' => [
                 [
                     'description' => 'Petty cash for local transport',
-                    'estimated_amount' => '150000',
+                    'unit' => 'lump',
+                    'quantity' => '1',
+                    'unit_cost' => '150000',
                 ],
             ],
         ])->assertRedirect();
 
         $tenant = Tenant::where('slug', 'flexible-req-co')->firstOrFail();
         $tenant->run(function () {
-            $req = Requisition::with('items')->first();
+            $req = Requisition::with(['items', 'category'])->first();
             $this->assertNotNull($req);
             $this->assertNull($req->boq_item_id);
-            $this->assertSame(RequisitionResourceType::Cash, $req->resource_type);
+            $this->assertSame(RequisitionResourceType::Other, $req->resource_type);
+            $this->assertSame('Cash', $req->category?->name);
             $this->assertSame(RequisitionStatus::Draft, $req->status);
             $this->assertSame('150000.00', (string) $req->original_amount);
             $this->assertCount(1, $req->items);
@@ -100,7 +103,6 @@ class FlexibleRequisitionTest extends TestCase
             $this->assertNull($req->items->first()->inventory_item_id);
             $this->assertSame('Petty cash for local transport', $req->items->first()->description);
             $this->assertSame('lump', $req->items->first()->unit);
-            $this->assertSame('150000.00', $req->items->first()->details['estimated_amount']);
         });
     }
 
@@ -116,7 +118,6 @@ class FlexibleRequisitionTest extends TestCase
         $this->post('/requisitions', [
             'project_id' => 1,
             'department' => 'Stores',
-            'resource_type' => RequisitionResourceType::Materials->value,
             'fulfillment_type' => 'stock_issue',
             'addressed_to' => 'storekeeper',
             'items' => [
@@ -141,7 +142,7 @@ class FlexibleRequisitionTest extends TestCase
         });
     }
 
-    public function test_can_create_labor_requisition_with_worker_day_estimate(): void
+    public function test_can_create_generic_labor_style_line(): void
     {
         $this->seedTenant();
 
@@ -153,15 +154,14 @@ class FlexibleRequisitionTest extends TestCase
         $this->post('/requisitions', [
             'project_id' => 1,
             'department' => 'Site',
-            'resource_type' => RequisitionResourceType::Labor->value,
             'fulfillment_type' => 'cash_disbursement',
             'addressed_to' => 'finance',
             'items' => [
                 [
                     'description' => 'Casual workers for excavation',
-                    'workers' => '10',
-                    'days' => '5',
-                    'rate_per_day' => '25000',
+                    'unit' => 'worker-day',
+                    'quantity' => '50',
+                    'unit_cost' => '25000',
                 ],
             ],
         ])->assertRedirect();
@@ -170,15 +170,13 @@ class FlexibleRequisitionTest extends TestCase
         $tenant->run(function () {
             $req = Requisition::with('items')->first();
             $this->assertNotNull($req);
-            $this->assertSame(RequisitionResourceType::Labor, $req->resource_type);
+            $this->assertSame(RequisitionResourceType::Other, $req->resource_type);
             $this->assertSame('1250000.00', (string) $req->original_amount);
             $item = $req->items->first();
             $this->assertSame('50.000', (string) $item->quantity);
             $this->assertSame('worker-day', $item->unit);
             $this->assertSame('25000.00', (string) $item->unit_cost);
-            $this->assertSame('10.000', $item->details['workers']);
-            $this->assertSame('5.000', $item->details['days']);
-            $this->assertSame('25000.00', $item->details['rate_per_day']);
+            $this->assertNull($item->details);
         });
     }
 
@@ -194,15 +192,14 @@ class FlexibleRequisitionTest extends TestCase
         $this->post('/requisitions', [
             'project_id' => 1,
             'department' => 'Site',
-            'resource_type' => RequisitionResourceType::Labor->value,
             'fulfillment_type' => 'cash_disbursement',
             'addressed_to' => 'finance',
             'items' => [
                 [
                     'description' => 'Casual workers',
-                    'workers' => '4',
-                    'days' => '2',
-                    'rate_per_day' => '20000',
+                    'unit' => 'worker-day',
+                    'quantity' => '8',
+                    'unit_cost' => '20000',
                 ],
             ],
         ])->assertRedirect();
@@ -216,15 +213,14 @@ class FlexibleRequisitionTest extends TestCase
         $this->put("/requisitions/{$requisitionId}", [
             'project_id' => 1,
             'department' => 'Site Updated',
-            'resource_type' => RequisitionResourceType::Labor->value,
             'fulfillment_type' => 'cash_disbursement',
             'addressed_to' => 'finance',
             'items' => [
                 [
                     'description' => 'Casual workers for concrete pour',
-                    'workers' => '8',
-                    'days' => '3',
-                    'rate_per_day' => '25000',
+                    'unit' => 'worker-day',
+                    'quantity' => '24',
+                    'unit_cost' => '25000',
                 ],
             ],
         ])->assertRedirect();
@@ -234,8 +230,7 @@ class FlexibleRequisitionTest extends TestCase
             $this->assertSame('Site Updated', $req->department);
             $this->assertSame('600000.00', (string) $req->original_amount);
             $this->assertSame('Casual workers for concrete pour', $req->items->first()->description);
-            $this->assertSame('8.000', $req->items->first()->details['workers']);
-            $this->assertSame('3.000', $req->items->first()->details['days']);
+            $this->assertSame('24.000', (string) $req->items->first()->quantity);
         });
     }
 
@@ -249,7 +244,7 @@ class FlexibleRequisitionTest extends TestCase
                 'requisition_no' => 'REQ-2026-00999',
                 'project_id' => 1,
                 'department' => 'Site',
-                'resource_type' => RequisitionResourceType::Cash,
+                'resource_type' => RequisitionResourceType::Other,
                 'requestor_id' => 1,
                 'status' => RequisitionStatus::UnderReview,
                 'fulfillment_type' => 'cash_disbursement',
@@ -269,13 +264,13 @@ class FlexibleRequisitionTest extends TestCase
         $this->put('/requisitions/1', [
             'project_id' => 1,
             'department' => 'Hacked',
-            'resource_type' => RequisitionResourceType::Cash->value,
             'fulfillment_type' => 'cash_disbursement',
             'addressed_to' => 'finance',
             'items' => [
                 [
                     'description' => 'Should fail',
-                    'estimated_amount' => '1',
+                    'quantity' => '1',
+                    'unit_cost' => '1',
                 ],
             ],
         ])->assertRedirect('/requisitions/1');
@@ -286,7 +281,7 @@ class FlexibleRequisitionTest extends TestCase
         });
     }
 
-    public function test_can_create_requisition_with_multiple_lines_same_resource_type(): void
+    public function test_can_create_requisition_with_multiple_generic_lines(): void
     {
         $this->seedTenant();
 
@@ -298,21 +293,20 @@ class FlexibleRequisitionTest extends TestCase
         $this->post('/requisitions', [
             'project_id' => 1,
             'department' => 'Site',
-            'resource_type' => RequisitionResourceType::Labor->value,
             'fulfillment_type' => 'cash_disbursement',
             'addressed_to' => 'finance',
             'items' => [
                 [
                     'description' => 'Casual excavation support',
-                    'workers' => '10',
-                    'days' => '5',
-                    'rate_per_day' => '25000',
+                    'unit' => 'worker-day',
+                    'quantity' => '50',
+                    'unit_cost' => '25000',
                 ],
                 [
                     'description' => 'Skilled masons',
-                    'workers' => '4',
-                    'days' => '3',
-                    'rate_per_day' => '40000',
+                    'unit' => 'worker-day',
+                    'quantity' => '12',
+                    'unit_cost' => '40000',
                 ],
             ],
         ])->assertRedirect();
@@ -321,7 +315,7 @@ class FlexibleRequisitionTest extends TestCase
         $tenant->run(function () {
             $req = Requisition::with('items')->firstOrFail();
             $this->assertCount(2, $req->items);
-            // 10*5*25000 + 4*3*40000 = 1,250,000 + 480,000
+            // 50*25000 + 12*40000 = 1,250,000 + 480,000
             $this->assertSame('1730000.00', (string) $req->original_amount);
             $this->assertSame('Casual excavation support', $req->items[0]->description);
             $this->assertSame('Skilled masons', $req->items[1]->description);

@@ -2,10 +2,11 @@
 
 namespace App\Http\Requests;
 
-use App\Enums\ComplianceRuleType;
+use App\Enums\ComplianceCalculationType;
 use App\Enums\ProjectStatus;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
 
 class StoreProjectRequest extends FormRequest
 {
@@ -16,28 +17,43 @@ class StoreProjectRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
-        $rules = collect($this->input('compliance_rules', []))
-            ->filter(fn ($rule) => filter_var($rule['is_active'] ?? false, FILTER_VALIDATE_BOOLEAN))
-            ->map(function (array $rule) {
-                $rate = $this->blankToNull($rule['rate'] ?? null);
-                $maxAmount = $this->blankToNull($rule['max_amount'] ?? null);
+        $ipcs = collect($this->input('ipcs', []))
+            ->map(function (array $ipc) {
+                $items = collect($ipc['compliance_items'] ?? [])
+                    ->filter(fn ($item) => filled($item['compliance_rule_id'] ?? null)
+                        || filled($item['rate'] ?? null)
+                        || filled($item['fixed_amount'] ?? null))
+                    ->map(function (array $item) {
+                        $type = $item['calculation_type'] ?? ComplianceCalculationType::RatePercent->value;
 
-                return [
-                    'rule_type' => $rule['rule_type'] ?? null,
-                    // DB rate is required; fixed-only charges store 0%.
-                    'rate' => $rate ?? 0,
-                    'is_active' => true,
-                    'max_amount' => $maxAmount,
-                ];
+                        return [
+                            'compliance_rule_id' => filled($item['compliance_rule_id'] ?? null)
+                                ? (int) $item['compliance_rule_id']
+                                : null,
+                            'calculation_type' => $type,
+                            'rate' => $type === ComplianceCalculationType::RatePercent->value
+                                ? $this->blankToNull($item['rate'] ?? null)
+                                : null,
+                            'fixed_amount' => $type === ComplianceCalculationType::FixedAmount->value
+                                ? $this->blankToNull($item['fixed_amount'] ?? null)
+                                : null,
+                        ];
+                    })
+                    ->values()
+                    ->all();
+
+                return ['compliance_items' => $items];
             })
+            // Drop completely empty IPC shells (no filled compliance rows).
+            ->filter(fn (array $ipc) => $ipc['compliance_items'] !== [])
             ->values()
             ->all();
 
         $this->merge([
-            'compliance_rules' => $rules,
             'wht_percentage' => $this->blankToNull($this->input('wht_percentage')) ?? 0,
             'location' => $this->input('location') ?: '',
             'client' => $this->input('client') ?: '',
+            'ipcs' => $ipcs,
         ]);
     }
 
@@ -53,28 +69,70 @@ class StoreProjectRequest extends FormRequest
             'start_date' => ['nullable', 'date'],
             'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
             'status' => ['nullable', Rule::enum(ProjectStatus::class)],
-            'compliance_rules' => ['nullable', 'array'],
-            'compliance_rules.*.rule_type' => ['required', Rule::enum(ComplianceRuleType::class)],
-            'compliance_rules.*.rate' => ['nullable', 'numeric', 'min:0'],
-            'compliance_rules.*.is_active' => ['nullable', 'boolean'],
-            'compliance_rules.*.max_amount' => ['nullable', 'numeric', 'min:0'],
-            'compliance_rules.*' => [
-                function (string $attribute, mixed $value, \Closure $fail) {
-                    if (! is_array($value)) {
-                        return;
-                    }
-
-                    $rate = $value['rate'] ?? null;
-                    $maxAmount = $value['max_amount'] ?? null;
-                    $hasRate = $rate !== null && $rate !== '' && (float) $rate > 0;
-                    $hasFixed = $maxAmount !== null && $maxAmount !== '' && (float) $maxAmount > 0;
-
-                    if (! $hasRate && ! $hasFixed) {
-                        $fail('Each active compliance rule needs a rate % or a fixed amount.');
-                    }
-                },
+            'ipcs' => ['nullable', 'array'],
+            'ipcs.*.compliance_items' => ['required', 'array', 'min:1'],
+            'ipcs.*.compliance_items.*.compliance_rule_id' => [
+                'required',
+                'integer',
+                Rule::exists('compliance_rules', 'id')->where(
+                    fn ($q) => $q->where('is_active', true)->whereNull('deleted_at')
+                ),
             ],
+            'ipcs.*.compliance_items.*.calculation_type' => ['required', Rule::enum(ComplianceCalculationType::class)],
+            'ipcs.*.compliance_items.*.rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'ipcs.*.compliance_items.*.fixed_amount' => ['nullable', 'numeric', 'min:0'],
         ];
+    }
+
+    public function withValidator(Validator $validator): void
+    {
+        $validator->after(function (Validator $validator) {
+            foreach ($this->input('ipcs', []) as $ipcIndex => $ipc) {
+                if (! is_array($ipc)) {
+                    continue;
+                }
+
+                $seen = [];
+                foreach ($ipc['compliance_items'] ?? [] as $itemIndex => $item) {
+                    if (! is_array($item)) {
+                        continue;
+                    }
+
+                    $ruleId = (int) ($item['compliance_rule_id'] ?? 0);
+                    if ($ruleId > 0) {
+                        if (isset($seen[$ruleId])) {
+                            $validator->errors()->add(
+                                "ipcs.{$ipcIndex}.compliance_items.{$itemIndex}.compliance_rule_id",
+                                'This compliance rule is already added to this IPC.',
+                            );
+                        }
+                        $seen[$ruleId] = true;
+                    }
+
+                    $type = $item['calculation_type'] ?? null;
+
+                    if ($type === ComplianceCalculationType::RatePercent->value) {
+                        $rate = $item['rate'] ?? null;
+                        if ($rate === null || $rate === '' || (float) $rate <= 0) {
+                            $validator->errors()->add(
+                                "ipcs.{$ipcIndex}.compliance_items.{$itemIndex}.rate",
+                                'Enter a rate % greater than zero.',
+                            );
+                        }
+                    }
+
+                    if ($type === ComplianceCalculationType::FixedAmount->value) {
+                        $fixed = $item['fixed_amount'] ?? null;
+                        if ($fixed === null || $fixed === '' || (float) $fixed <= 0) {
+                            $validator->errors()->add(
+                                "ipcs.{$ipcIndex}.compliance_items.{$itemIndex}.fixed_amount",
+                                'Enter a fixed amount greater than zero.',
+                            );
+                        }
+                    }
+                }
+            }
+        });
     }
 
     private function blankToNull(mixed $value): mixed

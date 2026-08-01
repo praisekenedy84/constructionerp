@@ -6,62 +6,110 @@ import PageHeader from '@/Components/Shared/PageHeader';
 import StatusBadge from '@/Components/Shared/StatusBadge';
 import { Button } from '@/Components/ui/button';
 import { hasPermission } from '@/lib/permissions';
-import { formatCurrency, formatDate } from '@/lib/formatters';
-import { ListingFilters, PageProps, Paginated, Requisition, RequisitionStatus } from '@/types';
+import { formatCurrency, formatDate, formatQuantity } from '@/lib/formatters';
+import { ListingFilters, PageProps, Paginated, Project, RequisitionStatus } from '@/types';
 import { Head, Link, usePage } from '@inertiajs/react';
-import { Eye, Pencil, Plus, ClipboardCheck } from 'lucide-react';
+import { Download, Eye, Plus } from 'lucide-react';
+
+interface RegisterRow {
+    id: number;
+    requisition_id: number;
+    date: string | null;
+    requested_by: string;
+    requisition_no: string;
+    sn: number;
+    department: string;
+    description: string;
+    category: string;
+    project_code: string;
+    project_name: string;
+    unit: string;
+    quantity: string;
+    rate: string;
+    amount: string;
+    status: string;
+    paid: string;
+    pending: string;
+}
+
+interface RegisterSummary {
+    total_requested: string;
+    total_paid: string;
+    total_pending: string;
+    requested_pct: number;
+    paid_pct: number;
+    pending_pct: number;
+    line_count: number;
+}
+
+interface FilterOptions {
+    projects: Pick<Project, 'id' | 'code' | 'name'>[];
+    categories: Array<{ id: number; name: string; is_active?: boolean }>;
+    requestors: Array<{ id: number; name: string }>;
+}
 
 interface RequisitionsIndexProps extends PageProps {
-    requisitions: Paginated<Requisition>;
+    rows: Paginated<RegisterRow>;
+    summary: RegisterSummary;
+    filterOptions: FilterOptions;
     filters: ListingFilters & {
         status?: string;
         department?: string;
         project_id?: string;
+        category_id?: string;
+        requestor_id?: string;
     };
 }
 
 const statusOptions: RequisitionStatus[] = [
-    'draft', 'submitted', 'under_review', 'approved', 'amended',
-    'rejected', 'fulfilled', 'closed', 'cancelled',
+    'draft',
+    'submitted',
+    'under_review',
+    'approved',
+    'amended',
+    'rejected',
+    'fulfilled',
+    'closed',
+    'cancelled',
 ];
 
-function isEditableStatus(status: string): boolean {
-    return status === 'draft' || status === 'rejected';
+function pctLabel(value: number): string {
+    return `${(value * 100).toFixed(1)}%`;
 }
 
-function pendingStepId(req: Requisition): number | null {
-    const steps = req.approval_steps ?? [];
-    const pending = steps.find((step) => step.status === 'pending');
-    return pending?.id ?? null;
+function exportHref(filters: Record<string, string | undefined>): string {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+        if (value) {
+            params.set(key, value);
+        }
+    });
+    const query = params.toString();
+    return query ? `/requisitions/export?${query}` : '/requisitions/export';
 }
 
 export default function RequisitionsIndex() {
-    const { requisitions, filters, auth } = usePage<RequisitionsIndexProps>().props;
-    const rows = requisitions.data ?? [];
+    const { rows, summary, filterOptions, filters, auth, uiSettings } =
+        usePage<RequisitionsIndexProps>().props;
+    const lines = rows.data ?? [];
     const canCreate = hasPermission(auth.user, 'requisitions', 'create');
-    const canUpdate = hasPermission(auth.user, 'requisitions', 'update');
-    const canApprove = hasPermission(auth.user, 'requisitions', 'approve');
-    const canFulfill = hasPermission(auth.user, 'requisitions', 'fulfill');
+    const companyName = uiSettings?.app_name ?? 'Company';
 
     return (
-        <AppShell title="Requisitions">
-            <Head title="Requisitions" />
+        <AppShell title="Requisition List">
+            <Head title="Requisition List" />
             <div className="space-y-6">
                 <PageHeader
-                    title="Requisitions"
-                    description="Drafts stay private to the author until published for approval. Approvers use Decide or the Review Queue."
+                    title="Daily Requisition Register"
+                    description={`${companyName} — line-level register with filtered amount summary.`}
                     actions={
-                        <>
-                            {canApprove && (
-                                <Link href="/requisitions/review-queue">
-                                    <Button variant="outline">Review Queue</Button>
-                                </Link>
-                            )}
-                            {canFulfill && (
-                                <Link href="/requisitions/fulfill-queue">
-                                    <Button variant="outline">Fulfill Queue</Button>
-                                </Link>
-                            )}
+                        <div className="flex flex-wrap items-center gap-2">
+                            <a href={exportHref(filters)} target="_blank" rel="noopener noreferrer">
+                                <Button variant="outline">
+                                    <Download className="h-4 w-4" />
+                                    Export Excel
+                                </Button>
+                            </a>
                             {canCreate && (
                                 <Link href="/requisitions/create">
                                     <Button>
@@ -70,20 +118,53 @@ export default function RequisitionsIndex() {
                                     </Button>
                                 </Link>
                             )}
-                        </>
+                        </div>
                     }
                 />
+
+                <div className="grid gap-4 sm:grid-cols-3">
+                    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                            Total Requested
+                        </p>
+                        <p className="mt-1 text-2xl font-semibold text-slate-900">
+                            {formatCurrency(summary.total_requested)}
+                        </p>
+                        <p className="mt-1 text-sm text-slate-500">
+                            {pctLabel(summary.requested_pct)} · {summary.line_count} lines
+                        </p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                            Total Paid
+                        </p>
+                        <p className="mt-1 text-2xl font-semibold text-emerald-700">
+                            {formatCurrency(summary.total_paid)}
+                        </p>
+                        <p className="mt-1 text-sm text-slate-500">{pctLabel(summary.paid_pct)} of requested</p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                            Total Pending
+                        </p>
+                        <p className="mt-1 text-2xl font-semibold text-amber-700">
+                            {formatCurrency(summary.total_pending)}
+                        </p>
+                        <p className="mt-1 text-sm text-slate-500">
+                            {pctLabel(summary.pending_pct)} of requested
+                        </p>
+                    </div>
+                </div>
 
                 <ListToolbar
                     baseUrl="/requisitions"
                     filters={filters}
-                    searchPlaceholder="Search requisition no, department…"
+                    searchPlaceholder="Search req no, description, requestor, project…"
                     sortOptions={[
-                        { value: 'created_at', label: 'Date' },
+                        { value: 'date', label: 'Date' },
                         { value: 'requisition_no', label: 'Requisition no' },
-                        { value: 'department', label: 'Department' },
-                        { value: 'status', label: 'Status' },
-                        { value: 'original_amount', label: 'Amount' },
+                        { value: 'description', label: 'Description' },
+                        { value: 'amount', label: 'Amount' },
                     ]}
                     selectFilters={[
                         {
@@ -95,96 +176,131 @@ export default function RequisitionsIndex() {
                                 label: s.replace(/_/g, ' '),
                             })),
                         },
+                        {
+                            key: 'project_id',
+                            label: 'Project',
+                            emptyLabel: 'All projects',
+                            options: filterOptions.projects.map((project) => ({
+                                value: String(project.id),
+                                label: `${project.code} — ${project.name}`,
+                            })),
+                        },
+                        {
+                            key: 'category_id',
+                            label: 'Category',
+                            emptyLabel: 'All categories',
+                            options: filterOptions.categories.map((category) => ({
+                                value: String(category.id),
+                                label: category.name,
+                            })),
+                        },
+                        {
+                            key: 'requestor_id',
+                            label: 'Requested by',
+                            emptyLabel: 'All requestors',
+                            options: filterOptions.requestors.map((user) => ({
+                                value: String(user.id),
+                                label: user.name,
+                            })),
+                        },
                     ]}
-                    textFilters={[{ key: 'department', label: 'Department', placeholder: 'Department' }]}
+                    textFilters={[
+                        { key: 'department', label: 'Department', placeholder: 'Department' },
+                    ]}
                 />
 
                 <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-                    <table className="w-full text-sm">
-                        <thead>
-                            <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs text-slate-500">
-                                <th className="px-6 py-3 font-medium">Requisition No</th>
-                                <th className="px-6 py-3 font-medium">Project</th>
-                                <th className="px-6 py-3 font-medium">Resource</th>
-                                <th className="px-6 py-3 font-medium">Department</th>
-                                <th className="px-6 py-3 font-medium">Status</th>
-                                <th className="px-6 py-3 text-right font-medium">Amount</th>
-                                <th className="px-6 py-3 font-medium">Date</th>
-                                <th className="px-6 py-3 text-right font-medium">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                            {rows.length === 0 ? (
-                                <tr>
-                                    <td colSpan={8} className="px-6 py-12 text-center text-slate-500">
-                                        No requisitions found.
-                                    </td>
+                    <div className="overflow-x-auto">
+                        <table className="min-w-[1400px] w-full text-sm">
+                            <thead>
+                                <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs text-slate-500">
+                                    <th className="px-3 py-3 font-medium">Date</th>
+                                    <th className="px-3 py-3 font-medium">Requested By</th>
+                                    <th className="px-3 py-3 font-medium">Req No</th>
+                                    <th className="px-3 py-3 font-medium">SN</th>
+                                    <th className="px-3 py-3 font-medium">Department</th>
+                                    <th className="px-3 py-3 font-medium">Description</th>
+                                    <th className="px-3 py-3 font-medium">Category</th>
+                                    <th className="px-3 py-3 font-medium">Project</th>
+                                    <th className="px-3 py-3 font-medium">Unit</th>
+                                    <th className="px-3 py-3 text-right font-medium">Qty</th>
+                                    <th className="px-3 py-3 text-right font-medium">Rate</th>
+                                    <th className="px-3 py-3 text-right font-medium">Amount</th>
+                                    <th className="px-3 py-3 font-medium">Status</th>
+                                    <th className="px-3 py-3 text-right font-medium">Paid</th>
+                                    <th className="px-3 py-3 text-right font-medium">Pending</th>
+                                    <th className="px-3 py-3 text-right font-medium">Actions</th>
                                 </tr>
-                            ) : (
-                                rows.map((req) => {
-                                    const status = String(req.status);
-                                    const canDecide =
-                                        canApprove &&
-                                        status === 'under_review' &&
-                                        pendingStepId(req) !== null &&
-                                        req.requestor_id !== auth.user?.id;
-
-                                    return (
-                                        <tr key={req.id} className="hover:bg-slate-50">
-                                            <td className="px-6 py-4 font-mono text-slate-900">
-                                                {req.requisition_no}
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {lines.length === 0 ? (
+                                    <tr>
+                                        <td
+                                            colSpan={16}
+                                            className="px-6 py-12 text-center text-slate-500"
+                                        >
+                                            No requisition lines match the current filters.
+                                        </td>
+                                    </tr>
+                                ) : (
+                                    lines.map((row) => (
+                                        <tr key={row.id} className="hover:bg-slate-50">
+                                            <td className="whitespace-nowrap px-3 py-3 text-slate-600">
+                                                {row.date ? formatDate(row.date) : '—'}
                                             </td>
-                                            <td className="px-6 py-4 text-slate-600">
-                                                {req.project?.name ?? '—'}
+                                            <td className="px-3 py-3 text-slate-700">
+                                                {row.requested_by}
                                             </td>
-                                            <td className="px-6 py-4 capitalize text-slate-600">
-                                                {String(req.resource_type ?? '—').replace(/_/g, ' ')}
+                                            <td className="whitespace-nowrap px-3 py-3 font-mono text-slate-900">
+                                                {row.requisition_no}
                                             </td>
-                                            <td className="px-6 py-4 text-slate-600">{req.department}</td>
-                                            <td className="px-6 py-4">
-                                                <StatusBadge status={status} />
+                                            <td className="px-3 py-3 text-slate-600">{row.sn}</td>
+                                            <td className="px-3 py-3 text-slate-600">
+                                                {row.department}
                                             </td>
-                                            <td className="px-6 py-4 text-right font-medium text-slate-900">
-                                                {formatCurrency(
-                                                    req.amended_amount ?? req.original_amount,
-                                                )}
+                                            <td className="max-w-[220px] px-3 py-3 text-slate-800">
+                                                {row.description}
                                             </td>
-                                            <td className="px-6 py-4 text-slate-600">
-                                                {formatDate(req.created_at)}
-                                            </td>
-                                            <td className="px-6 py-4 text-right">
-                                                <div className="flex items-center justify-end gap-1">
-                                                    {canDecide && (
-                                                        <IconLink
-                                                            href={`/requisitions/review-queue?requisition_id=${req.id}`}
-                                                            icon={ClipboardCheck}
-                                                            label="Decide — approve, amend, or reject"
-                                                            variant="outline"
-                                                        />
-                                                    )}
-                                                    {canUpdate &&
-                                                        isEditableStatus(status) &&
-                                                        req.requestor_id === auth.user?.id && (
-                                                            <IconLink
-                                                                href={`/requisitions/${req.id}/edit`}
-                                                                icon={Pencil}
-                                                                label="Edit requisition"
-                                                            />
-                                                        )}
-                                                    <IconLink
-                                                        href={`/requisitions/${req.id}`}
-                                                        icon={Eye}
-                                                        label="View requisition"
-                                                    />
+                                            <td className="px-3 py-3 text-slate-600">{row.category}</td>
+                                            <td className="px-3 py-3 text-slate-600">
+                                                <div className="font-mono text-xs text-slate-500">
+                                                    {row.project_code}
                                                 </div>
+                                                <div>{row.project_name}</div>
+                                            </td>
+                                            <td className="px-3 py-3 text-slate-600">{row.unit}</td>
+                                            <td className="px-3 py-3 text-right tabular-nums text-slate-700">
+                                                {formatQuantity(row.quantity)}
+                                            </td>
+                                            <td className="px-3 py-3 text-right tabular-nums text-slate-700">
+                                                {formatCurrency(row.rate)}
+                                            </td>
+                                            <td className="px-3 py-3 text-right font-medium tabular-nums text-slate-900">
+                                                {formatCurrency(row.amount)}
+                                            </td>
+                                            <td className="px-3 py-3">
+                                                <StatusBadge status={row.status} />
+                                            </td>
+                                            <td className="px-3 py-3 text-right tabular-nums text-emerald-700">
+                                                {formatCurrency(row.paid)}
+                                            </td>
+                                            <td className="px-3 py-3 text-right tabular-nums text-amber-700">
+                                                {formatCurrency(row.pending)}
+                                            </td>
+                                            <td className="px-3 py-3 text-right">
+                                                <IconLink
+                                                    href={`/requisitions/${row.requisition_id}`}
+                                                    icon={Eye}
+                                                    label="View requisition"
+                                                />
                                             </td>
                                         </tr>
-                                    );
-                                })
-                            )}
-                        </tbody>
-                    </table>
-                    <PaginationLinks paginator={requisitions} />
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                    <PaginationLinks paginator={rows} />
                 </div>
             </div>
         </AppShell>

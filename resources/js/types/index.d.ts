@@ -22,6 +22,8 @@ export interface UiSettings {
     nav_overrides?: {
         hidden?: string[];
         role_hidden?: Record<string, string[]>;
+        order?: string[];
+        child_order?: Record<string, string[]>;
     };
 }
 
@@ -225,12 +227,30 @@ export interface RequisitionAttachment {
     created_at: string;
 }
 
+export interface RequisitionCategory {
+    id: number;
+    name: string;
+    description?: string | null;
+    is_active?: boolean;
+    sort_order?: number;
+}
+
+export interface Department {
+    id: number;
+    name: string;
+    description?: string | null;
+    is_active?: boolean;
+    sort_order?: number;
+}
+
 export interface Requisition {
     id: number;
     requisition_no: string;
-    project_id: number;
+    project_id: number | null;
     boq_item_id: number | null;
     department: string;
+    department_id?: number | null;
+    requisition_category_id?: number | null;
     resource_type: RequisitionResourceType;
     requestor_id: number;
     status: RequisitionStatus;
@@ -240,13 +260,15 @@ export interface Requisition {
     amended_amount: string | null;
     created_at: string;
     updated_at: string;
-    project?: Project;
+    project?: Project | null;
     boq_item?: BoqItem;
+    category?: RequisitionCategory | null;
     requestor?: { id: number; name: string; email?: string };
     items?: RequisitionItem[];
     history?: RequisitionStatusHistory[];
     attachments?: RequisitionAttachment[];
     approval_steps?: ApprovalStep[];
+    expense?: Expense | null;
 }
 
 export interface ApprovalStep {
@@ -285,19 +307,26 @@ export interface Expense {
     id: number;
     project_id: number | null;
     boq_item_id: number | null;
+    requisition_id?: number | null;
     category: 'direct' | 'indirect';
     sub_type: string;
+    activity_ref?: string | null;
+    asset_reg_no?: string | null;
     amount: string;
     description: string | null;
     expense_date: string;
     recorded_by: number;
-    project?: Project;
+    project?: Project | null;
+    boq_item?: Pick<BoqItem, 'id' | 'description' | 'unit'> | null;
+    requisition?: Pick<Requisition, 'id' | 'requisition_no' | 'status'> | null;
+    recorder?: { id: number; name: string } | null;
     cash_disbursements?: Array<{
         id: number;
         amount: string;
         method: string;
         payee: string | null;
         reference_no: string | null;
+        account_name?: string | null;
         cash_allocation?: Pick<CashAllocation, 'id' | 'project_id' | 'reference_no'> | null;
     }>;
 }
@@ -507,14 +536,29 @@ export interface Valuation {
     certified_by: number | null;
     certified_at: string | null;
     created_at: string;
+    deductions?: ValuationDeduction[];
 }
+
+export type ComplianceCalculationType = 'rate_percent' | 'fixed_amount';
 
 export interface ValuationDeduction {
     id: number;
     valuation_id: number;
-    rule_type: string;
-    rate: string;
+    compliance_rule_id: number | null;
+    name: string;
+    calculation_type: ComplianceCalculationType;
+    rule_type: string | null;
+    rate: string | null;
+    fixed_amount: string | null;
     amount: string;
+}
+
+export interface ComplianceRule {
+    id: number;
+    name: string;
+    description: string | null;
+    is_active: boolean;
+    created_at?: string;
 }
 
 export interface ReportDefinition {
@@ -591,6 +635,7 @@ export interface ListingFilters {
     to?: string;
     sort?: string;
     direction?: 'asc' | 'desc';
+    per_page?: string | number;
 }
 
 export interface SortOption {

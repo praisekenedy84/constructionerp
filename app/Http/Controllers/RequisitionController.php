@@ -3,65 +3,63 @@
 namespace App\Http\Controllers;
 
 use App\Enums\InventoryItemCategory;
-use App\Enums\RequisitionResourceType;
 use App\Http\Requests\AddRequisitionAttachmentRequest;
 use App\Http\Requests\StoreRequisitionRequest;
 use App\Http\Requests\TransitionRequisitionRequest;
 use App\Models\ApprovalStep;
 use App\Models\BoqItem;
+use App\Models\Department;
 use App\Models\InventoryItem;
 use App\Models\Project;
 use App\Models\Requisition;
+use App\Models\RequisitionCategory;
 use App\Models\StockLocation;
+use App\Services\RequisitionRegisterService;
 use App\Services\RequisitionService;
 use App\Support\ListingQuery;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class RequisitionController extends Controller
 {
-    public function __construct(private RequisitionService $requisitionService) {}
+    public function __construct(
+        private RequisitionService $requisitionService,
+        private RequisitionRegisterService $registerService,
+    ) {}
 
     public function index(Request $request): Response
     {
         $this->authorizePermission($request->user(), 'requisitions', 'read');
 
-        $query = Requisition::query()
-            ->visibleTo($request->user())
-            ->with([
-                'project',
-                'requestor',
-                'boqItem',
-                'approvalSteps' => fn ($q) => $q->where('status', 'pending')->orderBy('level'),
-            ]);
-
-        if ($request->filled('status')) {
-            $query->where('status', $request->string('status'));
-        }
-
-        if ($request->filled('department')) {
-            $query->where('department', 'like', '%'.$request->string('department').'%');
-        }
-
-        if ($request->filled('project_id')) {
-            $query->where('project_id', $request->integer('project_id'));
-        }
-
-        $listing = ListingQuery::for($query, $request)
-            ->search(['requisition_no', 'department', 'project.name'])
-            ->dateRange('created_at')
-            ->sort(['requisition_no', 'department', 'status', 'created_at', 'original_amount']);
+        $filters = [
+            'status' => $request->input('status'),
+            'department' => $request->input('department'),
+            'project_id' => $request->input('project_id'),
+            'category_id' => $request->input('category_id'),
+            'requestor_id' => $request->input('requestor_id'),
+            'search' => $request->input('search'),
+            'from' => $request->input('from'),
+            'to' => $request->input('to'),
+            'sort' => $request->input('sort'),
+            'direction' => $request->input('direction'),
+        ];
 
         return Inertia::render('Requisitions/Index', [
-            'requisitions' => $listing->paginate(25),
-            'filters' => $listing->filters([
-                'status' => $request->input('status'),
-                'department' => $request->input('department'),
-                'project_id' => $request->input('project_id'),
-            ]),
+            'rows' => $this->registerService->paginate($request->user(), $request),
+            'summary' => $this->registerService->summary($request->user(), $request),
+            'filterOptions' => $this->registerService->filterOptions(),
+            'filters' => array_filter($filters, fn ($value) => $value !== null && $value !== ''),
         ]);
+    }
+
+    public function export(Request $request): BinaryFileResponse
+    {
+        $this->authorizePermission($request->user(), 'requisitions', 'read');
+
+        return $this->registerService->exportExcel($request->user(), $request);
     }
 
     public function create(Request $request): Response
@@ -106,7 +104,7 @@ class RequisitionController extends Controller
         }
 
         return Inertia::render('Requisitions/Create', [
-            ...$this->formOptions(),
+            ...$this->formOptions($requisition),
             'requisition' => $requisition,
         ]);
     }
@@ -145,6 +143,7 @@ class RequisitionController extends Controller
         $requisition = Requisition::with([
             'project',
             'boqItem',
+            'category',
             'requestor',
             'items.boqItem',
             'items.inventoryItem',
@@ -179,7 +178,11 @@ class RequisitionController extends Controller
             'canEdit' => $canEdit,
             'canDecide' => $canDecide,
             'inventoryItems' => InventoryItem::orderBy('name')->get(['id', 'code', 'name', 'unit']),
-            'stockLocations' => StockLocation::where('project_id', $requisition->project_id)
+            'stockLocations' => StockLocation::query()
+                ->when(
+                    $requisition->project_id,
+                    fn ($q) => $q->where('project_id', $requisition->project_id),
+                )
                 ->orderBy('name')
                 ->get(['id', 'name']),
             'inventoryCategories' => collect(InventoryItemCategory::cases())->map(fn ($c) => [
@@ -187,7 +190,11 @@ class RequisitionController extends Controller
                 'label' => str_replace('_', ' ', ucfirst($c->value)),
             ])->values()->all(),
             'cashOnHand' => app(\App\Services\ReportService::class)
-                ->cashPosition(['project_id' => $requisition->project_id])['cash_on_hand'],
+                ->cashPosition(
+                    $requisition->project_id
+                        ? ['project_id' => $requisition->project_id]
+                        : ['scope' => 'organization']
+                )['cash_on_hand'],
         ]);
     }
 
@@ -277,10 +284,14 @@ class RequisitionController extends Controller
 
         $query = Requisition::query()
             ->whereIn('status', ['approved', 'amended'])
-            ->with(['project', 'requestor', 'boqItem']);
+            ->with(['project', 'requestor', 'category', 'boqItem', 'items']);
 
         if ($request->filled('fulfillment_type')) {
             $query->where('fulfillment_type', $request->string('fulfillment_type'));
+        }
+
+        if ($request->filled('requisition_id')) {
+            $query->where('id', $request->integer('requisition_id'));
         }
 
         $listing = ListingQuery::for($query, $request)
@@ -290,7 +301,42 @@ class RequisitionController extends Controller
 
         return Inertia::render('Requisitions/FulfillQueue', [
             'requisitions' => $listing->paginate(25),
-            'filters' => $listing->filters(['fulfillment_type' => $request->input('fulfillment_type')]),
+            'filters' => $listing->filters([
+                'fulfillment_type' => $request->input('fulfillment_type'),
+                'requisition_id' => $request->input('requisition_id'),
+            ]),
+            'focusRequisitionId' => $request->integer('requisition_id') ?: null,
+        ]);
+    }
+
+    public function fulfilledList(Request $request): Response
+    {
+        $this->authorizePermission($request->user(), 'requisitions', 'read');
+
+        $query = Requisition::query()
+            ->visibleTo($request->user())
+            ->whereIn('status', ['fulfilled', 'closed'])
+            ->with(['project', 'requestor', 'category', 'boqItem', 'items']);
+
+        if ($request->filled('fulfillment_type')) {
+            $query->where('fulfillment_type', $request->string('fulfillment_type'));
+        }
+
+        if ($request->filled('status')) {
+            $query->where('status', $request->string('status'));
+        }
+
+        $listing = ListingQuery::for($query, $request)
+            ->search(['requisition_no', 'department', 'project.name', 'requestor.name'])
+            ->dateRange('updated_at')
+            ->sort(['requisition_no', 'updated_at', 'original_amount', 'fulfillment_type', 'status']);
+
+        return Inertia::render('Requisitions/FulfilledList', [
+            'requisitions' => $listing->paginate(25),
+            'filters' => $listing->filters([
+                'fulfillment_type' => $request->input('fulfillment_type'),
+                'status' => $request->input('status'),
+            ]),
         ]);
     }
 
@@ -311,7 +357,7 @@ class RequisitionController extends Controller
     }
 
     /** @return array<string, mixed> */
-    private function formOptions(): array
+    private function formOptions(?Requisition $requisition = null): array
     {
         $boqItems = BoqItem::query()
             ->with('section:id,project_id')
@@ -326,13 +372,44 @@ class RequisitionController extends Controller
                 'project_id' => $item->section?->project_id,
             ]);
 
+        $categories = RequisitionCategory::query()
+            ->active()
+            ->ordered()
+            ->get(['id', 'name', 'description', 'is_active']);
+
+        if ($requisition?->requisition_category_id
+            && ! $categories->contains('id', $requisition->requisition_category_id)) {
+            $current = RequisitionCategory::query()
+                ->whereKey($requisition->requisition_category_id)
+                ->first(['id', 'name', 'description', 'is_active']);
+
+            if ($current) {
+                $categories = $categories->prepend($current)->values();
+            }
+        }
+
+        $departments = Department::query()
+            ->active()
+            ->ordered()
+            ->get(['id', 'name', 'description', 'is_active']);
+
+        if ($requisition?->department_id
+            && ! $departments->contains('id', $requisition->department_id)) {
+            $currentDepartment = Department::query()
+                ->whereKey($requisition->department_id)
+                ->first(['id', 'name', 'description', 'is_active']);
+
+            if ($currentDepartment) {
+                $departments = $departments->prepend($currentDepartment)->values();
+            }
+        }
+
         return [
             'projects' => Project::orderBy('name')->get(['id', 'code', 'name']),
             'boqItems' => $boqItems,
             'inventoryItems' => InventoryItem::orderBy('name')->get(['id', 'code', 'name', 'unit', 'category']),
-            'resourceTypes' => collect(RequisitionResourceType::cases())
-                ->map(fn ($type) => ['value' => $type->value, 'label' => $type->label()])
-                ->values(),
+            'categories' => $categories,
+            'departments' => $departments,
         ];
     }
 }

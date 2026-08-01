@@ -12,6 +12,7 @@ class MenuService
      * Layer 1: permission (access policy)
      * Layer 2: tenant menu overrides per role (presentation only)
      * Layer 3: global hidden items (presentation only)
+     * Layer 4: tenant-defined parent / child order (presentation only)
      *
      * @param  array<string, mixed>  $uiSettings
      * @return list<array{
@@ -28,6 +29,8 @@ class MenuService
         $overrides = $uiSettings['nav_overrides'] ?? [];
         $globalHidden = $overrides['hidden'] ?? [];
         $roleHidden = $overrides['role_hidden'] ?? [];
+        $order = is_array($overrides['order'] ?? null) ? $overrides['order'] : [];
+        $childOrder = is_array($overrides['child_order'] ?? null) ? $overrides['child_order'] : [];
         $userRoles = $user->getRoleNames()->toArray();
 
         $hiddenForUser = $globalHidden;
@@ -80,13 +83,48 @@ class MenuService
             }
 
             if ($children !== []) {
-                $entry['children'] = $children;
+                $childKeys = is_array($childOrder[$item['key']] ?? null)
+                    ? $childOrder[$item['key']]
+                    : [];
+                $entry['children'] = $this->applyKeyOrder($children, $childKeys);
             }
 
             $visible[] = $entry;
         }
 
-        return $visible;
+        return $this->applyKeyOrder($visible, $order);
+    }
+
+    /**
+     * @param  list<array{key: string}>  $items
+     * @param  list<string>  $orderedKeys
+     * @return list<array{key: string}>
+     */
+    private function applyKeyOrder(array $items, array $orderedKeys): array
+    {
+        if ($orderedKeys === [] || $items === []) {
+            return $items;
+        }
+
+        $byKey = [];
+        foreach ($items as $item) {
+            $byKey[$item['key']] = $item;
+        }
+
+        $sorted = [];
+        foreach ($orderedKeys as $key) {
+            if (! isset($byKey[$key])) {
+                continue;
+            }
+            $sorted[] = $byKey[$key];
+            unset($byKey[$key]);
+        }
+
+        foreach ($byKey as $item) {
+            $sorted[] = $item;
+        }
+
+        return $sorted;
     }
 
     /**

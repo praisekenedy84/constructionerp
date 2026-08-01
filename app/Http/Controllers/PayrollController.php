@@ -47,7 +47,10 @@ class PayrollController extends Controller
         return Inertia::render('Payroll/Index', [
             'project' => $project,
             'employees' => $employeeListing->paginate(25),
-            'recent_runs' => $runsQuery->orderByDesc('period_end')->paginate(10)->withQueryString(),
+            'recent_runs' => $runsQuery
+                ->orderByDesc('period_end')
+                ->paginate(ListingQuery::resolvePerPage($request))
+                ->withQueryString(),
             'filters' => $employeeListing->filters(),
         ]);
     }

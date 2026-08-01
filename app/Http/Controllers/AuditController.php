@@ -34,7 +34,7 @@ class AuditController extends Controller
             ->sort(['created_at', 'entity_type', 'action', 'entity_id']);
 
         return Inertia::render('Audit/Index', [
-            'logs' => $listing->paginate(50),
+            'logs' => $listing->paginate(ListingQuery::PER_PAGE),
             'filters' => $listing->filters([
                 'entity_type' => $request->input('entity_type'),
                 'entity_id' => $request->input('entity_id'),

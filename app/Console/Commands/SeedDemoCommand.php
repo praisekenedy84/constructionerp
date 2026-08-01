@@ -6,7 +6,6 @@ use App\Enums\ApprovalStepStatus;
 use App\Enums\BoqItemCategory;
 use App\Enums\BudgetTransactionType;
 use App\Enums\CashAllocationStatus;
-use App\Enums\ComplianceRuleType;
 use App\Enums\FulfillmentType;
 use App\Enums\ProjectStatus;
 use App\Enums\RequisitionResourceType;
@@ -16,12 +15,14 @@ use App\Models\BoqItem;
 use App\Models\BoqSection;
 use App\Models\BudgetTransaction;
 use App\Models\CashAllocation;
+use App\Models\ComplianceRule;
+use App\Models\Department;
 use App\Models\Employee;
 use App\Models\Equipment;
 use App\Models\InventoryItem;
 use App\Models\Project;
-use App\Models\ProjectComplianceRule;
 use App\Models\Requisition;
+use App\Models\RequisitionCategory;
 use App\Models\RequisitionItem;
 use App\Models\StockBalance;
 use App\Models\StockLocation;
@@ -83,14 +84,10 @@ class SeedDemoCommand extends Command
                 ],
             );
 
-            foreach ([
-                ['rule_type' => ComplianceRuleType::Retention, 'rate' => '10.00'],
-                ['rule_type' => ComplianceRuleType::AdvanceRecovery, 'rate' => '15.00', 'max_amount' => '50000000.00'],
-                ['rule_type' => ComplianceRuleType::Wht, 'rate' => '5.00'],
-            ] as $rule) {
-                ProjectComplianceRule::firstOrCreate(
-                    ['project_id' => $project->id, 'rule_type' => $rule['rule_type']],
-                    array_merge($rule, ['is_active' => true]),
+            foreach (['Retention', 'Advance Recovery', 'WHT', 'Defect Liability', 'Material Test'] as $ruleName) {
+                ComplianceRule::firstOrCreate(
+                    ['name' => $ruleName],
+                    ['description' => null, 'is_active' => true],
                 );
             }
 
@@ -225,6 +222,18 @@ class SeedDemoCommand extends Command
                         'received_at' => now()->subWeeks(2),
                     ],
                 );
+
+                $categoryIds = RequisitionCategory::query()
+                    ->get(['id', 'name'])
+                    ->mapWithKeys(fn (RequisitionCategory $category) => [
+                        $category->name => $category->id,
+                    ]);
+
+                $departmentIds = Department::query()
+                    ->get(['id', 'name'])
+                    ->mapWithKeys(fn (Department $department) => [
+                        $department->name => $department->id,
+                    ]);
 
                 $demoRequisitions = [
                     [
@@ -431,20 +440,32 @@ class SeedDemoCommand extends Command
                 ];
 
                 foreach ($demoRequisitions as $demo) {
+                    $resourceType = $demo['header']['resource_type'] instanceof RequisitionResourceType
+                        ? $demo['header']['resource_type']
+                        : RequisitionResourceType::from((string) $demo['header']['resource_type']);
+
+                    $header = [
+                        ...$demo['header'],
+                        'requisition_category_id' => $categoryIds[$resourceType->label()] ?? null,
+                        'department_id' => $departmentIds[$demo['header']['department']] ?? null,
+                    ];
+
                     $requisition = Requisition::firstOrCreate(
                         ['requisition_no' => $demo['requisition_no']],
-                        $demo['header'],
+                        $header,
                     );
 
                     // Keep older demo rows aligned with the flexible model + authors.
                     $requisition->fill([
-                        'resource_type' => $demo['header']['resource_type'],
-                        'boq_item_id' => $demo['header']['boq_item_id'],
-                        'original_amount' => $demo['header']['original_amount'],
-                        'department' => $demo['header']['department'],
-                        'fulfillment_type' => $demo['header']['fulfillment_type'],
-                        'status' => $demo['header']['status'],
-                        'requestor_id' => $demo['header']['requestor_id'],
+                        'resource_type' => $header['resource_type'],
+                        'requisition_category_id' => $header['requisition_category_id'],
+                        'boq_item_id' => $header['boq_item_id'],
+                        'original_amount' => $header['original_amount'],
+                        'department' => $header['department'],
+                        'department_id' => $header['department_id'],
+                        'fulfillment_type' => $header['fulfillment_type'],
+                        'status' => $header['status'],
+                        'requestor_id' => $header['requestor_id'],
                     ])->save();
 
                     if ($requisition->items()->exists()) {
@@ -454,7 +475,7 @@ class SeedDemoCommand extends Command
                     foreach ($demo['items'] as $item) {
                         RequisitionItem::create([
                             'requisition_id' => $requisition->id,
-                            'boq_item_id' => $item['boq_item_id'] ?? $demo['header']['boq_item_id'],
+                            'boq_item_id' => $item['boq_item_id'] ?? $header['boq_item_id'],
                             'inventory_item_id' => $item['inventory_item_id'] ?? null,
                             'description' => $item['description'],
                             'unit' => $item['unit'],

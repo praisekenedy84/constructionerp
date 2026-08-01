@@ -26,16 +26,44 @@ class MenuCatalog
     {
         return [
             ['key' => 'dashboard', 'label' => 'Dashboard', 'href' => '/dashboard', 'permission' => null, 'group' => 'Core'],
-            ['key' => 'projects', 'label' => 'Projects', 'href' => '/projects', 'permission' => 'projects:read', 'group' => 'Operations'],
-            ['key' => 'requisitions', 'label' => 'Requisitions', 'href' => '/requisitions', 'permission' => 'requisitions:read', 'group' => 'Operations'],
+            [
+                'key' => 'projects',
+                'label' => 'Projects',
+                'href' => '/projects',
+                'active_path' => '/projects',
+                'permission' => 'projects:read',
+                'group' => 'Operations',
+                'children' => [
+                    ['key' => 'projects.all', 'label' => 'All Projects', 'href' => '/projects', 'permission' => null],
+                    ['key' => 'projects.compliance_rules', 'label' => 'Compliance Rules', 'href' => '/projects/compliance-rules', 'permission' => null],
+                ],
+            ],
+            [
+                'key' => 'requisitions',
+                'label' => 'Requisitions',
+                'href' => '/requisitions',
+                'active_path' => '/requisitions',
+                'permission' => 'requisitions:read',
+                'group' => 'Operations',
+                'children' => [
+                    ['key' => 'requisitions.new', 'label' => 'New Requisition', 'href' => '/requisitions/create', 'permission' => 'requisitions:create'],
+                    ['key' => 'requisitions.list', 'label' => 'Requisition List', 'href' => '/requisitions', 'permission' => null],
+                    ['key' => 'requisitions.categories', 'label' => 'Categories', 'href' => '/requisitions/categories', 'permission' => null],
+                    ['key' => 'requisitions.departments', 'label' => 'Departments', 'href' => '/requisitions/departments', 'permission' => null],
+                    ['key' => 'requisitions.review_queue', 'label' => 'Review Queue', 'href' => '/requisitions/review-queue', 'permission' => 'requisitions:approve'],
+                    ['key' => 'requisitions.fulfill_queue', 'label' => 'Fulfill Queue', 'href' => '/requisitions/fulfill-queue', 'permission' => 'requisitions:fulfill'],
+                    ['key' => 'requisitions.fulfilled', 'label' => 'Fulfilled List', 'href' => '/requisitions/fulfilled', 'permission' => null],
+                ],
+            ],
             [
                 'key' => 'finance',
                 'label' => 'Finance',
-                'href' => '/finance/approvals',
+                'href' => '/finance/overview',
                 'active_path' => '/finance',
                 'permission' => 'budgets:read',
                 'group' => 'Finance',
                 'children' => [
+                    ['key' => 'finance.overview', 'label' => 'Finance Overview', 'href' => '/finance/overview', 'permission' => null],
                     ['key' => 'finance.approvals', 'label' => 'Fund Approvals', 'href' => '/finance/approvals', 'permission' => null],
                     ['key' => 'finance.organization_cash', 'label' => 'Organization Cash', 'href' => '/finance/organization-cash', 'permission' => null],
                     ['key' => 'finance.expenses', 'label' => 'Expenses', 'href' => '/finance/expenses', 'permission' => null],
@@ -121,6 +149,37 @@ class MenuCatalog
         }
 
         return array_values(array_unique($hrefs));
+    }
+
+    /** @return list<string> */
+    public static function keys(): array
+    {
+        return array_values(array_map(
+            fn (array $item) => $item['key'],
+            self::items(),
+        ));
+    }
+
+    /**
+     * @return array<string, list<string>>
+     */
+    public static function childKeysByParent(): array
+    {
+        $map = [];
+
+        foreach (self::items() as $item) {
+            $children = $item['children'] ?? [];
+            if ($children === []) {
+                continue;
+            }
+
+            $map[$item['key']] = array_values(array_map(
+                fn (array $child) => $child['key'],
+                $children,
+            ));
+        }
+
+        return $map;
     }
 
     /** @return list<string> */

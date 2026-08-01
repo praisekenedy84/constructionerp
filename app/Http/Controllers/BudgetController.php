@@ -32,7 +32,7 @@ class BudgetController extends Controller
         return Inertia::render('Budgets/Show', [
             'project' => $project,
             'remaining_budget' => $this->budgetService->remainingBudget($project),
-            'transactions' => $listing->paginate(50),
+            'transactions' => $listing->paginate(ListingQuery::PER_PAGE),
             'filters' => $listing->filters(),
         ]);
     }

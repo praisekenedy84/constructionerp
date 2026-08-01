@@ -50,7 +50,12 @@ class FulfillmentService
 
             $allocation = isset($opts['cash_allocation_id'])
                 ? CashAllocation::lockForUpdate()->findOrFail($opts['cash_allocation_id'])
-                : CashAllocation::where('project_id', $req->project_id)
+                : CashAllocation::query()
+                    ->when(
+                        $req->isOrganizationWide(),
+                        fn ($q) => $q->whereNull('project_id'),
+                        fn ($q) => $q->where('project_id', $req->project_id),
+                    )
                     ->where('status', CashAllocationStatus::Received)
                     ->lockForUpdate()
                     ->get()
@@ -60,7 +65,13 @@ class FulfillmentService
                 throw new InsufficientCashException($normalizedAmount, '0');
             }
 
-            if ($allocation->isOrganizationWide() || (int) $allocation->project_id !== (int) $req->project_id) {
+            if ($req->isOrganizationWide()) {
+                if (! $allocation->isOrganizationWide()) {
+                    throw ValidationException::withMessages([
+                        'cash_allocation_id' => 'Organization requisitions must be paid from organization cash on hand, not a project float.',
+                    ]);
+                }
+            } elseif ($allocation->isOrganizationWide() || (int) $allocation->project_id !== (int) $req->project_id) {
                 throw ValidationException::withMessages([
                     'cash_allocation_id' => 'Project requisitions must be paid from that project’s cash float, not organization funds.',
                 ]);

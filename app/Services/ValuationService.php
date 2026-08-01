@@ -2,82 +2,63 @@
 
 namespace App\Services;
 
-use App\Enums\ComplianceRuleType;
+use App\Enums\ComplianceCalculationType;
 use App\Enums\ValuationStatus;
+use App\Models\ComplianceRule;
 use App\Models\Project;
+use App\Models\User;
 use App\Models\Valuation;
 use App\Models\ValuationDeduction;
-use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
 class ValuationService
 {
-    /** @var array<int, ComplianceRuleType> */
-    private const DEDUCTION_ORDER = [
-        ComplianceRuleType::Retention,
-        ComplianceRuleType::AdvanceRecovery,
-        ComplianceRuleType::Wht,
-        ComplianceRuleType::DefectLiability,
-        ComplianceRuleType::MaterialTest,
-        ComplianceRuleType::HivReport,
-    ];
-
-    public function create(Project $project, string $grossValue, User $creator): Valuation
+    /**
+     * @param  array<int, array{compliance_rule_id: int, calculation_type: string, rate?: mixed, fixed_amount?: mixed}>  $complianceItems
+     */
+    public function create(Project $project, array $complianceItems, User $creator): Valuation
     {
-        return DB::transaction(function () use ($project, $grossValue, $creator) {
-            $gross = bcadd($grossValue, '0', 2);
+        return DB::transaction(function () use ($project, $complianceItems, $creator) {
             $certificateNo = (int) Valuation::where('project_id', $project->id)->max('certificate_no') + 1;
+            $contract = bcadd((string) $project->contract_amount, '0', 2);
 
             $valuation = Valuation::create([
                 'project_id' => $project->id,
                 'certificate_no' => $certificateNo,
-                'gross_value' => $gross,
-                'total_deductions' => '0',
-                'net_value' => $gross,
+                'gross_value' => '0.00',
+                'total_deductions' => '0.00',
+                'net_value' => '0.00',
                 'status' => ValuationStatus::Draft,
                 'created_by' => $creator->id,
             ]);
 
-            $rules = $project->complianceRules()
-                ->where('is_active', true)
-                ->get()
-                ->keyBy(fn ($rule) => $rule->rule_type->value);
-
-            $remaining = $gross;
-            $totalDeductions = '0';
-
-            foreach (self::DEDUCTION_ORDER as $ruleType) {
-                $rule = $rules->get($ruleType->value);
-
-                if (! $rule) {
-                    continue;
-                }
-
-                $amount = $this->calculateDeduction($project, $ruleType, $rule, $gross, $remaining);
-                $amount = bcadd($amount, '0', 2);
-
-                if (bccomp($amount, '0', 2) <= 0) {
-                    continue;
-                }
-
-                ValuationDeduction::create([
-                    'valuation_id' => $valuation->id,
-                    'rule_type' => $ruleType->value,
-                    'rate' => (string) $rule->rate,
-                    'amount' => $amount,
-                    'created_at' => now(),
-                ]);
-
-                $totalDeductions = bcadd($totalDeductions, $amount, 2);
-                $remaining = bcsub($remaining, $amount, 2);
-            }
-
-            $valuation->update([
-                'total_deductions' => $totalDeductions,
-                'net_value' => bcsub($gross, $totalDeductions, 2),
-            ]);
+            $this->syncComplianceItems($valuation, $contract, $complianceItems);
+            $this->syncProjectNetBudget($project);
 
             return $valuation->fresh(['deductions']);
+        });
+    }
+
+    /**
+     * @param  array<int, array{compliance_rule_id: int, calculation_type: string, rate?: mixed, fixed_amount?: mixed}>  $complianceItems
+     */
+    public function updateDraft(Valuation $valuation, array $complianceItems): Valuation
+    {
+        return DB::transaction(function () use ($valuation, $complianceItems) {
+            $valuation = Valuation::lockForUpdate()->findOrFail($valuation->id);
+
+            if ($valuation->status !== ValuationStatus::Draft) {
+                throw new \InvalidArgumentException('Only draft IPCs can be updated.');
+            }
+
+            $project = $valuation->project;
+            $contract = bcadd((string) $project->contract_amount, '0', 2);
+
+            $valuation->deductions()->delete();
+            $this->syncComplianceItems($valuation, $contract, $complianceItems);
+            $this->syncProjectNetBudget($project);
+
+            return $valuation->fresh(['deductions', 'project']);
         });
     }
 
@@ -100,35 +81,132 @@ class ValuationService
         });
     }
 
-    private function calculateDeduction(
-        Project $project,
-        ComplianceRuleType $ruleType,
-        $rule,
-        string $gross,
-        string $remaining,
-    ): string {
-        if ($ruleType === ComplianceRuleType::AdvanceRecovery) {
-            $priorRecovery = (string) ValuationDeduction::whereHas('valuation', function ($query) use ($project) {
-                $query->where('project_id', $project->id);
-            })
-                ->where('rule_type', ComplianceRuleType::AdvanceRecovery->value)
-                ->sum('amount');
+    public function syncProjectNetBudget(Project $project): void
+    {
+        $project = Project::lockForUpdate()->findOrFail($project->id);
+        $totalCompliance = bcadd((string) $project->valuations()->sum('total_deductions'), '0', 2);
+        $remaining = bcsub(bcadd((string) $project->contract_amount, '0', 2), $totalCompliance, 2);
 
-            $calculated = bcmul($gross, bcdiv((string) $rule->rate, '100', 4), 2);
+        $project->update([
+            'net_budget' => bccomp($remaining, '0', 2) === -1 ? '0.00' : $remaining,
+        ]);
+    }
 
-            if ($rule->max_amount !== null) {
-                $maxRemaining = bcsub((string) $rule->max_amount, $priorRecovery, 2);
+    /**
+     * Recalculate every IPC's rate-% amounts from the current contract, then sync net budget.
+     * Used when the project contract amount changes.
+     */
+    public function recalculateProjectIpcs(Project $project): void
+    {
+        DB::transaction(function () use ($project) {
+            $project = Project::lockForUpdate()->findOrFail($project->id);
+            $contract = bcadd((string) $project->contract_amount, '0', 2);
 
-                if (bccomp($maxRemaining, '0', 2) <= 0) {
-                    return '0';
+            foreach ($project->valuations()->with('deductions')->get() as $valuation) {
+                $total = '0.00';
+
+                foreach ($valuation->deductions as $deduction) {
+                    $amount = $this->calculateAmount(
+                        $deduction->calculation_type,
+                        $contract,
+                        $deduction->rate,
+                        $deduction->fixed_amount,
+                    );
+
+                    $deduction->update(['amount' => $amount]);
+                    $total = bcadd($total, $amount, 2);
                 }
 
-                return bccomp($calculated, $maxRemaining, 2) === 1 ? $maxRemaining : $calculated;
+                $valuation->update([
+                    'total_deductions' => $total,
+                    'net_value' => $total,
+                ]);
             }
 
-            return $calculated;
+            $this->syncProjectNetBudget($project);
+        });
+    }
+
+    /**
+     * @param  array<int, array{compliance_rule_id: int, calculation_type: string, rate?: mixed, fixed_amount?: mixed}>  $complianceItems
+     */
+    private function syncComplianceItems(Valuation $valuation, string $contractAmount, array $complianceItems): void
+    {
+        $totalDeductions = '0.00';
+        $seenRuleIds = [];
+
+        foreach ($complianceItems as $item) {
+            $ruleId = (int) ($item['compliance_rule_id'] ?? 0);
+            if ($ruleId <= 0 || isset($seenRuleIds[$ruleId])) {
+                continue;
+            }
+            $seenRuleIds[$ruleId] = true;
+
+            $rule = ComplianceRule::query()
+                ->whereKey($ruleId)
+                ->whereNull('deleted_at')
+                ->first();
+            if (! $rule) {
+                continue;
+            }
+
+            $type = ComplianceCalculationType::from($item['calculation_type']);
+            $amount = $this->calculateAmount(
+                $type,
+                $contractAmount,
+                $item['rate'] ?? null,
+                $item['fixed_amount'] ?? null,
+            );
+
+            if (bccomp($amount, '0', 2) <= 0) {
+                continue;
+            }
+
+            ValuationDeduction::create([
+                'valuation_id' => $valuation->id,
+                'compliance_rule_id' => $rule->id,
+                'name' => $rule->name,
+                'calculation_type' => $type->value,
+                'rule_type' => null,
+                'rate' => $type === ComplianceCalculationType::RatePercent
+                    ? bcadd((string) $item['rate'], '0', 2)
+                    : null,
+                'fixed_amount' => $type === ComplianceCalculationType::FixedAmount
+                    ? bcadd((string) $item['fixed_amount'], '0', 2)
+                    : null,
+                'amount' => $amount,
+                'created_at' => now(),
+            ]);
+
+            $totalDeductions = bcadd($totalDeductions, $amount, 2);
         }
 
-        return bcmul($gross, bcdiv((string) $rule->rate, '100', 4), 2);
+        // total_deductions = this IPC's compliance total; net_value mirrors it (no separate gross).
+        $valuation->update([
+            'gross_value' => '0.00',
+            'total_deductions' => $totalDeductions,
+            'net_value' => $totalDeductions,
+        ]);
+    }
+
+    private function calculateAmount(
+        ComplianceCalculationType $type,
+        string $contractAmount,
+        mixed $rate,
+        mixed $fixedAmount,
+    ): string {
+        if ($type === ComplianceCalculationType::FixedAmount) {
+            if ($fixedAmount === null || $fixedAmount === '') {
+                return '0.00';
+            }
+
+            return bcadd((string) $fixedAmount, '0', 2);
+        }
+
+        if ($rate === null || $rate === '' || bccomp((string) $rate, '0', 4) <= 0) {
+            return '0.00';
+        }
+
+        return bcmul($contractAmount, bcdiv((string) $rate, '100', 6), 2);
     }
 }

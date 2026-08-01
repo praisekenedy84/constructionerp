@@ -260,7 +260,7 @@ class ReportService
         $balance = bcsub($received, $utilized, 2);
 
         $committedReqs = Requisition::query()
-            ->when($organizationOnly, fn ($q) => $q->whereRaw('0 = 1'))
+            ->when($organizationOnly, fn ($q) => $q->whereNull('project_id'))
             ->when(! $organizationOnly && $projectId, fn ($q) => $q->where('project_id', $projectId))
             ->whereIn('status', [
                 RequisitionStatus::Approved,

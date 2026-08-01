@@ -204,7 +204,7 @@ class CashAllocationService
     }
 
     /**
-     * Organization (general) cash wallet: approved floats, uses, and lifecycle.
+     * Organization (general) cash wallet summary and use breakdown.
      *
      * @return array{
      *     summary: array{
@@ -216,8 +216,6 @@ class CashAllocationService
      *         disbursed: string,
      *     },
      *     use_breakdown: list<array{bucket: string, label: string, amount: string}>,
-     *     allocations: list<array<string, mixed>>,
-     *     recent_uses: list<array<string, mixed>>,
      * }
      */
     public function organizationOverview(): array
@@ -227,7 +225,7 @@ class CashAllocationService
         $pending = CashAllocation::query()
             ->whereNull('project_id')
             ->where('status', CashAllocationStatus::Pending)
-            ->get();
+            ->get(['requested_amount']);
 
         $pendingAmount = '0.00';
         foreach ($pending as $row) {
@@ -237,15 +235,9 @@ class CashAllocationService
         $allocations = CashAllocation::query()
             ->whereNull('project_id')
             ->with([
-                'requester:id,name',
-                'approver:id,name',
-                'disbursements' => fn ($q) => $q->orderByDesc('disbursed_at')->orderByDesc('id'),
                 'disbursements.expense:id,category,sub_type,description,expense_date,activity_ref',
-                'disbursements.disburser:id,name',
             ])
-            ->orderByDesc('requested_at')
-            ->limit(100)
-            ->get();
+            ->get(['id', 'opening_utilized_amount']);
 
         $useTotals = [
             'payroll' => '0.00',
@@ -254,8 +246,6 @@ class CashAllocationService
             'overhead' => '0.00',
             'opening' => '0.00',
         ];
-
-        $recentUses = [];
 
         foreach ($allocations as $allocation) {
             $opening = bcadd((string) ($allocation->opening_utilized_amount ?? '0'), '0', 2);
@@ -266,26 +256,8 @@ class CashAllocationService
             foreach ($allocation->disbursements as $disbursement) {
                 $bucket = OrganizationFundUse::bucket($disbursement->expense?->sub_type);
                 $useTotals[$bucket] = bcadd($useTotals[$bucket], (string) $disbursement->amount, 2);
-
-                $recentUses[] = [
-                    'id' => $disbursement->id,
-                    'allocation_id' => $allocation->id,
-                    'amount' => (string) $disbursement->amount,
-                    'method' => $disbursement->method,
-                    'payee' => $disbursement->payee,
-                    'reference_no' => $disbursement->reference_no,
-                    'disbursed_at' => $disbursement->disbursed_at?->toIso8601String(),
-                    'bucket' => $bucket,
-                    'bucket_label' => OrganizationFundUse::bucketLabel($bucket),
-                    'sub_type' => $disbursement->expense?->sub_type,
-                    'description' => $disbursement->expense?->description,
-                    'disburser' => $disbursement->disburser?->name,
-                ];
             }
         }
-
-        usort($recentUses, fn ($a, $b) => strcmp($b['disbursed_at'] ?? '', $a['disbursed_at'] ?? ''));
-        $recentUses = array_slice($recentUses, 0, 50);
 
         $useBreakdown = [];
         foreach ($useTotals as $bucket => $amount) {
@@ -309,88 +281,128 @@ class CashAllocationService
                 'disbursed' => $position['disbursed'],
             ],
             'use_breakdown' => $useBreakdown,
-            'allocations' => $allocations->map(function (CashAllocation $allocation) {
-                $events = [];
-                $events[] = [
-                    'type' => 'requested',
-                    'label' => 'Requested',
-                    'at' => $allocation->requested_at?->toIso8601String(),
-                    'amount' => (string) $allocation->requested_amount,
-                ];
+        ];
+    }
 
-                if ($allocation->decided_at && in_array($allocation->status, [
-                    CashAllocationStatus::Received,
-                    CashAllocationStatus::Approved,
-                    CashAllocationStatus::Rejected,
-                ], true)) {
-                    $events[] = [
-                        'type' => $allocation->status === CashAllocationStatus::Rejected ? 'rejected' : 'approved',
-                        'label' => $allocation->status === CashAllocationStatus::Rejected ? 'Rejected' : 'Approved',
-                        'at' => $allocation->decided_at?->toIso8601String(),
-                        'amount' => $allocation->status === CashAllocationStatus::Rejected
-                            ? null
-                            : (string) $allocation->received_amount,
-                    ];
-                }
+    /**
+     * @return array<string, mixed>
+     */
+    public function formatOrganizationAllocation(CashAllocation $allocation): array
+    {
+        $allocation->loadMissing([
+            'requester:id,name',
+            'approver:id,name',
+            'disbursements' => fn ($q) => $q->orderBy('disbursed_at')->orderBy('id'),
+            'disbursements.expense:id,category,sub_type,description,expense_date,activity_ref',
+            'disbursements.disburser:id,name',
+        ]);
 
-                if ($allocation->received_at && $allocation->status === CashAllocationStatus::Received) {
-                    $events[] = [
-                        'type' => 'received',
-                        'label' => 'Floated to organization cash on hand',
-                        'at' => $allocation->received_at?->toIso8601String(),
-                        'amount' => (string) $allocation->received_amount,
-                    ];
-                }
+        $events = [];
+        $events[] = [
+            'type' => 'requested',
+            'label' => 'Requested',
+            'at' => $allocation->requested_at?->toIso8601String(),
+            'amount' => (string) $allocation->requested_amount,
+        ];
 
-                $opening = bcadd((string) ($allocation->opening_utilized_amount ?? '0'), '0', 2);
-                if (bccomp($opening, '0', 2) === 1) {
-                    $events[] = [
-                        'type' => 'opening',
-                        'label' => OrganizationFundUse::bucketLabel('opening'),
-                        'at' => $allocation->received_at?->toIso8601String(),
-                        'amount' => $opening,
-                    ];
-                }
+        if ($allocation->decided_at && in_array($allocation->status, [
+            CashAllocationStatus::Received,
+            CashAllocationStatus::Approved,
+            CashAllocationStatus::Rejected,
+        ], true)) {
+            $events[] = [
+                'type' => $allocation->status === CashAllocationStatus::Rejected ? 'rejected' : 'approved',
+                'label' => $allocation->status === CashAllocationStatus::Rejected ? 'Rejected' : 'Approved',
+                'at' => $allocation->decided_at?->toIso8601String(),
+                'amount' => $allocation->status === CashAllocationStatus::Rejected
+                    ? null
+                    : (string) $allocation->received_amount,
+            ];
+        }
 
-                foreach ($allocation->disbursements->sortBy('disbursed_at') as $disbursement) {
-                    $bucket = OrganizationFundUse::bucket($disbursement->expense?->sub_type);
-                    $events[] = [
-                        'type' => 'use',
-                        'label' => OrganizationFundUse::bucketLabel($bucket)
-                            .($disbursement->expense?->sub_type ? " ({$disbursement->expense->sub_type})" : ''),
-                        'at' => $disbursement->disbursed_at?->toIso8601String(),
-                        'amount' => (string) $disbursement->amount,
-                        'description' => $disbursement->expense?->description,
-                        'payee' => $disbursement->payee,
-                        'reference_no' => $disbursement->reference_no,
-                    ];
-                }
+        if ($allocation->received_at && $allocation->status === CashAllocationStatus::Received) {
+            $events[] = [
+                'type' => 'received',
+                'label' => 'Floated to organization cash on hand',
+                'at' => $allocation->received_at?->toIso8601String(),
+                'amount' => (string) $allocation->received_amount,
+            ];
+        }
 
-                return [
-                    'id' => $allocation->id,
-                    'status' => $allocation->status->value,
-                    'requested_amount' => (string) $allocation->requested_amount,
-                    'received_amount' => (string) $allocation->received_amount,
-                    'utilized_amount' => (string) $allocation->utilized_amount,
-                    'balance' => (string) $allocation->balance,
-                    'method' => $allocation->method,
-                    'reference_no' => $allocation->reference_no,
-                    'requested_at' => $allocation->requested_at?->toIso8601String(),
-                    'received_at' => $allocation->received_at?->toIso8601String(),
-                    'decided_at' => $allocation->decided_at?->toIso8601String(),
-                    'rejection_reason' => $allocation->rejection_reason,
-                    'requester' => $allocation->requester ? [
-                        'id' => $allocation->requester->id,
-                        'name' => $allocation->requester->name,
-                    ] : null,
-                    'approver' => $allocation->approver ? [
-                        'id' => $allocation->approver->id,
-                        'name' => $allocation->approver->name,
-                    ] : null,
-                    'lifecycle' => $events,
-                ];
-            })->values()->all(),
-            'recent_uses' => $recentUses,
+        $opening = bcadd((string) ($allocation->opening_utilized_amount ?? '0'), '0', 2);
+        if (bccomp($opening, '0', 2) === 1) {
+            $events[] = [
+                'type' => 'opening',
+                'label' => OrganizationFundUse::bucketLabel('opening'),
+                'at' => $allocation->received_at?->toIso8601String(),
+                'amount' => $opening,
+            ];
+        }
+
+        foreach ($allocation->disbursements as $disbursement) {
+            $bucket = OrganizationFundUse::bucket($disbursement->expense?->sub_type);
+            $events[] = [
+                'type' => 'use',
+                'label' => OrganizationFundUse::bucketLabel($bucket)
+                    .($disbursement->expense?->sub_type ? " ({$disbursement->expense->sub_type})" : ''),
+                'at' => $disbursement->disbursed_at?->toIso8601String(),
+                'amount' => (string) $disbursement->amount,
+                'description' => $disbursement->expense?->description,
+                'payee' => $disbursement->payee,
+                'reference_no' => $disbursement->reference_no,
+            ];
+        }
+
+        return [
+            'id' => $allocation->id,
+            'status' => $allocation->status->value,
+            'requested_amount' => (string) $allocation->requested_amount,
+            'received_amount' => (string) $allocation->received_amount,
+            'utilized_amount' => (string) $allocation->utilized_amount,
+            'balance' => (string) $allocation->balance,
+            'method' => $allocation->method,
+            'reference_no' => $allocation->reference_no,
+            'requested_at' => $allocation->requested_at?->toIso8601String(),
+            'received_at' => $allocation->received_at?->toIso8601String(),
+            'decided_at' => $allocation->decided_at?->toIso8601String(),
+            'rejection_reason' => $allocation->rejection_reason,
+            'requester' => $allocation->requester ? [
+                'id' => $allocation->requester->id,
+                'name' => $allocation->requester->name,
+            ] : null,
+            'approver' => $allocation->approver ? [
+                'id' => $allocation->approver->id,
+                'name' => $allocation->approver->name,
+            ] : null,
+            'lifecycle' => $events,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function formatOrganizationUse(\App\Models\CashDisbursement $disbursement): array
+    {
+        $disbursement->loadMissing([
+            'expense:id,category,sub_type,description',
+            'disburser:id,name',
+        ]);
+
+        $bucket = OrganizationFundUse::bucket($disbursement->expense?->sub_type);
+
+        return [
+            'id' => $disbursement->id,
+            'allocation_id' => $disbursement->cash_allocation_id,
+            'amount' => (string) $disbursement->amount,
+            'method' => $disbursement->method,
+            'payee' => $disbursement->payee,
+            'reference_no' => $disbursement->reference_no,
+            'disbursed_at' => $disbursement->disbursed_at?->toIso8601String(),
+            'bucket' => $bucket,
+            'bucket_label' => OrganizationFundUse::bucketLabel($bucket),
+            'sub_type' => $disbursement->expense?->sub_type,
+            'description' => $disbursement->expense?->description,
+            'disburser' => $disbursement->disburser?->name,
         ];
     }
 

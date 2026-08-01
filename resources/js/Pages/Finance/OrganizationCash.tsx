@@ -1,11 +1,12 @@
 import AppShell from '@/Components/Layout/AppShell';
 import DataPanel from '@/Components/Shared/DataPanel';
 import PageHeader from '@/Components/Shared/PageHeader';
+import PaginationLinks from '@/Components/Shared/PaginationLinks';
 import StatusBadge from '@/Components/Shared/StatusBadge';
 import { Button } from '@/Components/ui/button';
 import { formatCurrency, formatDate } from '@/lib/formatters';
 import { hasPermission } from '@/lib/permissions';
-import { PageProps } from '@/types';
+import { PageProps, Paginated } from '@/types';
 import { Head, Link, usePage } from '@inertiajs/react';
 import { Plus } from 'lucide-react';
 import { useState } from 'react';
@@ -38,6 +39,21 @@ interface OrgAllocation {
     lifecycle: LifecycleEvent[];
 }
 
+interface OrgUse {
+    id: number;
+    allocation_id: number;
+    amount: string;
+    method: string | null;
+    payee: string | null;
+    reference_no: string | null;
+    disbursed_at: string | null;
+    bucket: string;
+    bucket_label: string;
+    sub_type: string | null;
+    description: string | null;
+    disburser: string | null;
+}
+
 interface OrgCashProps extends PageProps {
     summary: {
         pending_count: number;
@@ -48,29 +64,18 @@ interface OrgCashProps extends PageProps {
         disbursed: string;
     };
     use_breakdown: Array<{ bucket: string; label: string; amount: string }>;
-    allocations: OrgAllocation[];
-    recent_uses: Array<{
-        id: number;
-        allocation_id: number;
-        amount: string;
-        method: string | null;
-        payee: string | null;
-        reference_no: string | null;
-        disbursed_at: string | null;
-        bucket: string;
-        bucket_label: string;
-        sub_type: string | null;
-        description: string | null;
-        disburser: string | null;
-    }>;
+    allocations: Paginated<OrgAllocation>;
+    recent_uses: Paginated<OrgUse>;
 }
 
 export default function OrganizationCash() {
     const { summary, use_breakdown, allocations, recent_uses, auth } =
         usePage<OrgCashProps>().props;
     const canRequest = hasPermission(auth.user, 'budgets', 'create');
+    const allocationRows = allocations.data ?? [];
+    const useRows = recent_uses.data ?? [];
     const [expandedId, setExpandedId] = useState<number | null>(
-        allocations.find((a) => a.status === 'received')?.id ?? allocations[0]?.id ?? null,
+        allocationRows.find((a) => a.status === 'received')?.id ?? allocationRows[0]?.id ?? null,
     );
 
     return (
@@ -179,14 +184,14 @@ export default function OrganizationCash() {
                 </div>
 
                 <DataPanel title="Fund Lifecycle" noPadding>
-                    {allocations.length === 0 ? (
+                    {allocationRows.length === 0 ? (
                         <p className="px-6 py-12 text-center text-sm text-slate-500">
                             No organization fund requests yet. Create one from Fund Approvals with
                             project set to Organization (general).
                         </p>
                     ) : (
                         <div className="divide-y divide-slate-100">
-                            {allocations.map((allocation) => {
+                            {allocationRows.map((allocation) => {
                                 const open = expandedId === allocation.id;
                                 return (
                                     <div key={allocation.id} className="px-6 py-4">
@@ -287,6 +292,7 @@ export default function OrganizationCash() {
                             })}
                         </div>
                     )}
+                    <PaginationLinks paginator={allocations} pageName="allocations_page" />
                 </DataPanel>
 
                 <DataPanel title="Recent Uses" noPadding>
@@ -301,7 +307,7 @@ export default function OrganizationCash() {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                            {recent_uses.length === 0 ? (
+                            {useRows.length === 0 ? (
                                 <tr>
                                     <td
                                         colSpan={5}
@@ -311,7 +317,7 @@ export default function OrganizationCash() {
                                     </td>
                                 </tr>
                             ) : (
-                                recent_uses.map((use) => (
+                                useRows.map((use) => (
                                     <tr key={use.id}>
                                         <td className="px-6 py-3 text-slate-600">
                                             {use.disbursed_at
@@ -340,6 +346,7 @@ export default function OrganizationCash() {
                             )}
                         </tbody>
                     </table>
+                    <PaginationLinks paginator={recent_uses} pageName="uses_page" />
                 </DataPanel>
             </div>
         </AppShell>

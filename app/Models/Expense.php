@@ -16,6 +16,7 @@ class Expense extends Model
     protected $fillable = [
         'project_id',
         'boq_item_id',
+        'requisition_id',
         'category',
         'sub_type',
         'activity_ref',
@@ -43,6 +44,11 @@ class Expense extends Model
     public function boqItem(): BelongsTo
     {
         return $this->belongsTo(BoqItem::class);
+    }
+
+    public function requisition(): BelongsTo
+    {
+        return $this->belongsTo(Requisition::class);
     }
 
     public function recorder(): BelongsTo

@@ -121,6 +121,7 @@ export default function RequisitionsShow() {
         requisition.addressed_to === 'storekeeper' ||
         (!requisition.addressed_to && requisition.fulfillment_type === 'stock_issue');
     const canUpdate = hasPermission(auth.user, 'requisitions', 'update');
+    const canPublish = hasPermission(auth.user, 'requisitions', 'publish');
     const canFulfill = hasPermission(auth.user, 'requisitions', 'fulfill');
     const showEdit = Boolean(canEdit) && canUpdate;
     const hasLineAmendments = (requisition.items ?? []).some(
@@ -133,7 +134,7 @@ export default function RequisitionsShow() {
             <div className="space-y-6">
                 <PageHeader
                     title={requisition.requisition_no}
-                    description={`Requested by ${requisition.requestor?.name ?? 'Unknown'} · ${requisition.department} · ${requisition.project?.name ?? ''}`}
+                    description={`Requested by ${requisition.requestor?.name ?? 'Unknown'} · ${requisition.department} · ${requisition.project?.name ?? 'Organization'}`}
                     actions={
                         <div className="flex items-center gap-2">
                             {canDecide && (
@@ -187,12 +188,14 @@ export default function RequisitionsShow() {
                             {formatCurrency(cashOnHand)}
                         </p>
                         <p className="mt-1 text-xs capitalize text-slate-500">
-                            To{' '}
+                            {requisition.project_id ? 'Project float' : 'Organization float'} · To{' '}
                             {String(
                                 requisition.addressed_to ??
                                     (isStockFulfillment ? 'storekeeper' : 'finance'),
                             )}{' '}
-                            · {String(requisition.resource_type ?? '—').replace(/_/g, ' ')} ·{' '}
+                            · {requisition.category?.name ??
+                                String(requisition.resource_type ?? '—').replace(/_/g, ' ')}{' '}
+                            ·{' '}
                             {fulfillmentLabel}
                         </p>
                     </DataPanel>
@@ -407,11 +410,11 @@ export default function RequisitionsShow() {
                     </DataPanel>
                 )}
 
-                {status === 'draft' && canUpdate && (
+                {status === 'draft' && canPublish && (
                     <DataPanel title="Publish">
                         <p className="mb-3 text-sm text-slate-500">
-                            This draft is only visible to you. Publish it to send it to the approval
-                            queue.
+                            Drafts stay private to the author until published. Administrators can also
+                            publish on behalf of the author.
                         </p>
                         <div className="flex flex-wrap gap-3">
                             {showEdit && (
@@ -768,7 +771,11 @@ export default function RequisitionsShow() {
                                 <div className="space-y-3">
                                     <p className="text-xs text-slate-500">
                                         Disbursement note — records who received the cash and how.
-                                        Amount is deducted from finance cash on hand for this project.
+                                        Amount is deducted from{' '}
+                                        {requisition.project_id
+                                            ? 'project cash on hand and recorded as a direct expense'
+                                            : 'organization cash on hand and recorded as overhead'}
+                                        .
                                     </p>
                                     <div className="grid gap-3 sm:grid-cols-2">
                                         <div className="space-y-2">

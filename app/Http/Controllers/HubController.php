@@ -8,7 +8,7 @@ class HubController extends Controller
 {
     public function finance(): RedirectResponse
     {
-        return redirect()->route('finance.approvals');
+        return redirect()->route('finance.overview');
     }
 
     public function payroll(): RedirectResponse

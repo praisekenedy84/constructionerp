@@ -245,7 +245,7 @@ Via **Users** (`/admin/users`):
 | Setting | Where | Who sets it |
 |---------|-------|-------------|
 | Project manager (`manager_id`) | Project update | Users with `projects:update` (Manager, PM, super-users, etc.) |
-| Compliance deduction rules | Project valuations page | Users with `projects:update` or `valuations:create` |
+| IPC compliance rules | Project IPCs page | Users with `valuations:create` / `valuations:update` |
 | Approval workflow tiers | `approval_workflow_configs` table | Seeded globally; per-project overrides supported in schema |
 
 ---
@@ -278,6 +278,8 @@ sequenceDiagram
 
 States: `draft` → `submitted` → `under_review` → `approved` / `amended` / `rejected` → `fulfilled` → `closed`
 
+Requisitions are either **project-scoped** (become **direct expenses** on fulfill) or **organization-wide** (become **overhead / indirect expenses** on fulfill).
+
 ```mermaid
 stateDiagram-v2
   [*] --> draft
@@ -295,12 +297,12 @@ stateDiagram-v2
 
 | Step | Role | Permission | What happens |
 |------|------|------------|--------------|
-| Create draft | Site Engineer | `requisitions:create` | Lines linked to BOQ; fulfillment type chosen (cash, stock, supplier) |
+| Create draft | Site Engineer | `requisitions:create` | Scope: project or organization; lines + fulfillment type (cash, stock, supplier) |
 | Submit | Site Engineer | `requisitions:update` | Status → `under_review`; approval step created; **Project Manager** notified |
-| Approve / amend / reject | PM, Finance Manager, or MD (by amount) | `requisitions:approve` / `amend` / `reject` | Budget reserved on approve; BOQ quantities checked |
-| Fulfill (cash) | Finance Manager | `requisitions:update` | Cash deducted from project cash on hand |
-| Fulfill (stock) | Storekeeper | `requisitions:update` | Stock issued from inventory location |
-| Fulfill (supplier) | Procurement / Finance | `requisitions:update` | Direct supplier payment path |
+| Approve / amend / reject | PM, Finance Manager, or MD (by amount) | `requisitions:approve` / `amend` / `reject` | Budget reserved on approve (project only); BOQ quantities checked when linked |
+| Fulfill (cash) | Finance Manager | `requisitions:update` | Cash deducted from project or organization float; **Expense** recorded (direct vs overhead) |
+| Fulfill (stock) | Storekeeper | `requisitions:update` | Stock issued; **Expense** recorded (accounting, no cash float) |
+| Fulfill (supplier) | Procurement / Finance | `requisitions:update` | Supplier payment from scoped float; **Expense** recorded |
 
 **Notifications:**
 
@@ -383,15 +385,19 @@ Equipment costs post to project budget when configured.
 
 ---
 
-### 7.8 Valuations & compliance deductions
+### 7.8 IPCs & compliance deductions
 
 | Action | Role | Permission |
 |--------|------|------------|
-| Create valuations | PM, QS, Finance Manager, Accountant | `valuations:create` |
-| Configure retention / compliance rules | PM, Finance Manager | `projects:update` or valuations permissions |
-| View valuation history | PM, QS, Accountant, Manager | `valuations:read` |
+| Create / manage compliance rule catalog | PM, QS, Finance Manager | `projects:create` / `projects:update` |
+| Create IPC (Interim Payment Certificate) | PM, QS, Finance Manager, Accountant | `valuations:create` |
+| Edit draft IPC compliance rules | PM, QS, Finance Manager, Accountant | `valuations:update` |
+| Certify IPC | Finance Manager / approvers | `valuations:approve` |
+| View IPC history | PM, QS, Accountant, Manager | `valuations:read` |
 
-Valuations support gross value, period, and automatic compliance deductions (retention, etc.).
+Each project can have multiple IPCs. Under an IPC the user selects **predefined** compliance rules (managed under **Projects → Compliance Rules**) and chooses rate % of the **project contract**, or a fixed amount.
+
+**Net project amount** = Contract amount − Sum of all IPCs’ compliance rule totals.
 
 ---
 
@@ -564,19 +570,23 @@ Sources: `backend/internal/requisitions/*`, `backend/internal/approvals/*`, `fro
 
 ### 13.1 What a requisition is
 
-A requisition is a **project-scoped request for materials or money**, always linked to BOQ line items.
+A requisition is a **request for materials or money**, either:
+
+- **Project-scoped** (`project_id` set) — fulfilled as a **direct expense** against that project’s cash float / BOQ.
+- **Organization-wide** (`project_id` null) — fulfilled as an **overhead (indirect) expense** against organization cash on hand.
 
 | Field | Purpose |
 |-------|---------|
 | `requisition_no` | Auto-generated unique reference |
-| `project_id` | Which project consumes budget |
-| `boq_item_id` | Primary BOQ line (budget attribution) |
+| `project_id` | Project for direct spend; `null` = organization / overhead |
+| `boq_item_id` | Optional primary BOQ line (project requests only) |
 | `requestor_id` | User who created the draft |
-| `department` | Optional cost-centre label |
+| `department` / `department_id` | Cost-centre |
+| `requisition_category_id` | Request category (also used as expense `sub_type`) |
 | `fulfillment_type` | How the request will be satisfied (see below) |
 | `original_amount` | Sum of line items at creation |
 | `amended_amount` | Set when approver amends the total |
-| `items[]` | Line items: BOQ link, description, qty, unit cost |
+| `items[]` | Line items: description, qty, unit cost (optional BOQ / inventory links) |
 
 #### Fulfillment types
 
@@ -593,14 +603,18 @@ A requisition is a **project-scoped request for materials or money**, always lin
 When a requisition moves to `approved` or `amended`:
 
 1. **BOQ** — `reserved_qty` increased on each linked BOQ item (quantities committed, not yet consumed).
-2. **Budget** — A `BudgetTransaction` is created (`approved_requisition` or `amended_requisition`).
-3. **Cash** (cash-type only) — `AssertCashAvailable` checks project cash on hand covers the effective amount.
+2. **Budget** — A `BudgetTransaction` is created for **non-cash project** requisitions (`approved_requisition` or `amended_requisition`). Organization and cash-float requests do not post project budget here.
+3. **Cash** (cash-type only) — `AssertCashAvailable` checks the matching float (project or organization) covers the effective amount.
 
 #### Side effects on fulfill
 
-1. **BOQ** — `reserved_qty` decreased, `consumed_qty` increased.
-2. **Cash types** — `CashDisbursement` record created.
-3. **Stock type** — `inventory.IssueFromRequisition` creates stock OUT transaction.
+1. **BOQ** — `reserved_qty` decreased, `consumed_qty` increased (when linked).
+2. **Cash types** — `CashDisbursement` against the scoped float.
+3. **Stock type** — inventory issue from a store location.
+4. **Expense** — an `Expense` row is always created and linked via `requisition_id`:
+   - project requisition → `category = direct`
+   - organization requisition → `category = indirect` (overhead)
+   Cash disbursements are linked to that expense when payment is recorded.
 
 #### Side effects on cancel
 

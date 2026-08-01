@@ -22,7 +22,7 @@ class NotificationController extends Controller
             ->sort(['created_at', 'type', 'read_at']);
 
         return Inertia::render('Notifications/Index', [
-            'notifications' => $listing->paginate(30),
+            'notifications' => $listing->paginate(ListingQuery::PER_PAGE),
             'filters' => $listing->filters(),
         ]);
     }

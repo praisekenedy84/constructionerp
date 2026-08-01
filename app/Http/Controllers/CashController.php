@@ -6,6 +6,7 @@ use App\Http\Requests\ApproveCashRequest;
 use App\Http\Requests\CashReceiveRequest;
 use App\Http\Requests\CashRequestRequest;
 use App\Models\CashAllocation;
+use App\Models\CashDisbursement;
 use App\Models\Project;
 use App\Models\User;
 use App\Services\CashAllocationService;
@@ -133,7 +134,44 @@ class CashController extends Controller
     {
         $this->authorizePermission($request->user(), 'budgets', 'read');
 
-        return Inertia::render('Finance/OrganizationCash', $this->cashService->organizationOverview());
+        $overview = $this->cashService->organizationOverview();
+
+        $allocationListing = ListingQuery::for(
+            CashAllocation::query()
+                ->whereNull('project_id')
+                ->with([
+                    'requester:id,name',
+                    'approver:id,name',
+                    'disbursements' => fn ($q) => $q->orderBy('disbursed_at')->orderBy('id'),
+                    'disbursements.expense:id,category,sub_type,description,expense_date,activity_ref',
+                    'disbursements.disburser:id,name',
+                ]),
+            $request,
+        )->sort(['requested_at', 'status', 'requested_amount', 'received_amount'], 'requested_at');
+
+        $allocations = $allocationListing
+            ->paginate(ListingQuery::PER_PAGE, 'allocations_page')
+            ->through(fn (CashAllocation $allocation) => $this->cashService->formatOrganizationAllocation($allocation));
+
+        $usesListing = ListingQuery::for(
+            CashDisbursement::query()
+                ->whereHas('cashAllocation', fn ($q) => $q->whereNull('project_id'))
+                ->with([
+                    'expense:id,category,sub_type,description',
+                    'disburser:id,name',
+                ]),
+            $request,
+        )->sort(['disbursed_at', 'amount'], 'disbursed_at');
+
+        $recentUses = $usesListing
+            ->paginate(ListingQuery::PER_PAGE, 'uses_page')
+            ->through(fn (CashDisbursement $disbursement) => $this->cashService->formatOrganizationUse($disbursement));
+
+        return Inertia::render('Finance/OrganizationCash', [
+            ...$overview,
+            'allocations' => $allocations,
+            'recent_uses' => $recentUses,
+        ]);
     }
 
     public function fundApprovals(Request $request): Response

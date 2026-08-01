@@ -33,7 +33,7 @@ class FundRequestExportService
             ->search(['reference_no', 'method', 'project.name', 'requester.name', 'approver.name'])
             ->dateRange('requested_at')
             ->sort(['requested_at', 'status', 'requested_amount', 'received_amount', 'created_at'], 'requested_at')
-            ->paginate(25);
+            ->paginate();
     }
 
     /** @return Collection<int, CashAllocation> */

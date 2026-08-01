@@ -2,13 +2,13 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\ComplianceRuleType;
 use App\Http\Requests\StoreProjectRequest;
 use App\Http\Requests\UpdateProjectProgressRequest;
 use App\Http\Requests\UpdateProjectRequest;
+use App\Models\ComplianceRule;
 use App\Models\Project;
-use App\Models\ProjectComplianceRule;
 use App\Services\BudgetService;
+use App\Services\ValuationService;
 use App\Support\ListingQuery;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -18,7 +18,10 @@ use Inertia\Response;
 
 class ProjectController extends Controller
 {
-    public function __construct(private BudgetService $budgetService) {}
+    public function __construct(
+        private BudgetService $budgetService,
+        private ValuationService $valuationService,
+    ) {}
 
     public function index(Request $request): Response
     {
@@ -29,7 +32,7 @@ class ProjectController extends Controller
             ->dateRange('created_at')
             ->sort(['name', 'code', 'client', 'status', 'net_budget', 'created_at']);
 
-        $projects = $listing->paginate(20);
+        $projects = $listing->paginate(ListingQuery::PER_PAGE);
         $projects->getCollection()->transform(fn (Project $project) => $this->withBudgetSummary($project));
 
         return Inertia::render('Projects/Index', [
@@ -42,27 +45,57 @@ class ProjectController extends Controller
     {
         $this->authorizePermission($request->user(), 'projects', 'create');
 
-        return Inertia::render('Projects/Create');
+        return Inertia::render('Projects/Create', [
+            'available_rules' => ComplianceRule::active()
+                ->orderBy('name')
+                ->get(['id', 'name', 'description'])
+                ->map(fn (ComplianceRule $rule) => [
+                    'id' => $rule->id,
+                    'name' => $rule->name,
+                    'description' => $rule->description,
+                ])
+                ->values()
+                ->all(),
+        ]);
     }
 
     public function store(StoreProjectRequest $request): RedirectResponse
     {
         $this->authorizePermission($request->user(), 'projects', 'create');
 
-        $project = DB::transaction(function () use ($request) {
-            return $this->persistProject(new Project(), $request->safe()->except('compliance_rules'), $request->validated('compliance_rules') ?? []);
+        $validated = $request->validated();
+        $ipcs = $validated['ipcs'] ?? [];
+        unset($validated['ipcs']);
+
+        $project = DB::transaction(function () use ($request, $validated, $ipcs) {
+            $project = $this->persistProject(new Project(), $validated);
+
+            foreach ($ipcs as $ipc) {
+                $this->valuationService->create(
+                    $project,
+                    $ipc['compliance_items'] ?? [],
+                    $request->user(),
+                );
+            }
+
+            return $project->fresh();
         });
 
         session(['current_project_id' => $project->id]);
 
+        $ipcCount = count($ipcs);
+        $message = $ipcCount > 0
+            ? "Project created with {$ipcCount} IPC".($ipcCount === 1 ? '' : 's').'.'
+            : 'Project created successfully.';
+
         return redirect()
             ->route('projects.show', $project->id)
-            ->with('success', 'Project created successfully.');
+            ->with('success', $message);
     }
 
     public function show(Request $request, int $id): Response
     {
-        $project = Project::with(['complianceRules', 'withholdingTaxRates'])->findOrFail($id);
+        $project = Project::with(['withholdingTaxRates'])->findOrFail($id);
 
         return Inertia::render('Projects/Show', [
             'project' => $this->withBudgetSummary($project),
@@ -73,7 +106,7 @@ class ProjectController extends Controller
     {
         $this->authorizePermission($request->user(), 'projects', 'update');
 
-        $project = Project::with('complianceRules')->findOrFail($id);
+        $project = Project::findOrFail($id);
 
         return Inertia::render('Projects/Edit', [
             'project' => [
@@ -87,12 +120,6 @@ class ProjectController extends Controller
                 'start_date' => $project->start_date?->format('Y-m-d') ?? '',
                 'end_date' => $project->end_date?->format('Y-m-d') ?? '',
                 'status' => $project->status?->value ?? 'planning',
-                'compliance_rules' => $project->complianceRules->map(fn (ProjectComplianceRule $rule) => [
-                    'rule_type' => $rule->rule_type->value,
-                    'rate' => (string) $rule->rate,
-                    'is_active' => (bool) $rule->is_active,
-                    'max_amount' => $rule->max_amount !== null ? (string) $rule->max_amount : '',
-                ])->values()->all(),
             ],
         ]);
     }
@@ -104,11 +131,9 @@ class ProjectController extends Controller
         $project = Project::findOrFail($id);
 
         DB::transaction(function () use ($request, $project) {
-            $this->persistProject(
-                $project,
-                $request->safe()->except('compliance_rules'),
-                $request->validated('compliance_rules') ?? [],
-            );
+            $this->persistProject($project, $request->validated());
+            // Rate-% rules are based on contract; recalculate IPC amounts when it changes.
+            $this->valuationService->recalculateProjectIpcs($project->fresh());
         });
 
         return redirect()
@@ -165,49 +190,16 @@ class ProjectController extends Controller
 
     /**
      * @param  array<string, mixed>  $attributes
-     * @param  array<int, array<string, mixed>>  $rules
      */
-    private function persistProject(Project $project, array $attributes, array $rules): Project
+    private function persistProject(Project $project, array $attributes): Project
     {
-        $contractAmount = (string) $attributes['contract_amount'];
-        $attributes['net_budget'] = Project::netBudgetFromCharges($contractAmount, $rules);
-        $attributes['wht_percentage'] = self::whtPercentageFromRules($rules, $attributes['wht_percentage'] ?? 0);
+        // Net budget starts as the full contract; IPC compliance deductions adjust it later.
+        if (! $project->exists) {
+            $attributes['net_budget'] = bcadd((string) $attributes['contract_amount'], '0', 2);
+        }
 
         $project->fill($attributes)->save();
 
-        $project->complianceRules()->delete();
-
-        foreach ($rules as $rule) {
-            ProjectComplianceRule::create([
-                'project_id' => $project->id,
-                'rule_type' => $rule['rule_type'],
-                'rate' => $rule['rate'],
-                'is_active' => true,
-                'max_amount' => $rule['max_amount'] ?? null,
-            ]);
-        }
-
         return $project->refresh();
-    }
-
-    /**
-     * @param  array<int, array<string, mixed>>  $rules
-     */
-    private static function whtPercentageFromRules(array $rules, mixed $fallback = 0): string
-    {
-        foreach ($rules as $rule) {
-            $type = $rule['rule_type'] ?? null;
-            $value = $type instanceof ComplianceRuleType ? $type->value : (string) $type;
-
-            if ($value !== 'wht') {
-                continue;
-            }
-
-            $rate = $rule['rate'] ?? null;
-
-            return is_numeric($rate) && (float) $rate > 0 ? (string) $rate : '0';
-        }
-
-        return is_numeric($fallback) ? (string) $fallback : '0';
     }
 }

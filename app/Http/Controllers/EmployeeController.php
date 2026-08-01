@@ -41,7 +41,7 @@ class EmployeeController extends Controller
                 ->withCount('items')
                 ->withSum('items', 'net_pay')
                 ->orderByDesc('period_end')
-                ->paginate(10),
+                ->paginate(ListingQuery::PER_PAGE),
             'filters' => $employeeListing->filters(),
         ]);
     }

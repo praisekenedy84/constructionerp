@@ -9,7 +9,9 @@ use App\Http\Controllers\BOQController;
 use App\Http\Controllers\BOQRevisionController;
 use App\Http\Controllers\BudgetController;
 use App\Http\Controllers\CashController;
+use App\Http\Controllers\ComplianceRuleController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DepartmentController;
 use App\Http\Controllers\EmployeeController;
 use App\Http\Controllers\EquipmentController;
 use App\Http\Controllers\ExpenseController;
@@ -22,6 +24,7 @@ use App\Http\Controllers\PayrollController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\PurchaseOrderController;
 use App\Http\Controllers\ReportController;
+use App\Http\Controllers\RequisitionCategoryController;
 use App\Http\Controllers\RequisitionController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SupplierController;
@@ -50,6 +53,11 @@ Route::middleware('auth')->group(function () {
     Route::put('/projects/{id}', [ProjectController::class, 'update'])->name('projects.update');
     Route::delete('/projects/{id}', [ProjectController::class, 'destroy'])->name('projects.destroy');
 
+    Route::get('/projects/compliance-rules', [ComplianceRuleController::class, 'index'])->name('compliance-rules.index');
+    Route::post('/projects/compliance-rules', [ComplianceRuleController::class, 'store'])->name('compliance-rules.store');
+    Route::put('/projects/compliance-rules/{id}', [ComplianceRuleController::class, 'update'])->name('compliance-rules.update');
+    Route::delete('/projects/compliance-rules/{id}', [ComplianceRuleController::class, 'destroy'])->name('compliance-rules.destroy');
+
     Route::middleware('project.context')->group(function () {
         Route::get('/projects/{id}', [ProjectController::class, 'show'])->name('projects.show');
         Route::patch('/projects/{id}/progress', [ProjectController::class, 'updateProgress'])->name('projects.progress');
@@ -71,16 +79,29 @@ Route::middleware('auth')->group(function () {
         Route::get('/projects/{id}/valuations', [ValuationController::class, 'index'])->name('projects.valuations.index');
         Route::get('/projects/{id}/valuations/create', [ValuationController::class, 'create'])->name('projects.valuations.create');
         Route::post('/projects/{id}/valuations', [ValuationController::class, 'store'])->name('projects.valuations.store');
+        Route::get('/projects/{id}/valuations/{valuationId}', [ValuationController::class, 'show'])->name('projects.valuations.show');
+        Route::get('/projects/{id}/valuations/{valuationId}/edit', [ValuationController::class, 'edit'])->name('projects.valuations.edit');
+        Route::put('/projects/{id}/valuations/{valuationId}', [ValuationController::class, 'update'])->name('projects.valuations.update');
     });
 
     Route::post('/boq/revisions', [BOQRevisionController::class, 'store'])->name('boq.revisions.store');
     Route::post('/boq/revisions/{id}/activate', [BOQRevisionController::class, 'activate'])->name('boq.revisions.activate');
 
     Route::get('/requisitions', [RequisitionController::class, 'index'])->name('requisitions.index');
+    Route::get('/requisitions/export', [RequisitionController::class, 'export'])->name('requisitions.export');
+    Route::get('/requisitions/categories', [RequisitionCategoryController::class, 'index'])->name('requisitions.categories.index');
+    Route::post('/requisitions/categories', [RequisitionCategoryController::class, 'store'])->name('requisitions.categories.store');
+    Route::put('/requisitions/categories/{id}', [RequisitionCategoryController::class, 'update'])->name('requisitions.categories.update');
+    Route::delete('/requisitions/categories/{id}', [RequisitionCategoryController::class, 'destroy'])->name('requisitions.categories.destroy');
+    Route::get('/requisitions/departments', [DepartmentController::class, 'index'])->name('requisitions.departments.index');
+    Route::post('/requisitions/departments', [DepartmentController::class, 'store'])->name('requisitions.departments.store');
+    Route::put('/requisitions/departments/{id}', [DepartmentController::class, 'update'])->name('requisitions.departments.update');
+    Route::delete('/requisitions/departments/{id}', [DepartmentController::class, 'destroy'])->name('requisitions.departments.destroy');
     Route::get('/requisitions/create', [RequisitionController::class, 'create'])->name('requisitions.create');
     Route::post('/requisitions', [RequisitionController::class, 'store'])->name('requisitions.store');
     Route::get('/requisitions/review-queue', [RequisitionController::class, 'reviewQueue'])->name('requisitions.review-queue');
     Route::get('/requisitions/fulfill-queue', [RequisitionController::class, 'fulfillQueue'])->name('requisitions.fulfill-queue');
+    Route::get('/requisitions/fulfilled', [RequisitionController::class, 'fulfilledList'])->name('requisitions.fulfilled');
     Route::get('/requisitions/{id}/edit', [RequisitionController::class, 'edit'])->name('requisitions.edit');
     Route::put('/requisitions/{id}', [RequisitionController::class, 'update'])->name('requisitions.update');
     Route::get('/requisitions/{id}', [RequisitionController::class, 'show'])->name('requisitions.show');
@@ -97,6 +118,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/approvals/steps/{id}/resolve', [ApprovalController::class, 'resolve'])->name('approvals.resolve');
 
     Route::get('/finance', [HubController::class, 'finance'])->name('finance.hub');
+    Route::get('/finance/overview', [FinanceController::class, 'overview'])->name('finance.overview');
     Route::get('/finance/approvals', [CashController::class, 'fundApprovals'])->name('finance.approvals');
     Route::get('/finance/approvals/export', [CashController::class, 'exportFundApprovals'])->name('finance.approvals.export');
     Route::get('/finance/organization-cash', [CashController::class, 'organizationCash'])->name('finance.organization-cash');
@@ -107,7 +129,9 @@ Route::middleware('auth')->group(function () {
     Route::post('/finance/expenses', [ExpenseController::class, 'store'])->name('finance.expenses.store');
     Route::put('/finance/expenses/{id}', [ExpenseController::class, 'update'])->name('finance.expenses.update');
     Route::delete('/finance/expenses/{id}', [ExpenseController::class, 'destroy'])->name('finance.expenses.destroy');
+    Route::get('/finance/expenses/export', [ExpenseController::class, 'export'])->name('finance.expenses.export');
     Route::get('/finance/expenses', [ExpenseController::class, 'index'])->name('finance.expenses.index');
+    Route::get('/finance/overhead/export', [ExpenseController::class, 'exportOverhead'])->name('finance.overhead.export');
     Route::get('/finance/overhead', [ExpenseController::class, 'overhead'])->name('finance.overhead');
 
     Route::middleware('project.context')->group(function () {

@@ -235,6 +235,8 @@ class AdminController extends Controller
             'nav_overrides' => [
                 'hidden' => $navOverrides['hidden'] ?? [],
                 'role_hidden' => $navOverrides['role_hidden'] ?? [],
+                'order' => $navOverrides['order'] ?? MenuCatalog::keys(),
+                'child_order' => $navOverrides['child_order'] ?? MenuCatalog::childKeysByParent(),
             ],
         ]);
     }
@@ -245,10 +247,18 @@ class AdminController extends Controller
 
         $existing = SystemSetting::where('key', 'ui_settings')->first();
         $current = $existing?->value ?? [];
+        $existingOverrides = is_array($current['nav_overrides'] ?? null)
+            ? $current['nav_overrides']
+            : [];
+
+        $validated = $request->validated();
 
         $current['nav_overrides'] = [
-            'hidden' => $request->validated('hidden') ?? [],
-            'role_hidden' => $request->validated('role_hidden') ?? [],
+            'hidden' => $validated['hidden'] ?? [],
+            'role_hidden' => $validated['role_hidden'] ?? [],
+            'order' => $validated['order'] ?? ($existingOverrides['order'] ?? MenuCatalog::keys()),
+            'child_order' => $validated['child_order']
+                ?? ($existingOverrides['child_order'] ?? MenuCatalog::childKeysByParent()),
         ];
 
         SystemSetting::updateOrCreate(

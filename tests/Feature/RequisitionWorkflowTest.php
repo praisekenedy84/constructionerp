@@ -102,6 +102,7 @@ class RequisitionWorkflowTest extends TestCase
                 'requestor_id' => 2,
                 'status' => RequisitionStatus::Draft,
                 'fulfillment_type' => 'stock_issue',
+                'addressed_to' => 'storekeeper',
                 'original_amount' => '50000.00',
             ]);
 
@@ -138,6 +139,27 @@ class RequisitionWorkflowTest extends TestCase
         $tenant->run(function () {
             $req = Requisition::first();
             $this->assertSame('under_review', $req->status->value);
+            $this->assertSame(1, ApprovalStep::where('requisition_id', $req->id)->where('status', 'pending')->count());
+        });
+    }
+
+    public function test_system_administrator_can_publish_another_users_draft(): void
+    {
+        $this->seedTenantWithUsers();
+
+        $this->post('/login', [
+            'email' => 'admin@workflow.local',
+            'password' => 'password',
+        ]);
+
+        $this->post('/requisitions/1/transition', [
+            'to_status' => 'under_review',
+        ])->assertRedirect();
+
+        Tenant::where('slug', 'workflow-co')->first()->run(function () {
+            $req = Requisition::first();
+            $this->assertSame('under_review', $req->status->value);
+            $this->assertNotSame(1, (int) $req->requestor_id);
             $this->assertSame(1, ApprovalStep::where('requisition_id', $req->id)->where('status', 'pending')->count());
         });
     }
@@ -281,6 +303,11 @@ class RequisitionWorkflowTest extends TestCase
                 'requisition_id' => $req->id,
                 'inventory_item_id' => $item->id,
             ]);
+            $this->assertDatabaseHas('expenses', [
+                'requisition_id' => $req->id,
+                'category' => 'direct',
+                'project_id' => $req->project_id,
+            ]);
         });
     }
 
@@ -316,7 +343,7 @@ class RequisitionWorkflowTest extends TestCase
         $this->get('/requisitions')->assertOk();
         $this->get('/requisitions')->assertInertia(fn ($page) => $page
             ->component('Requisitions/Index')
-            ->has('requisitions.data', 0)
+            ->has('rows.data', 0)
         );
 
         $this->post('/logout');

@@ -70,7 +70,7 @@ export default function ProjectsShow() {
                             )}
                             <Link href={`/projects/${project.id}/valuations`}>
                                 <Button variant="outline" size="sm">
-                                    Valuations
+                                    IPCs
                                 </Button>
                             </Link>
                         </div>
@@ -81,6 +81,9 @@ export default function ProjectsShow() {
                     <DataPanel title="Net Budget">
                         <p className="text-2xl font-bold text-slate-900">
                             {formatCurrency(project.net_budget)}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">
+                            Contract − Sum of IPCs&apos; compliance rules
                         </p>
                     </DataPanel>
                     <DataPanel title="Remaining">
@@ -123,12 +126,6 @@ export default function ProjectsShow() {
                             <dt className="text-xs text-slate-500">Status</dt>
                             <dd className="mt-1">
                             <StatusBadge status={String(project.status)} />
-                            </dd>
-                        </div>
-                        <div>
-                            <dt className="text-xs text-slate-500">WHT %</dt>
-                            <dd className="mt-1 text-sm text-slate-900">
-                                {formatPercent(project.wht_percentage)}
                             </dd>
                         </div>
                         <div>

@@ -9,6 +9,11 @@ use Illuminate\Pagination\LengthAwarePaginator;
 
 class ListingQuery
 {
+    public const PER_PAGE = 25;
+
+    /** @var list<int> */
+    public const ALLOWED_PER_PAGE = [10, 25, 50, 100];
+
     public function __construct(
         private Builder $query,
         private readonly Request $request,
@@ -79,9 +84,27 @@ class ListingQuery
         return $this;
     }
 
-    public function paginate(int $perPage = 25): LengthAwarePaginator
+    /**
+     * Resolve a safe per-page value from the request (falls back to $default).
+     */
+    public static function resolvePerPage(Request $request, int $default = self::PER_PAGE): int
     {
-        return $this->query->paginate($perPage)->withQueryString();
+        if (! $request->filled('per_page')) {
+            return $default;
+        }
+
+        $requested = (int) $request->input('per_page');
+
+        return in_array($requested, self::ALLOWED_PER_PAGE, true)
+            ? $requested
+            : $default;
+    }
+
+    public function paginate(?int $perPage = null, string $pageName = 'page'): LengthAwarePaginator
+    {
+        $resolved = self::resolvePerPage($this->request, $perPage ?? self::PER_PAGE);
+
+        return $this->query->paginate($resolved, ['*'], $pageName)->withQueryString();
     }
 
     /** @return \Illuminate\Database\Eloquent\Collection<int, \Illuminate\Database\Eloquent\Model> */
@@ -101,7 +124,7 @@ class ListingQuery
     {
         $filters = array_filter(
             array_merge(
-                $request->only(['search', 'from', 'to', 'sort', 'direction']),
+                $request->only(['search', 'from', 'to', 'sort', 'direction', 'per_page']),
                 $extra,
             ),
             fn ($value) => $value !== null && $value !== '',

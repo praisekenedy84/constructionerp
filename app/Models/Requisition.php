@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Requisition extends Model
@@ -22,6 +23,8 @@ class Requisition extends Model
         'project_id',
         'boq_item_id',
         'department',
+        'department_id',
+        'requisition_category_id',
         'resource_type',
         'requestor_id',
         'status',
@@ -97,6 +100,16 @@ class Requisition extends Model
         return (int) $this->requestor_id === (int) $user->id;
     }
 
+    public function isOrganizationWide(): bool
+    {
+        return $this->project_id === null;
+    }
+
+    public function isProjectScoped(): bool
+    {
+        return $this->project_id !== null;
+    }
+
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class);
@@ -105,6 +118,16 @@ class Requisition extends Model
     public function boqItem(): BelongsTo
     {
         return $this->belongsTo(BoqItem::class);
+    }
+
+    public function category(): BelongsTo
+    {
+        return $this->belongsTo(RequisitionCategory::class, 'requisition_category_id');
+    }
+
+    public function assignedDepartment(): BelongsTo
+    {
+        return $this->belongsTo(Department::class, 'department_id');
     }
 
     public function requestor(): BelongsTo
@@ -145,6 +168,11 @@ class Requisition extends Model
     public function cashDisbursements(): HasMany
     {
         return $this->hasMany(CashDisbursement::class);
+    }
+
+    public function expense(): HasOne
+    {
+        return $this->hasOne(Expense::class);
     }
 
     public function inventoryIssues(): HasMany

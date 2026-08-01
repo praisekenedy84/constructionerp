@@ -1,4 +1,4 @@
-import ProjectForm, { mergeComplianceRules, ProjectFormValues } from '@/Pages/Projects/ProjectForm';
+import ProjectForm, { ProjectFormValues } from '@/Pages/Projects/ProjectForm';
 import { PageProps } from '@/types';
 import { usePage } from '@inertiajs/react';
 
@@ -23,7 +23,6 @@ export default function ProjectsEdit() {
                 start_date: project.start_date,
                 end_date: project.end_date,
                 status: project.status,
-                compliance_rules: mergeComplianceRules(project.compliance_rules),
             }}
         />
     );

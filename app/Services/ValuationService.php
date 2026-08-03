@@ -3,8 +3,10 @@
 namespace App\Services;
 
 use App\Enums\ComplianceCalculationType;
+use App\Enums\ExpenseCategory;
 use App\Enums\ValuationStatus;
 use App\Models\ComplianceRule;
+use App\Models\Expense;
 use App\Models\Project;
 use App\Models\User;
 use App\Models\Valuation;
@@ -13,6 +15,10 @@ use Illuminate\Support\Facades\DB;
 
 class ValuationService
 {
+    public function __construct(
+        private readonly ExpenseService $expenseService,
+    ) {}
+
     /**
      * @param  array<int, array{compliance_rule_id: int, calculation_type: string, rate?: mixed, fixed_amount?: mixed}>  $complianceItems
      */
@@ -33,6 +39,7 @@ class ValuationService
             ]);
 
             $this->syncComplianceItems($valuation, $contract, $complianceItems);
+            $this->syncDirectExpenses($valuation->fresh(['deductions']), $creator->id);
             $this->syncProjectNetBudget($project);
 
             return $valuation->fresh(['deductions']);
@@ -56,6 +63,7 @@ class ValuationService
 
             $valuation->deductions()->delete();
             $this->syncComplianceItems($valuation, $contract, $complianceItems);
+            $this->syncDirectExpenses($valuation->fresh(['deductions']), (int) $valuation->created_by);
             $this->syncProjectNetBudget($project);
 
             return $valuation->fresh(['deductions', 'project']);
@@ -91,6 +99,7 @@ class ValuationService
             }
 
             $project = $valuation->project;
+            $this->removeDirectExpenses($valuation);
             $valuation->delete();
             $this->syncProjectNetBudget($project);
         });
@@ -136,6 +145,8 @@ class ValuationService
                     'total_deductions' => $total,
                     'net_value' => $total,
                 ]);
+
+                $this->syncDirectExpenses($valuation->fresh(['deductions']), (int) $valuation->created_by);
             }
 
             $this->syncProjectNetBudget($project);
@@ -202,6 +213,45 @@ class ValuationService
             'total_deductions' => $totalDeductions,
             'net_value' => $totalDeductions,
         ]);
+    }
+
+    /**
+     * Mirror IPC compliance lines as accounting-only direct expenses (no cash disbursement).
+     * Contract deductions reduce net_budget separately; these rows identify the cost in the ledger.
+     */
+    private function syncDirectExpenses(Valuation $valuation, int $recordedBy): void
+    {
+        $this->removeDirectExpenses($valuation);
+
+        $ipcRef = 'IPC-'.$valuation->certificate_no;
+        $expenseDate = optional($valuation->created_at)?->toDateString() ?? now()->toDateString();
+
+        foreach ($valuation->deductions as $deduction) {
+            if (bccomp((string) $deduction->amount, '0', 2) <= 0) {
+                continue;
+            }
+
+            $this->expenseService->create([
+                'project_id' => $valuation->project_id,
+                'valuation_id' => $valuation->id,
+                'category' => ExpenseCategory::Direct,
+                'sub_type' => $deduction->name,
+                'activity_ref' => $ipcRef,
+                'amount' => $deduction->amount,
+                'description' => "{$ipcRef} compliance — {$deduction->name}",
+                'expense_date' => $expenseDate,
+                'recorded_by' => $recordedBy,
+            ]);
+        }
+    }
+
+    private function removeDirectExpenses(Valuation $valuation): void
+    {
+        Expense::query()
+            ->where('valuation_id', $valuation->id)
+            ->get()
+            ->each
+            ->delete();
     }
 
     private function calculateAmount(

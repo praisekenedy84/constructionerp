@@ -55,7 +55,12 @@ class ExpenseController extends Controller
     {
         $this->authorizePermission($request->user(), 'budgets', 'update');
         $expense = Expense::findOrFail($id);
-        $this->expenseService->destroy($expense, $request->user());
+
+        try {
+            $this->expenseService->destroy($expense, $request->user());
+        } catch (\InvalidArgumentException $e) {
+            return back()->withErrors(['amount' => $e->getMessage()]);
+        }
 
         return back()->with('success', 'Expense deleted and cash returned to cash on hand.');
     }
@@ -126,6 +131,7 @@ class ExpenseController extends Controller
     {
         $with = [
             'requisition:id,requisition_no,status',
+            'valuation:id,certificate_no,project_id',
             'recorder:id,name',
             'cashDisbursements.cashAllocation:id,project_id,reference_no',
         ];

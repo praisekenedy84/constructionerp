@@ -20,10 +20,12 @@ import { FormEvent, useState } from 'react';
 interface ExpenseSummary {
     total_amount: string;
     from_requisitions: string;
+    from_ipcs: string;
     manual_amount: string;
     cash_disbursed: string;
     expense_count: number;
     requisition_count: number;
+    ipc_count: number;
     manual_count: number;
 }
 
@@ -190,7 +192,7 @@ export default function Expenses() {
                     }
                 />
 
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
                     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                         <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
                             Total Amount
@@ -212,6 +214,18 @@ export default function Expenses() {
                         <p className="mt-1 text-sm text-slate-500">
                             {summary.requisition_count} fulfilled request
                             {summary.requisition_count === 1 ? '' : 's'}
+                        </p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                            From IPCs
+                        </p>
+                        <p className="mt-1 text-2xl font-semibold text-amber-700">
+                            {formatCurrency(summary.from_ipcs)}
+                        </p>
+                        <p className="mt-1 text-sm text-slate-500">
+                            {summary.ipc_count} compliance line
+                            {summary.ipc_count === 1 ? '' : 's'}
                         </p>
                     </div>
                     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -267,6 +281,7 @@ export default function Expenses() {
                             emptyLabel: 'All sources',
                             options: [
                                 { value: 'requisition', label: 'From requisition' },
+                                { value: 'ipc', label: 'From IPC' },
                                 { value: 'manual', label: 'Manual' },
                             ],
                         },
@@ -380,57 +395,81 @@ export default function Expenses() {
                                                             {exp.requisition.requisition_no}
                                                             <ExternalLink className="h-3 w-3" />
                                                         </Link>
+                                                    ) : exp.valuation ? (
+                                                        <Link
+                                                            href={`/projects/${exp.valuation.project_id}/valuations/${exp.valuation.id}`}
+                                                            className="inline-flex items-center gap-1 font-medium text-amber-700 hover:underline"
+                                                        >
+                                                            IPC-{exp.valuation.certificate_no}
+                                                            <ExternalLink className="h-3 w-3" />
+                                                        </Link>
                                                     ) : (
                                                         <span className="text-slate-600">Manual</span>
                                                     )}
                                                     <div className="mt-1 text-xs capitalize text-slate-500">
                                                         {exp.requisition
                                                             ? `Requisition · ${String(exp.requisition.status).replace(/_/g, ' ')}`
-                                                            : 'Posted in finance'}
+                                                            : exp.valuation
+                                                              ? 'IPC compliance'
+                                                              : 'Posted in finance'}
                                                     </div>
                                                 </td>
                                                 <td className="px-4 py-3">
                                                     <div className="capitalize text-slate-800">
-                                                        {payment.method}
+                                                        {exp.valuation_id ? '—' : payment.method}
                                                     </div>
-                                                    <div className="mt-1 text-xs text-slate-500">
-                                                        Payee: {payment.payee}
-                                                    </div>
-                                                    <div className="text-xs text-slate-500">
-                                                        Receipt: {payment.reference}
-                                                        {payment.splits > 1
-                                                            ? ` · ${payment.splits} floats`
-                                                            : ''}
-                                                    </div>
+                                                    {!exp.valuation_id ? (
+                                                        <>
+                                                            <div className="mt-1 text-xs text-slate-500">
+                                                                Payee: {payment.payee}
+                                                            </div>
+                                                            <div className="text-xs text-slate-500">
+                                                                Receipt: {payment.reference}
+                                                                {payment.splits > 1
+                                                                    ? ` · ${payment.splits} floats`
+                                                                    : ''}
+                                                            </div>
+                                                        </>
+                                                    ) : (
+                                                        <div className="mt-1 text-xs text-slate-500">
+                                                            Contract deduction (no cash)
+                                                        </div>
+                                                    )}
                                                 </td>
                                                 <td className="px-4 py-3 text-right font-semibold text-slate-900 whitespace-nowrap">
                                                     {formatCurrency(exp.amount)}
                                                 </td>
                                                 {canUpdate && (
                                                     <td className="px-4 py-3">
-                                                        <div className="flex items-center justify-end gap-1">
-                                                            <Button
-                                                                type="button"
-                                                                variant="ghost"
-                                                                size="sm"
-                                                                title="Edit expense"
-                                                                aria-label="Edit expense"
-                                                                onClick={() => editExpense(exp)}
-                                                            >
-                                                                <Pencil className="h-4 w-4" />
-                                                            </Button>
-                                                            <Button
-                                                                type="button"
-                                                                variant="ghost"
-                                                                size="sm"
-                                                                className="text-red-600 hover:bg-red-50 hover:text-red-700"
-                                                                title="Delete expense"
-                                                                aria-label="Delete expense"
-                                                                onClick={() => deleteExpense(exp)}
-                                                            >
-                                                                <Trash2 className="h-4 w-4" />
-                                                            </Button>
-                                                        </div>
+                                                        {exp.valuation_id ? (
+                                                            <span className="text-xs text-slate-400">
+                                                                Via valuations
+                                                            </span>
+                                                        ) : (
+                                                            <div className="flex items-center justify-end gap-1">
+                                                                <Button
+                                                                    type="button"
+                                                                    variant="ghost"
+                                                                    size="sm"
+                                                                    title="Edit expense"
+                                                                    aria-label="Edit expense"
+                                                                    onClick={() => editExpense(exp)}
+                                                                >
+                                                                    <Pencil className="h-4 w-4" />
+                                                                </Button>
+                                                                <Button
+                                                                    type="button"
+                                                                    variant="ghost"
+                                                                    size="sm"
+                                                                    className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                                                                    title="Delete expense"
+                                                                    aria-label="Delete expense"
+                                                                    onClick={() => deleteExpense(exp)}
+                                                                >
+                                                                    <Trash2 className="h-4 w-4" />
+                                                                </Button>
+                                                            </div>
+                                                        )}
                                                     </td>
                                                 )}
                                             </tr>

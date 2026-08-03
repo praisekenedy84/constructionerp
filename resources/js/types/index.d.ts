@@ -308,6 +308,7 @@ export interface Expense {
     project_id: number | null;
     boq_item_id: number | null;
     requisition_id?: number | null;
+    valuation_id?: number | null;
     category: 'direct' | 'indirect';
     sub_type: string;
     activity_ref?: string | null;
@@ -319,6 +320,7 @@ export interface Expense {
     project?: Project | null;
     boq_item?: Pick<BoqItem, 'id' | 'description' | 'unit'> | null;
     requisition?: Pick<Requisition, 'id' | 'requisition_no' | 'status'> | null;
+    valuation?: Pick<Valuation, 'id' | 'certificate_no' | 'project_id'> | null;
     recorder?: { id: number; name: string } | null;
     cash_disbursements?: Array<{
         id: number;

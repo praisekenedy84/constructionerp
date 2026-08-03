@@ -17,6 +17,7 @@ class Expense extends Model
         'project_id',
         'boq_item_id',
         'requisition_id',
+        'valuation_id',
         'category',
         'sub_type',
         'activity_ref',
@@ -49,6 +50,11 @@ class Expense extends Model
     public function requisition(): BelongsTo
     {
         return $this->belongsTo(Requisition::class);
+    }
+
+    public function valuation(): BelongsTo
+    {
+        return $this->belongsTo(Valuation::class);
     }
 
     public function recorder(): BelongsTo

@@ -56,4 +56,9 @@ class Valuation extends Model
     {
         return $this->hasMany(ValuationDeduction::class);
     }
+
+    public function expenses(): HasMany
+    {
+        return $this->hasMany(Expense::class);
+    }
 }

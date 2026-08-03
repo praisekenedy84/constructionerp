@@ -32,6 +32,8 @@ class ExpenseService
      * @param  array{
      *     project_id?: int|null,
      *     boq_item_id?: int|null,
+     *     requisition_id?: int|null,
+     *     valuation_id?: int|null,
      *     category: ExpenseCategory|string,
      *     sub_type: string,
      *     activity_ref?: string|null,
@@ -62,6 +64,8 @@ class ExpenseService
             $expense = Expense::create([
                 'project_id' => $category === ExpenseCategory::Direct ? $data['project_id'] : null,
                 'boq_item_id' => $data['boq_item_id'] ?? null,
+                'requisition_id' => $data['requisition_id'] ?? null,
+                'valuation_id' => $data['valuation_id'] ?? null,
                 'category' => $category,
                 'sub_type' => $data['sub_type'] ?? 'General',
                 'activity_ref' => $data['activity_ref'] ?? null,
@@ -74,7 +78,7 @@ class ExpenseService
 
             // When method is present (UI expenses and funded payroll), cash is taken
             // from the matching pool: project float for direct, organization float for indirect.
-            // Legacy payroll backfill omits method and stays accounting-only.
+            // Legacy payroll / IPC compliance omit method and stay accounting-only.
             if (array_key_exists('method', $data)) {
                 $this->disburseFromScopedCash(
                     $expense,
@@ -172,6 +176,8 @@ class ExpenseService
     {
         return DB::transaction(function () use ($expense, $data, $user) {
             $expense = Expense::lockForUpdate()->findOrFail($expense->id);
+            $this->assertEditable($expense);
+
             $oldDisbursements = CashDisbursement::query()
                 ->where('expense_id', $expense->id)
                 ->lockForUpdate()
@@ -215,6 +221,8 @@ class ExpenseService
     {
         DB::transaction(function () use ($expense, $user) {
             $expense = Expense::lockForUpdate()->findOrFail($expense->id);
+            $this->assertEditable($expense);
+
             $disbursements = CashDisbursement::query()
                 ->where('expense_id', $expense->id)
                 ->lockForUpdate()
@@ -231,6 +239,15 @@ class ExpenseService
             $this->reverseDirectExpenseBudget($expense, $user);
             $expense->delete();
         });
+    }
+
+    private function assertEditable(Expense $expense): void
+    {
+        if ($expense->valuation_id) {
+            throw new \InvalidArgumentException(
+                'IPC compliance expenses are managed from project valuations and cannot be edited here.',
+            );
+        }
     }
 
     private function reverseDirectExpenseBudget(Expense $expense, User $user): void
@@ -329,8 +346,10 @@ class ExpenseService
         $source = (string) $request->input('source', '');
         if ($source === 'requisition') {
             $query->whereNotNull('requisition_id');
+        } elseif ($source === 'ipc') {
+            $query->whereNotNull('valuation_id');
         } elseif ($source === 'manual') {
-            $query->whereNull('requisition_id');
+            $query->whereNull('requisition_id')->whereNull('valuation_id');
         }
 
         return $query;
@@ -340,10 +359,12 @@ class ExpenseService
      * @return array{
      *     total_amount: string,
      *     from_requisitions: string,
+     *     from_ipcs: string,
      *     manual_amount: string,
      *     cash_disbursed: string,
      *     expense_count: int,
      *     requisition_count: int,
+     *     ipc_count: int,
      *     manual_count: int
      * }
      */
@@ -360,9 +381,11 @@ class ExpenseService
             ->selectRaw('count(*) as expense_count')
             ->selectRaw('coalesce(sum(amount), 0) as total_amount')
             ->selectRaw('coalesce(sum(case when requisition_id is not null then amount else 0 end), 0) as from_requisitions')
-            ->selectRaw('coalesce(sum(case when requisition_id is null then amount else 0 end), 0) as manual_amount')
+            ->selectRaw('coalesce(sum(case when valuation_id is not null then amount else 0 end), 0) as from_ipcs')
+            ->selectRaw('coalesce(sum(case when requisition_id is null and valuation_id is null then amount else 0 end), 0) as manual_amount')
             ->selectRaw('coalesce(sum(case when requisition_id is not null then 1 else 0 end), 0) as requisition_count')
-            ->selectRaw('coalesce(sum(case when requisition_id is null then 1 else 0 end), 0) as manual_count')
+            ->selectRaw('coalesce(sum(case when valuation_id is not null then 1 else 0 end), 0) as ipc_count')
+            ->selectRaw('coalesce(sum(case when requisition_id is null and valuation_id is null then 1 else 0 end), 0) as manual_count')
             ->first();
 
         $cashDisbursed = (string) CashDisbursement::query()
@@ -372,10 +395,12 @@ class ExpenseService
         return [
             'total_amount' => bcadd((string) ($aggregates->total_amount ?? '0'), '0', 2),
             'from_requisitions' => bcadd((string) ($aggregates->from_requisitions ?? '0'), '0', 2),
+            'from_ipcs' => bcadd((string) ($aggregates->from_ipcs ?? '0'), '0', 2),
             'manual_amount' => bcadd((string) ($aggregates->manual_amount ?? '0'), '0', 2),
             'cash_disbursed' => bcadd($cashDisbursed, '0', 2),
             'expense_count' => (int) ($aggregates->expense_count ?? 0),
             'requisition_count' => (int) ($aggregates->requisition_count ?? 0),
+            'ipc_count' => (int) ($aggregates->ipc_count ?? 0),
             'manual_count' => (int) ($aggregates->manual_count ?? 0),
         ];
     }
@@ -426,6 +451,7 @@ class ExpenseService
                 'project:id,code,name',
                 'boqItem:id,description',
                 'requisition:id,requisition_no',
+                'valuation:id,certificate_no,project_id',
                 'recorder:id,name',
                 'cashDisbursements',
             ]);
@@ -437,6 +463,12 @@ class ExpenseService
 
         $rows = $query->get()->map(function (Expense $expense) {
             $disbursement = $expense->cashDisbursements->first();
+            $source = 'Manual';
+            if ($expense->valuation_id) {
+                $source = 'IPC';
+            } elseif ($expense->requisition_id) {
+                $source = 'Requisition';
+            }
 
             return [
                 optional($expense->expense_date)?->toDateString(),
@@ -447,8 +479,9 @@ class ExpenseService
                 $expense->project?->name,
                 $expense->sub_type,
                 $expense->description,
-                $expense->requisition_id ? 'Requisition' : 'Manual',
-                $expense->requisition?->requisition_no,
+                $source,
+                $expense->requisition?->requisition_no
+                    ?? ($expense->valuation ? 'IPC-'.$expense->valuation->certificate_no : null),
                 $disbursement?->method,
                 $disbursement?->payee ?? $disbursement?->account_name,
                 $disbursement?->reference_no,

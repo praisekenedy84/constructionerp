@@ -106,6 +106,35 @@ class ExpenseListingFeaturesTest extends TestCase
                 'expense_date' => now()->toDateString(),
                 'recorded_by' => 1,
             ]);
+
+            Expense::create([
+                'project_id' => 1,
+                'valuation_id' => null,
+                'category' => ExpenseCategory::Direct,
+                'sub_type' => 'Retention',
+                'activity_ref' => 'IPC-1',
+                'amount' => '50000.00',
+                'description' => 'IPC-1 compliance — Retention',
+                'expense_date' => now()->toDateString(),
+                'recorded_by' => 1,
+            ]);
+        });
+
+        // Link the third expense to a real valuation so source=ipc filtering works.
+        Tenant::where('slug', 'expense-list-co')->first()->run(function () {
+            $valuation = \App\Models\Valuation::create([
+                'project_id' => 1,
+                'certificate_no' => 1,
+                'gross_value' => '0.00',
+                'total_deductions' => '50000.00',
+                'net_value' => '50000.00',
+                'status' => 'draft',
+                'created_by' => 1,
+            ]);
+
+            Expense::query()
+                ->where('activity_ref', 'IPC-1')
+                ->update(['valuation_id' => $valuation->id]);
         });
 
         $this->post('/login', [
@@ -115,16 +144,28 @@ class ExpenseListingFeaturesTest extends TestCase
 
         $this->get('/finance/expenses')->assertOk()->assertInertia(fn ($page) => $page
             ->component('Finance/Expenses')
-            ->where('summary.total_amount', '125000.00')
+            ->where('summary.total_amount', '175000.00')
             ->where('summary.from_requisitions', '100000.00')
+            ->where('summary.from_ipcs', '50000.00')
             ->where('summary.manual_amount', '25000.00')
-            ->where('summary.expense_count', 2)
+            ->where('summary.expense_count', 3)
+            ->where('summary.ipc_count', 1)
             ->has('filterOptions.projects')
             ->has('filterOptions.sub_types')
         );
 
         $this->get('/finance/expenses?source=requisition')->assertOk()->assertInertia(fn ($page) => $page
             ->where('summary.total_amount', '100000.00')
+            ->where('summary.expense_count', 1)
+        );
+
+        $this->get('/finance/expenses?source=ipc')->assertOk()->assertInertia(fn ($page) => $page
+            ->where('summary.total_amount', '50000.00')
+            ->where('summary.expense_count', 1)
+        );
+
+        $this->get('/finance/expenses?source=manual')->assertOk()->assertInertia(fn ($page) => $page
+            ->where('summary.total_amount', '25000.00')
             ->where('summary.expense_count', 1)
         );
     }

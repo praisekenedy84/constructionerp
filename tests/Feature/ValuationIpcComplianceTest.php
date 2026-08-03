@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\ComplianceRule;
+use App\Models\Expense;
 use App\Models\Project;
 use App\Models\Tenant;
 use App\Models\Valuation;
@@ -156,6 +157,19 @@ class ValuationIpcComplianceTest extends TestCase
 
         $project = Project::findOrFail($projectId);
         $this->assertSame('895000.00', (string) $project->net_budget);
+
+        $expenses = Expense::query()
+            ->where('valuation_id', $valuation->id)
+            ->where('category', 'direct')
+            ->orderBy('id')
+            ->get();
+        $this->assertCount(2, $expenses);
+        $this->assertSame('100000.00', (string) $expenses[0]->amount);
+        $this->assertSame('Retention', $expenses[0]->sub_type);
+        $this->assertSame('IPC-1', $expenses[0]->activity_ref);
+        $this->assertSame('5000.00', (string) $expenses[1]->amount);
+        $this->assertSame('Material test fee', $expenses[1]->sub_type);
+        $this->assertEmpty($expenses[0]->cashDisbursements);
     }
 
     public function test_multiple_ipcs_accumulate_compliance_against_contract(): void
@@ -251,6 +265,12 @@ class ValuationIpcComplianceTest extends TestCase
         $this->assertSame('52000.00', (string) $valuation->total_deductions);
         $this->assertCount(2, $valuation->deductions);
         $this->assertSame('948000.00', (string) Project::findOrFail($projectId)->net_budget);
+
+        $expenses = Expense::query()->where('valuation_id', $valuationId)->orderBy('id')->get();
+        $this->assertCount(2, $expenses);
+        $this->assertSame(['WHT', 'Site lab'], $expenses->pluck('sub_type')->all());
+        $this->assertSame('50000.00', (string) $expenses[0]->amount);
+        $this->assertSame('2000.00', (string) $expenses[1]->amount);
     }
 
     public function test_draft_ipc_can_be_deleted_and_net_budget_restored(): void
@@ -291,6 +311,8 @@ class ValuationIpcComplianceTest extends TestCase
         $this->assertSoftDeleted('valuations', ['id' => $firstId]);
         $this->assertSame(1, Valuation::where('project_id', $projectId)->count());
         $this->assertSame('995000.00', (string) Project::findOrFail($projectId)->net_budget);
+        $this->assertSame(0, Expense::where('valuation_id', $firstId)->count());
+        $this->assertSoftDeleted('expenses', ['valuation_id' => $firstId, 'activity_ref' => 'IPC-1']);
     }
 
     public function test_certified_ipc_cannot_be_deleted(): void

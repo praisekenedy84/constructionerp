@@ -253,6 +253,8 @@ export interface Requisition {
     requisition_category_id?: number | null;
     resource_type: RequisitionResourceType;
     requestor_id: number;
+    recipient_name?: string | null;
+    recipient_position?: string | null;
     status: RequisitionStatus;
     fulfillment_type: FulfillmentType;
     addressed_to?: RequisitionAddressedTo;

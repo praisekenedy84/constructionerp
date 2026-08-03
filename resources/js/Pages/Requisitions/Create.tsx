@@ -126,6 +126,8 @@ export default function RequisitionsCreate() {
         addressed_to: initialAddressedTo,
         fulfillment_type: (requisition?.fulfillment_type ??
             defaultFulfillment(initialAddressedTo)) as FulfillmentType,
+        recipient_name: requisition?.recipient_name ?? '',
+        recipient_position: requisition?.recipient_position ?? '',
         items:
             requisition?.items && requisition.items.length > 0
                 ? requisition.items.map(lineFromItem)
@@ -139,6 +141,8 @@ export default function RequisitionsCreate() {
         requisition_category_id: form.requisition_category_id,
         addressed_to: form.addressed_to,
         fulfillment_type: form.fulfillment_type,
+        recipient_name: form.recipient_name.trim() || null,
+        recipient_position: form.recipient_position.trim() || null,
         items: form.items.map((item) => ({
             inventory_item_id:
                 item.source === 'catalog' && item.inventory_item_id ? item.inventory_item_id : null,
@@ -406,6 +410,51 @@ export default function RequisitionsCreate() {
                                 {errors.fulfillment_type && (
                                     <p className="text-sm text-red-600">{errors.fulfillment_type}</p>
                                 )}
+                            </div>
+                            <div className="space-y-2 sm:col-span-2 rounded-md border border-dashed border-slate-200 bg-slate-50/60 p-3">
+                                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                                    On behalf of (optional)
+                                </p>
+                                <p className="mb-3 text-xs text-slate-500">
+                                    Use when requesting for someone else, especially people not in
+                                    the system.
+                                </p>
+                                <div className="grid gap-4 sm:grid-cols-2">
+                                    <div className="space-y-2">
+                                        <Label htmlFor="recipient_name">Recipient name</Label>
+                                        <Input
+                                            id="recipient_name"
+                                            value={data.recipient_name}
+                                            onChange={(e) =>
+                                                setData('recipient_name', e.target.value)
+                                            }
+                                            placeholder="e.g. John Doe"
+                                        />
+                                        {errors.recipient_name && (
+                                            <p className="text-sm text-red-600">
+                                                {errors.recipient_name}
+                                            </p>
+                                        )}
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="recipient_position">
+                                            Recipient position
+                                        </Label>
+                                        <Input
+                                            id="recipient_position"
+                                            value={data.recipient_position}
+                                            onChange={(e) =>
+                                                setData('recipient_position', e.target.value)
+                                            }
+                                            placeholder="e.g. Site Foreman"
+                                        />
+                                        {errors.recipient_position && (
+                                            <p className="text-sm text-red-600">
+                                                {errors.recipient_position}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
                             </div>
                             {!isOrganization && (
                                 <div className="space-y-2 sm:col-span-2">

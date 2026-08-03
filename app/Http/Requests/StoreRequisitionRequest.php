@@ -90,6 +90,13 @@ class StoreRequisitionRequest extends FormRequest
                 : FulfillmentType::CashDisbursement->value;
         }
 
+        $recipientName = $this->filled('recipient_name')
+            ? trim((string) $this->input('recipient_name'))
+            : null;
+        $recipientPosition = $this->filled('recipient_position')
+            ? trim((string) $this->input('recipient_position'))
+            : null;
+
         $this->merge([
             'project_id' => $this->input('project_id') ?: null,
             'boq_item_id' => $this->input('project_id')
@@ -102,6 +109,8 @@ class StoreRequisitionRequest extends FormRequest
             'resource_type' => RequisitionResourceType::Other->value,
             'addressed_to' => $addressedTo,
             'fulfillment_type' => $fulfillmentType,
+            'recipient_name' => $recipientName !== '' ? $recipientName : null,
+            'recipient_position' => $recipientPosition !== '' ? $recipientPosition : null,
             'items' => $items,
         ]);
     }
@@ -117,6 +126,8 @@ class StoreRequisitionRequest extends FormRequest
             'resource_type' => ['required', Rule::enum(RequisitionResourceType::class)],
             'addressed_to' => ['required', Rule::enum(RequisitionAddressedTo::class)],
             'fulfillment_type' => ['required', Rule::enum(FulfillmentType::class)],
+            'recipient_name' => ['nullable', 'string', 'max:255'],
+            'recipient_position' => ['nullable', 'string', 'max:255'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.boq_item_id' => ['nullable', 'integer', 'exists:boq_items,id'],
             'items.*.inventory_item_id' => ['nullable', 'integer', 'exists:inventory_items,id'],

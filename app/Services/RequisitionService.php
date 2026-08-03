@@ -45,6 +45,8 @@ class RequisitionService
      *     department_id?: int|null,
      *     resource_type: RequisitionResourceType|string,
      *     requestor_id: int,
+     *     recipient_name?: string|null,
+     *     recipient_position?: string|null,
      *     fulfillment_type: FulfillmentType|string,
      *     items: array<int, array<string, mixed>>,
      * }  $data
@@ -83,6 +85,8 @@ class RequisitionService
                 'requisition_category_id' => $data['requisition_category_id'] ?? null,
                 'resource_type' => $resourceType,
                 'requestor_id' => $data['requestor_id'],
+                'recipient_name' => $data['recipient_name'] ?? null,
+                'recipient_position' => $data['recipient_position'] ?? null,
                 'status' => RequisitionStatus::Draft,
                 'fulfillment_type' => $fulfillmentType,
                 'addressed_to' => $addressedTo,
@@ -107,6 +111,8 @@ class RequisitionService
      *     department: string,
      *     department_id?: int|null,
      *     resource_type: RequisitionResourceType|string,
+     *     recipient_name?: string|null,
+     *     recipient_position?: string|null,
      *     fulfillment_type: FulfillmentType|string,
      *     items: array<int, array<string, mixed>>,
      * }  $data
@@ -149,6 +155,12 @@ class RequisitionService
                 'department_id' => $data['department_id'] ?? $requisition->department_id,
                 'requisition_category_id' => $data['requisition_category_id'] ?? $requisition->requisition_category_id,
                 'resource_type' => $resourceType,
+                'recipient_name' => array_key_exists('recipient_name', $data)
+                    ? $data['recipient_name']
+                    : $requisition->recipient_name,
+                'recipient_position' => array_key_exists('recipient_position', $data)
+                    ? $data['recipient_position']
+                    : $requisition->recipient_position,
                 'fulfillment_type' => $fulfillmentType,
                 'addressed_to' => $addressedTo,
                 'original_amount' => $originalAmount,

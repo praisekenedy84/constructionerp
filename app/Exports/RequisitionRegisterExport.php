@@ -32,6 +32,8 @@ class RequisitionRegisterExport implements FromCollection, ShouldAutoSize, WithH
         return [
             'Date',
             'Requested By',
+            'Recipient Name',
+            'Recipient Position',
             'Req No',
             'SN',
             'Department',
@@ -56,7 +58,7 @@ class RequisitionRegisterExport implements FromCollection, ShouldAutoSize, WithH
 
     public function styles(Worksheet $sheet): array
     {
-        $lastColumn = 'P';
+        $lastColumn = 'R';
         $lastRow = max(2, $this->rows->count() + 1);
 
         return [

@@ -27,6 +27,8 @@ class Requisition extends Model
         'requisition_category_id',
         'resource_type',
         'requestor_id',
+        'recipient_name',
+        'recipient_position',
         'status',
         'fulfillment_type',
         'addressed_to',

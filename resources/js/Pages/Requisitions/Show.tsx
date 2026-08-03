@@ -134,7 +134,15 @@ export default function RequisitionsShow() {
             <div className="space-y-6">
                 <PageHeader
                     title={requisition.requisition_no}
-                    description={`Requested by ${requisition.requestor?.name ?? 'Unknown'} · ${requisition.department} · ${requisition.project?.name ?? 'Organization'}`}
+                    description={`Requested by ${requisition.requestor?.name ?? 'Unknown'}${
+                        requisition.recipient_name
+                            ? ` · On behalf of ${requisition.recipient_name}${
+                                  requisition.recipient_position
+                                      ? ` (${requisition.recipient_position})`
+                                      : ''
+                              }`
+                            : ''
+                    } · ${requisition.department} · ${requisition.project?.name ?? 'Organization'}`}
                     actions={
                         <div className="flex items-center gap-2">
                             {canDecide && (
@@ -157,6 +165,29 @@ export default function RequisitionsShow() {
                         </div>
                     }
                 />
+
+                {(requisition.recipient_name || requisition.recipient_position) && (
+                    <DataPanel title="Recipient (on behalf of)">
+                        <div className="grid gap-4 sm:grid-cols-2 text-sm">
+                            <div>
+                                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                                    Name
+                                </p>
+                                <p className="mt-1 text-slate-900">
+                                    {requisition.recipient_name || '—'}
+                                </p>
+                            </div>
+                            <div>
+                                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                                    Position
+                                </p>
+                                <p className="mt-1 text-slate-900">
+                                    {requisition.recipient_position || '—'}
+                                </p>
+                            </div>
+                        </div>
+                    </DataPanel>
+                )}
 
                 <div className="grid gap-4 sm:grid-cols-4">
                     <DataPanel title="Original Amount">

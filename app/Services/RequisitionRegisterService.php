@@ -99,6 +99,8 @@ class RequisitionRegisterService
                     ->orWhereHas('requisition', function (Builder $q) use ($search) {
                         $q->where('requisition_no', 'like', "%{$search}%")
                             ->orWhere('department', 'like', "%{$search}%")
+                            ->orWhere('recipient_name', 'like', "%{$search}%")
+                            ->orWhere('recipient_position', 'like', "%{$search}%")
                             ->orWhereHas(
                                 'project',
                                 fn (Builder $p) => $p->where('name', 'like', "%{$search}%")
@@ -221,6 +223,8 @@ class RequisitionRegisterService
             return [
                 $row['date'],
                 $row['requested_by'],
+                $row['recipient_name'],
+                $row['recipient_position'],
                 $row['requisition_no'],
                 $row['sn'],
                 $row['department'],
@@ -275,6 +279,8 @@ class RequisitionRegisterService
             'requisition_id' => $item->requisition_id,
             'date' => optional($requisition?->created_at)->toDateString(),
             'requested_by' => $requisition?->requestor?->name ?? '—',
+            'recipient_name' => $requisition?->recipient_name ?? '—',
+            'recipient_position' => $requisition?->recipient_position ?? '—',
             'requisition_no' => $requisition?->requisition_no ?? '—',
             'sn' => (int) ($item->line_sn ?? 0),
             'department' => $requisition?->department ?? '—',

@@ -16,6 +16,8 @@ interface RegisterRow {
     requisition_id: number;
     date: string | null;
     requested_by: string;
+    recipient_name: string;
+    recipient_position: string;
     requisition_no: string;
     sn: number;
     department: string;
@@ -159,7 +161,7 @@ export default function RequisitionsIndex() {
                 <ListToolbar
                     baseUrl="/requisitions"
                     filters={filters}
-                    searchPlaceholder="Search req no, description, requestor, project…"
+                    searchPlaceholder="Search req no, description, requestor, recipient, project…"
                     sortOptions={[
                         { value: 'date', label: 'Date' },
                         { value: 'requisition_no', label: 'Requisition no' },
@@ -211,11 +213,13 @@ export default function RequisitionsIndex() {
 
                 <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
                     <div className="overflow-x-auto">
-                        <table className="min-w-[1400px] w-full text-sm">
+                        <table className="min-w-[1600px] w-full text-sm">
                             <thead>
                                 <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs text-slate-500">
                                     <th className="px-3 py-3 font-medium">Date</th>
                                     <th className="px-3 py-3 font-medium">Requested By</th>
+                                    <th className="px-3 py-3 font-medium">Recipient</th>
+                                    <th className="px-3 py-3 font-medium">Position</th>
                                     <th className="px-3 py-3 font-medium">Req No</th>
                                     <th className="px-3 py-3 font-medium">SN</th>
                                     <th className="px-3 py-3 font-medium">Department</th>
@@ -236,7 +240,7 @@ export default function RequisitionsIndex() {
                                 {lines.length === 0 ? (
                                     <tr>
                                         <td
-                                            colSpan={16}
+                                            colSpan={18}
                                             className="px-6 py-12 text-center text-slate-500"
                                         >
                                             No requisition lines match the current filters.
@@ -250,6 +254,12 @@ export default function RequisitionsIndex() {
                                             </td>
                                             <td className="px-3 py-3 text-slate-700">
                                                 {row.requested_by}
+                                            </td>
+                                            <td className="px-3 py-3 text-slate-700">
+                                                {row.recipient_name}
+                                            </td>
+                                            <td className="px-3 py-3 text-slate-600">
+                                                {row.recipient_position}
                                             </td>
                                             <td className="whitespace-nowrap px-3 py-3 font-mono text-slate-900">
                                                 {row.requisition_no}

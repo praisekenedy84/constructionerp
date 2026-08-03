@@ -167,6 +167,19 @@ export default function FulfillQueue() {
                                                 {selected.department}
                                             </dd>
                                         </div>
+                                        {(selected.recipient_name || selected.recipient_position) && (
+                                            <div className="sm:col-span-2">
+                                                <dt className="text-xs text-slate-500">
+                                                    On behalf of
+                                                </dt>
+                                                <dd className="text-sm font-medium text-slate-900">
+                                                    {selected.recipient_name || '—'}
+                                                    {selected.recipient_position
+                                                        ? ` · ${selected.recipient_position}`
+                                                        : ''}
+                                                </dd>
+                                            </div>
+                                        )}
                                         <div>
                                             <dt className="text-xs text-slate-500">Project</dt>
                                             <dd className="text-sm font-medium text-slate-900">

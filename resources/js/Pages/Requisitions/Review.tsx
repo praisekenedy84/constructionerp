@@ -166,6 +166,20 @@ export default function RequisitionsReview() {
                                                 {requisition.department}
                                             </dd>
                                         </div>
+                                        {(requisition.recipient_name ||
+                                            requisition.recipient_position) && (
+                                            <div className="sm:col-span-2">
+                                                <dt className="text-xs text-slate-500">
+                                                    On behalf of
+                                                </dt>
+                                                <dd className="text-sm font-medium text-slate-900">
+                                                    {requisition.recipient_name || '—'}
+                                                    {requisition.recipient_position
+                                                        ? ` · ${requisition.recipient_position}`
+                                                        : ''}
+                                                </dd>
+                                            </div>
+                                        )}
                                         <div>
                                             <dt className="text-xs text-slate-500">Project</dt>
                                             <dd className="text-sm font-medium text-slate-900">

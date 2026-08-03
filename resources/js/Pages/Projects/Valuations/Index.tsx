@@ -6,9 +6,10 @@ import PageHeader from '@/Components/Shared/PageHeader';
 import StatusBadge from '@/Components/Shared/StatusBadge';
 import { Button } from '@/Components/ui/button';
 import { formatCurrency, formatDate } from '@/lib/formatters';
+import { hasPermission } from '@/lib/permissions';
 import { ListingFilters, PageProps, Paginated, Project, Valuation } from '@/types';
-import { Head, Link, usePage } from '@inertiajs/react';
-import { Plus } from 'lucide-react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
+import { Pencil, Plus, Trash2 } from 'lucide-react';
 
 interface ValuationsIndexProps extends PageProps {
     project: Project;
@@ -22,8 +23,23 @@ interface ValuationsIndexProps extends PageProps {
 }
 
 export default function ValuationsIndex() {
-    const { project, valuations, filters, summary } = usePage<ValuationsIndexProps>().props;
+    const { project, valuations, filters, summary, auth } =
+        usePage<ValuationsIndexProps>().props;
     const rows = valuations.data ?? [];
+    const canUpdate = hasPermission(auth.user, 'valuations', 'update');
+    const canDelete = hasPermission(auth.user, 'valuations', 'delete-soft');
+
+    function destroyIpc(valuation: Valuation) {
+        const label = `IPC-${valuation.certificate_no}`;
+        if (
+            !confirm(
+                `Archive ${label}? Its compliance will be removed from the project net budget.`,
+            )
+        ) {
+            return;
+        }
+        router.delete(`/projects/${project.id}/valuations/${valuation.id}`);
+    }
 
     return (
         <AppShell title="IPCs">
@@ -94,41 +110,73 @@ export default function ValuationsIndex() {
                                 <th className="px-6 py-3 font-medium">Rules</th>
                                 <th className="px-6 py-3 font-medium">Status</th>
                                 <th className="px-6 py-3 font-medium">Created</th>
+                                <th className="px-6 py-3 text-right font-medium">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {rows.length === 0 ? (
                                 <tr>
-                                    <td colSpan={5} className="px-6 py-12 text-center text-slate-500">
+                                    <td colSpan={6} className="px-6 py-12 text-center text-slate-500">
                                         No IPCs yet. Add IPC-1 and enter its compliance rules.
                                     </td>
                                 </tr>
                             ) : (
-                                rows.map((val) => (
-                                    <tr key={val.id} className="hover:bg-slate-50/80">
-                                        <td className="px-6 py-4">
-                                            <Link
-                                                href={`/projects/${project.id}/valuations/${val.id}`}
-                                                className="font-mono font-medium text-slate-900 hover:underline"
-                                            >
-                                                IPC-{val.certificate_no}
-                                            </Link>
-                                        </td>
-                                        <td className="px-6 py-4 text-right font-medium text-red-600">
-                                            −{formatCurrency(val.total_deductions)}
-                                        </td>
-                                        <td className="px-6 py-4 text-slate-600">
-                                            {val.deductions?.length ?? 0} rule
-                                            {(val.deductions?.length ?? 0) === 1 ? '' : 's'}
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <StatusBadge status={String(val.status)} />
-                                        </td>
-                                        <td className="px-6 py-4 text-slate-600">
-                                            {formatDate(val.created_at)}
-                                        </td>
-                                    </tr>
-                                ))
+                                rows.map((val) => {
+                                    const isDraft = val.status === 'draft';
+
+                                    return (
+                                        <tr key={val.id} className="hover:bg-slate-50/80">
+                                            <td className="px-6 py-4">
+                                                <Link
+                                                    href={`/projects/${project.id}/valuations/${val.id}`}
+                                                    className="font-mono font-medium text-slate-900 hover:underline"
+                                                >
+                                                    IPC-{val.certificate_no}
+                                                </Link>
+                                            </td>
+                                            <td className="px-6 py-4 text-right font-medium text-red-600">
+                                                −{formatCurrency(val.total_deductions)}
+                                            </td>
+                                            <td className="px-6 py-4 text-slate-600">
+                                                {val.deductions?.length ?? 0} rule
+                                                {(val.deductions?.length ?? 0) === 1 ? '' : 's'}
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <StatusBadge status={String(val.status)} />
+                                            </td>
+                                            <td className="px-6 py-4 text-slate-600">
+                                                {formatDate(val.created_at)}
+                                            </td>
+                                            <td className="px-6 py-4 text-right">
+                                                <div className="flex items-center justify-end gap-1">
+                                                    {isDraft && canUpdate && (
+                                                        <Link
+                                                            href={`/projects/${project.id}/valuations/${val.id}/edit`}
+                                                            className="inline-flex h-9 w-9 items-center justify-center rounded-md text-slate-600 hover:bg-slate-100"
+                                                            title={`Edit IPC-${val.certificate_no}`}
+                                                            aria-label={`Edit IPC-${val.certificate_no}`}
+                                                        >
+                                                            <Pencil className="h-4 w-4" />
+                                                        </Link>
+                                                    )}
+                                                    {isDraft && canDelete && (
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                                                            title={`Delete IPC-${val.certificate_no}`}
+                                                            aria-label={`Delete IPC-${val.certificate_no}`}
+                                                            onClick={() => destroyIpc(val)}
+                                                        >
+                                                            <Trash2 className="h-4 w-4" />
+                                                        </Button>
+                                                    )}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                })
                             )}
                         </tbody>
                     </table>

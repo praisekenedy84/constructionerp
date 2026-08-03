@@ -82,6 +82,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/projects/{id}/valuations/{valuationId}', [ValuationController::class, 'show'])->name('projects.valuations.show');
         Route::get('/projects/{id}/valuations/{valuationId}/edit', [ValuationController::class, 'edit'])->name('projects.valuations.edit');
         Route::put('/projects/{id}/valuations/{valuationId}', [ValuationController::class, 'update'])->name('projects.valuations.update');
+        Route::delete('/projects/{id}/valuations/{valuationId}', [ValuationController::class, 'destroy'])->name('projects.valuations.destroy');
     });
 
     Route::post('/boq/revisions', [BOQRevisionController::class, 'store'])->name('boq.revisions.store');

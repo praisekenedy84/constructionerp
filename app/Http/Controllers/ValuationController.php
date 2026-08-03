@@ -145,14 +145,37 @@ class ValuationController extends Controller
         $project = Project::findOrFail($id);
         $valuation = $project->valuations()->findOrFail($valuationId);
 
-        $this->valuationService->updateDraft(
-            $valuation,
-            $request->validated('compliance_items') ?? [],
-        );
+        try {
+            $this->valuationService->updateDraft(
+                $valuation,
+                $request->validated('compliance_items') ?? [],
+            );
+        } catch (\InvalidArgumentException $e) {
+            return back()->withErrors(['status' => $e->getMessage()]);
+        }
 
         return redirect()
             ->route('projects.valuations.show', [$project->id, $valuation->id])
-            ->with('success', "IPC-{$valuation->certificate_no} updated.");
+            ->with('success', "IPC-{$valuation->certificate_no} updated. Net budget recalculated.");
+    }
+
+    public function destroy(Request $request, int $id, int $valuationId): RedirectResponse
+    {
+        $this->authorizePermission($request->user(), 'valuations', 'delete-soft');
+
+        $project = Project::findOrFail($id);
+        $valuation = $project->valuations()->findOrFail($valuationId);
+        $certificateNo = $valuation->certificate_no;
+
+        try {
+            $this->valuationService->deleteDraft($valuation);
+        } catch (\InvalidArgumentException $e) {
+            return back()->withErrors(['status' => $e->getMessage()]);
+        }
+
+        return redirect()
+            ->route('projects.valuations.index', $project->id)
+            ->with('success', "IPC-{$certificateNo} archived. Net budget recalculated.");
     }
 
     public function certify(Request $request, int $id): RedirectResponse

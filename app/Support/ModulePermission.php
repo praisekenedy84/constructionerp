@@ -29,7 +29,7 @@ class ModulePermission
         'payroll' => ['read', 'create', 'update', 'approve'],
         'equipment' => ['read', 'create', 'update', 'assign'],
         'reports' => ['read', 'export', 'schedule'],
-        'valuations' => ['read', 'create', 'update', 'approve'],
+        'valuations' => ['read', 'create', 'update', 'approve', 'delete-soft'],
     ];
 
     /** @var list<string> */

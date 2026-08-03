@@ -81,6 +81,21 @@ class ValuationService
         });
     }
 
+    public function deleteDraft(Valuation $valuation): void
+    {
+        DB::transaction(function () use ($valuation) {
+            $valuation = Valuation::lockForUpdate()->findOrFail($valuation->id);
+
+            if ($valuation->status !== ValuationStatus::Draft) {
+                throw new \InvalidArgumentException('Only draft IPCs can be deleted.');
+            }
+
+            $project = $valuation->project;
+            $valuation->delete();
+            $this->syncProjectNetBudget($project);
+        });
+    }
+
     public function syncProjectNetBudget(Project $project): void
     {
         $project = Project::lockForUpdate()->findOrFail($project->id);

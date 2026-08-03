@@ -27,6 +27,7 @@ export default function ValuationsShow() {
     const deductions = valuation.deductions ?? [];
     const isDraft = valuation.status === 'draft';
     const canUpdate = hasPermission(auth.user, 'valuations', 'update');
+    const canDelete = hasPermission(auth.user, 'valuations', 'delete-soft');
     const canApprove = hasPermission(auth.user, 'valuations', 'approve');
     const ipcLabel = `IPC-${valuation.certificate_no}`;
 
@@ -35,6 +36,17 @@ export default function ValuationsShow() {
             return;
         }
         router.post(`/valuations/${valuation.id}/certify`);
+    }
+
+    function destroy() {
+        if (
+            !confirm(
+                `Archive ${ipcLabel}? Its compliance will be removed from the project net budget.`,
+            )
+        ) {
+            return;
+        }
+        router.delete(`/projects/${project.id}/valuations/${valuation.id}`);
     }
 
     return (
@@ -55,6 +67,15 @@ export default function ValuationsShow() {
                                 >
                                     <Button variant="outline">Edit</Button>
                                 </Link>
+                            )}
+                            {isDraft && canDelete && (
+                                <Button
+                                    variant="outline"
+                                    className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                                    onClick={destroy}
+                                >
+                                    Delete
+                                </Button>
                             )}
                             {isDraft && canApprove && (
                                 <Button onClick={certify}>Certify</Button>

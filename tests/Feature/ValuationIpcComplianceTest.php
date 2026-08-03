@@ -252,4 +252,77 @@ class ValuationIpcComplianceTest extends TestCase
         $this->assertCount(2, $valuation->deductions);
         $this->assertSame('948000.00', (string) Project::findOrFail($projectId)->net_budget);
     }
+
+    public function test_draft_ipc_can_be_deleted_and_net_budget_restored(): void
+    {
+        $this->loginAsTenantAdmin();
+        $projectId = $this->createProject('DEL-IPC');
+        $rules = $this->createRules();
+
+        $this->post("/projects/{$projectId}/valuations", [
+            'compliance_items' => [
+                [
+                    'compliance_rule_id' => $rules['retention'],
+                    'calculation_type' => 'rate_percent',
+                    'rate' => '10',
+                ],
+            ],
+        ])->assertRedirect();
+
+        $this->post("/projects/{$projectId}/valuations", [
+            'compliance_items' => [
+                [
+                    'compliance_rule_id' => $rules['material'],
+                    'calculation_type' => 'fixed_amount',
+                    'fixed_amount' => '5000',
+                ],
+            ],
+        ])->assertRedirect();
+
+        tenancy()->initialize(Tenant::where('slug', 'ipc-co')->firstOrFail());
+        $this->assertSame('895000.00', (string) Project::findOrFail($projectId)->net_budget);
+        $firstId = (int) Valuation::where('project_id', $projectId)->where('certificate_no', 1)->value('id');
+        tenancy()->end();
+
+        $this->delete("/projects/{$projectId}/valuations/{$firstId}")
+            ->assertRedirect("/projects/{$projectId}/valuations");
+
+        tenancy()->initialize(Tenant::where('slug', 'ipc-co')->firstOrFail());
+        $this->assertSoftDeleted('valuations', ['id' => $firstId]);
+        $this->assertSame(1, Valuation::where('project_id', $projectId)->count());
+        $this->assertSame('995000.00', (string) Project::findOrFail($projectId)->net_budget);
+    }
+
+    public function test_certified_ipc_cannot_be_deleted(): void
+    {
+        $this->loginAsTenantAdmin();
+        $projectId = $this->createProject('CERT-DEL');
+        $rules = $this->createRules();
+
+        $this->post("/projects/{$projectId}/valuations", [
+            'compliance_items' => [
+                [
+                    'compliance_rule_id' => $rules['retention'],
+                    'calculation_type' => 'rate_percent',
+                    'rate' => '10',
+                ],
+            ],
+        ])->assertRedirect();
+
+        tenancy()->initialize(Tenant::where('slug', 'ipc-co')->firstOrFail());
+        $valuation = Valuation::where('project_id', $projectId)->firstOrFail();
+        $valuationId = $valuation->id;
+        tenancy()->end();
+
+        $this->post("/valuations/{$valuationId}/certify")->assertRedirect();
+
+        $this->from("/projects/{$projectId}/valuations/{$valuationId}")
+            ->delete("/projects/{$projectId}/valuations/{$valuationId}")
+            ->assertRedirect("/projects/{$projectId}/valuations/{$valuationId}")
+            ->assertSessionHasErrors('status');
+
+        tenancy()->initialize(Tenant::where('slug', 'ipc-co')->firstOrFail());
+        $this->assertDatabaseHas('valuations', ['id' => $valuationId, 'deleted_at' => null]);
+        $this->assertSame('900000.00', (string) Project::findOrFail($projectId)->net_budget);
+    }
 }

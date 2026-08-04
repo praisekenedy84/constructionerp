@@ -12,6 +12,7 @@ import {
     FulfillmentType,
     InventoryItem,
     PageProps,
+    Position,
     Project,
     Requisition,
     RequisitionAddressedTo,
@@ -31,6 +32,7 @@ interface RequisitionsCreateProps extends PageProps {
     inventoryItems: InventoryItem[];
     categories: RequisitionCategory[];
     departments: Department[];
+    positions: Position[];
     requisition?: Requisition;
 }
 
@@ -98,7 +100,7 @@ function lineEstimate(item: LineItemForm): number {
 }
 
 export default function RequisitionsCreate() {
-    const { projects, boqItems, inventoryItems, categories, departments, requisition } =
+    const { projects, boqItems, inventoryItems, categories, departments, positions, requisition } =
         usePage<RequisitionsCreateProps>().props;
     const isEditing = Boolean(requisition);
 
@@ -110,6 +112,10 @@ export default function RequisitionsCreate() {
         departments.find((department) => department.id === requisition?.department_id) ??
         departments.find((department) => department.name === requisition?.department) ??
         departments[0] ??
+        null;
+    const initialPosition =
+        positions.find((position) => position.id === requisition?.position_id) ??
+        positions.find((position) => position.name === requisition?.recipient_position) ??
         null;
     const initialAddressedTo = (requisition?.addressed_to ?? 'finance') as RequisitionAddressedTo;
 
@@ -127,7 +133,7 @@ export default function RequisitionsCreate() {
         fulfillment_type: (requisition?.fulfillment_type ??
             defaultFulfillment(initialAddressedTo)) as FulfillmentType,
         recipient_name: requisition?.recipient_name ?? '',
-        recipient_position: requisition?.recipient_position ?? '',
+        position_id: initialPosition ? String(initialPosition.id) : '',
         items:
             requisition?.items && requisition.items.length > 0
                 ? requisition.items.map(lineFromItem)
@@ -142,7 +148,7 @@ export default function RequisitionsCreate() {
         addressed_to: form.addressed_to,
         fulfillment_type: form.fulfillment_type,
         recipient_name: form.recipient_name.trim() || null,
-        recipient_position: form.recipient_position.trim() || null,
+        position_id: form.position_id || null,
         items: form.items.map((item) => ({
             inventory_item_id:
                 item.source === 'catalog' && item.inventory_item_id ? item.inventory_item_id : null,
@@ -437,18 +443,32 @@ export default function RequisitionsCreate() {
                                         )}
                                     </div>
                                     <div className="space-y-2">
-                                        <Label htmlFor="recipient_position">
-                                            Recipient position
-                                        </Label>
-                                        <Input
-                                            id="recipient_position"
-                                            value={data.recipient_position}
-                                            onChange={(e) =>
-                                                setData('recipient_position', e.target.value)
-                                            }
-                                            placeholder="e.g. Site Foreman"
-                                        />
-                                        {errors.recipient_position && (
+                                        <Label htmlFor="position_id">Recipient position</Label>
+                                        <select
+                                            id="position_id"
+                                            className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                                            value={data.position_id}
+                                            onChange={(e) => setData('position_id', e.target.value)}
+                                        >
+                                            <option value="">No position selected</option>
+                                            {positions.length === 0 && (
+                                                <option value="" disabled>
+                                                    No positions defined
+                                                </option>
+                                            )}
+                                            {positions.map((position) => (
+                                                <option key={position.id} value={position.id}>
+                                                    {position.name}
+                                                    {!position.is_active ? ' (inactive)' : ''}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        {errors.position_id && (
+                                            <p className="text-sm text-red-600">
+                                                {errors.position_id}
+                                            </p>
+                                        )}
+                                        {errors.recipient_position && !errors.position_id && (
                                             <p className="text-sm text-red-600">
                                                 {errors.recipient_position}
                                             </p>

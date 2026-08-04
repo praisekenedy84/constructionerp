@@ -8,6 +8,7 @@ use App\Http\Requests\UpdateProjectRequest;
 use App\Models\ComplianceRule;
 use App\Models\Project;
 use App\Services\BudgetService;
+use App\Services\PhaseService;
 use App\Services\ValuationService;
 use App\Support\ListingQuery;
 use Illuminate\Http\RedirectResponse;
@@ -21,6 +22,7 @@ class ProjectController extends Controller
     public function __construct(
         private BudgetService $budgetService,
         private ValuationService $valuationService,
+        private PhaseService $phaseService,
     ) {}
 
     public function index(Request $request): Response
@@ -65,14 +67,28 @@ class ProjectController extends Controller
 
         $validated = $request->validated();
         $ipcs = $validated['ipcs'] ?? [];
-        unset($validated['ipcs']);
+        $initialPhaseName = $validated['initial_phase_name'] ?? 'Phase 1';
+        $initialPhaseDisbursed = $validated['initial_phase_disbursed_amount'] ?? null;
+        unset($validated['ipcs'], $validated['initial_phase_name'], $validated['initial_phase_disbursed_amount']);
 
-        $project = DB::transaction(function () use ($request, $validated, $ipcs) {
+        $project = DB::transaction(function () use ($request, $validated, $ipcs, $initialPhaseName, $initialPhaseDisbursed) {
             $project = $this->persistProject(new Project(), $validated);
+            $phase = null;
+
+            $shouldCreatePhase = ($initialPhaseDisbursed !== null && $initialPhaseDisbursed !== '')
+                || $ipcs !== [];
+
+            if ($shouldCreatePhase) {
+                $phase = $this->phaseService->create($project, [
+                    'name' => $initialPhaseName ?: 'Phase 1',
+                    'disbursed_amount' => (string) ($initialPhaseDisbursed ?: $project->contract_amount),
+                ]);
+            }
 
             foreach ($ipcs as $ipc) {
                 $this->valuationService->create(
                     $project,
+                    $phase,
                     $ipc['compliance_items'] ?? [],
                     $request->user(),
                 );
@@ -84,9 +100,11 @@ class ProjectController extends Controller
         session(['current_project_id' => $project->id]);
 
         $ipcCount = count($ipcs);
-        $message = $ipcCount > 0
-            ? "Project created with {$ipcCount} IPC".($ipcCount === 1 ? '' : 's').'.'
-            : 'Project created successfully.';
+        $message = match (true) {
+            $ipcCount > 0 => "Project created with Phase 1 and {$ipcCount} IPC".($ipcCount === 1 ? '' : 's').'.',
+            $initialPhaseDisbursed !== null && $initialPhaseDisbursed !== '' => 'Project created with Phase 1 disbursement.',
+            default => 'Project created successfully.',
+        };
 
         return redirect()
             ->route('projects.show', $project->id)
@@ -99,6 +117,20 @@ class ProjectController extends Controller
 
         return Inertia::render('Projects/Show', [
             'project' => $this->withBudgetSummary($project),
+            'phases' => $project->phases()
+                ->withCount('valuations')
+                ->orderBy('sequence_no')
+                ->get(),
+            'available_rules' => ComplianceRule::active()
+                ->orderBy('name')
+                ->get(['id', 'name', 'description'])
+                ->map(fn (ComplianceRule $rule) => [
+                    'id' => $rule->id,
+                    'name' => $rule->name,
+                    'description' => $rule->description,
+                ])
+                ->values()
+                ->all(),
         ]);
     }
 
@@ -132,7 +164,7 @@ class ProjectController extends Controller
 
         DB::transaction(function () use ($request, $project) {
             $this->persistProject($project, $request->validated());
-            // Rate-% rules are based on contract; recalculate IPC amounts when it changes.
+            // Rate-% rules are based on phase disbursement; still recalculate if project setup changes.
             $this->valuationService->recalculateProjectIpcs($project->fresh());
         });
 
@@ -193,9 +225,9 @@ class ProjectController extends Controller
      */
     private function persistProject(Project $project, array $attributes): Project
     {
-        // Net budget starts as the full contract; IPC compliance deductions adjust it later.
+        // Net budget starts at 0 and grows with phase disbursements/releases.
         if (! $project->exists) {
-            $attributes['net_budget'] = bcadd((string) $attributes['contract_amount'], '0', 2);
+            $attributes['net_budget'] = '0.00';
         }
 
         $project->fill($attributes)->save();

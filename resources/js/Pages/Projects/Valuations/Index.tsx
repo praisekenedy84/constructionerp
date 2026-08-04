@@ -7,7 +7,7 @@ import StatusBadge from '@/Components/Shared/StatusBadge';
 import { Button } from '@/Components/ui/button';
 import { formatCurrency, formatDate } from '@/lib/formatters';
 import { hasPermission } from '@/lib/permissions';
-import { ListingFilters, PageProps, Paginated, Project, Valuation } from '@/types';
+import { ListingFilters, PageProps, Paginated, Project, ProjectPhase, Valuation } from '@/types';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 
@@ -20,11 +20,13 @@ interface ValuationsIndexProps extends PageProps {
         total_compliance: string;
         net_project_amount: string;
     };
+    phases: ProjectPhase[];
 }
 
 export default function ValuationsIndex() {
-    const { project, valuations, filters, summary, auth } =
+    const { project, valuations, filters, summary, auth, phases } =
         usePage<ValuationsIndexProps>().props;
+    const phaseMap = new Map(phases.map((phase) => [phase.id, phase]));
     const rows = valuations.data ?? [];
     const canUpdate = hasPermission(auth.user, 'valuations', 'update');
     const canDelete = hasPermission(auth.user, 'valuations', 'delete-soft');
@@ -69,7 +71,7 @@ export default function ValuationsIndex() {
                     </div>
                     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                         <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                            Sum of IPCs&apos; compliance
+                            Sum of IPCs&apos; deductions
                         </p>
                         <p className="mt-1 text-lg font-semibold text-red-600">
                             −{formatCurrency(summary.total_compliance)}
@@ -83,7 +85,7 @@ export default function ValuationsIndex() {
                             {formatCurrency(summary.net_project_amount)}
                         </p>
                         <p className="mt-1 text-xs text-slate-500">
-                            Contract − Sum of IPCs&apos; compliance rules
+                            Dynamic budget from phase disbursements and retention status
                         </p>
                     </div>
                 </div>
@@ -107,6 +109,7 @@ export default function ValuationsIndex() {
                                 <th className="px-6 py-3 text-right font-medium">
                                     Total compliance rules
                                 </th>
+                                <th className="px-6 py-3 font-medium">Phase</th>
                                 <th className="px-6 py-3 font-medium">Rules</th>
                                 <th className="px-6 py-3 font-medium">Status</th>
                                 <th className="px-6 py-3 font-medium">Created</th>
@@ -116,7 +119,7 @@ export default function ValuationsIndex() {
                         <tbody className="divide-y divide-slate-100">
                             {rows.length === 0 ? (
                                 <tr>
-                                    <td colSpan={6} className="px-6 py-12 text-center text-slate-500">
+                                    <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
                                         No IPCs yet. Add IPC-1 and enter its compliance rules.
                                     </td>
                                 </tr>
@@ -136,6 +139,11 @@ export default function ValuationsIndex() {
                                             </td>
                                             <td className="px-6 py-4 text-right font-medium text-red-600">
                                                 −{formatCurrency(val.total_deductions)}
+                                            </td>
+                                            <td className="px-6 py-4 text-slate-600">
+                                                {phaseMap.get(val.phase_id)
+                                                    ? `Phase ${phaseMap.get(val.phase_id)?.sequence_no}`
+                                                    : '—'}
                                             </td>
                                             <td className="px-6 py-4 text-slate-600">
                                                 {val.deductions?.length ?? 0} rule

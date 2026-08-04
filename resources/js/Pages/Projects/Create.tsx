@@ -27,6 +27,8 @@ export default function ProjectsCreate() {
                 start_date: '',
                 end_date: '',
                 status: 'planning',
+                initial_phase_name: 'Phase 1',
+                initial_phase_disbursed_amount: '',
                 ipcs: [{ compliance_items: [emptyComplianceItem()] }],
             }}
         />

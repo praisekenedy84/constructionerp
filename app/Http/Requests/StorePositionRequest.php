@@ -2,11 +2,9 @@
 
 namespace App\Http\Requests;
 
-use App\Enums\ComplianceRuleType;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 
-class StoreComplianceRuleRequest extends FormRequest
+class StorePositionRequest extends FormRequest
 {
     public function authorize(): bool
     {
@@ -20,18 +18,18 @@ class StoreComplianceRuleRequest extends FormRequest
             'description' => $this->filled('description')
                 ? trim((string) $this->input('description'))
                 : null,
-            'rule_type' => (string) $this->input('rule_type', ComplianceRuleType::Other->value),
             'is_active' => filter_var($this->input('is_active', true), FILTER_VALIDATE_BOOLEAN),
+            'sort_order' => $this->filled('sort_order') ? (int) $this->input('sort_order') : 0,
         ]);
     }
 
     public function rules(): array
     {
         return [
-            'name' => ['required', 'string', 'max:255', 'unique:compliance_rules,name'],
+            'name' => ['required', 'string', 'max:255', 'unique:positions,name'],
             'description' => ['nullable', 'string', 'max:1000'],
-            'rule_type' => ['required', Rule::enum(ComplianceRuleType::class)],
             'is_active' => ['boolean'],
+            'sort_order' => ['integer', 'min:0', 'max:9999'],
         ];
     }
 }

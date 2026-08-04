@@ -15,6 +15,7 @@ class Valuation extends Model
 
     protected $fillable = [
         'project_id',
+        'phase_id',
         'certificate_no',
         'gross_value',
         'total_deductions',
@@ -40,6 +41,11 @@ class Valuation extends Model
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class);
+    }
+
+    public function phase(): BelongsTo
+    {
+        return $this->belongsTo(ProjectPhase::class, 'phase_id');
     }
 
     public function creator(): BelongsTo

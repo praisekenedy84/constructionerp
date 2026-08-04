@@ -174,6 +174,11 @@ class Project extends Model
         return $this->hasMany(Valuation::class);
     }
 
+    public function phases(): HasMany
+    {
+        return $this->hasMany(ProjectPhase::class);
+    }
+
     public function workflowConfigs(): HasMany
     {
         return $this->hasMany(WorkflowConfig::class);

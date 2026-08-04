@@ -6,6 +6,7 @@ use App\Enums\FulfillmentType;
 use App\Enums\RequisitionAddressedTo;
 use App\Enums\RequisitionResourceType;
 use App\Models\Department;
+use App\Models\Position;
 use App\Models\Requisition;
 use App\Models\RequisitionCategory;
 use Illuminate\Foundation\Http\FormRequest;
@@ -34,6 +35,7 @@ class StoreRequisitionRequest extends FormRequest
         $fulfillmentType = $this->input('fulfillment_type');
         $categoryId = $this->input('requisition_category_id') ?: null;
         $departmentId = $this->input('department_id') ?: null;
+        $positionId = $this->input('position_id') ?: null;
 
         // Legacy posts that only sent a free-text department: map / create a department row.
         if (! $departmentId && $this->filled('department')) {
@@ -56,6 +58,29 @@ class StoreRequisitionRequest extends FormRequest
         $departmentName = null;
         if ($departmentId) {
             $departmentName = Department::query()->whereKey($departmentId)->value('name');
+        }
+
+        // Legacy posts that only sent a free-text position: map / create a position row.
+        if (! $positionId && $this->filled('recipient_position')) {
+            $name = trim((string) $this->input('recipient_position'));
+            if ($name !== '') {
+                $positionId = Position::query()
+                    ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
+                    ->value('id');
+
+                if (! $positionId) {
+                    $positionId = Position::query()->create([
+                        'name' => $name,
+                        'is_active' => true,
+                        'sort_order' => 0,
+                    ])->id;
+                }
+            }
+        }
+
+        $recipientPosition = null;
+        if ($positionId) {
+            $recipientPosition = Position::query()->whereKey($positionId)->value('name');
         }
 
         // Legacy posts that only sent resource_type: map to a matching category name.
@@ -93,9 +118,6 @@ class StoreRequisitionRequest extends FormRequest
         $recipientName = $this->filled('recipient_name')
             ? trim((string) $this->input('recipient_name'))
             : null;
-        $recipientPosition = $this->filled('recipient_position')
-            ? trim((string) $this->input('recipient_position'))
-            : null;
 
         $this->merge([
             'project_id' => $this->input('project_id') ?: null,
@@ -110,7 +132,8 @@ class StoreRequisitionRequest extends FormRequest
             'addressed_to' => $addressedTo,
             'fulfillment_type' => $fulfillmentType,
             'recipient_name' => $recipientName !== '' ? $recipientName : null,
-            'recipient_position' => $recipientPosition !== '' ? $recipientPosition : null,
+            'position_id' => $positionId,
+            'recipient_position' => $recipientPosition,
             'items' => $items,
         ]);
     }
@@ -127,6 +150,7 @@ class StoreRequisitionRequest extends FormRequest
             'addressed_to' => ['required', Rule::enum(RequisitionAddressedTo::class)],
             'fulfillment_type' => ['required', Rule::enum(FulfillmentType::class)],
             'recipient_name' => ['nullable', 'string', 'max:255'],
+            'position_id' => ['nullable', 'integer', 'exists:positions,id'],
             'recipient_position' => ['nullable', 'string', 'max:255'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.boq_item_id' => ['nullable', 'integer', 'exists:boq_items,id'],
@@ -161,6 +185,24 @@ class StoreRequisitionRequest extends FormRequest
                         $validator->errors()->add(
                             'department_id',
                             'Select an active department.'
+                        );
+                    }
+                }
+            }
+
+            $positionId = (int) $this->input('position_id');
+            if ($positionId > 0) {
+                $position = Position::query()->find($positionId);
+                if ($position && ! $position->is_active) {
+                    $requisitionId = $this->route('id');
+                    $existingPositionId = $requisitionId
+                        ? Requisition::query()->whereKey($requisitionId)->value('position_id')
+                        : null;
+
+                    if ((int) $existingPositionId !== $positionId) {
+                        $validator->errors()->add(
+                            'position_id',
+                            'Select an active position.'
                         );
                     }
                 }

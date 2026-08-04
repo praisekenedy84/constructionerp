@@ -321,4 +321,55 @@ class FlexibleRequisitionTest extends TestCase
             $this->assertSame('Skilled masons', $req->items[1]->description);
         });
     }
+
+    public function test_new_requisition_number_skips_soft_deleted_numbers(): void
+    {
+        $this->seedTenant();
+
+        $year = now()->year;
+        $softDeletedNo = sprintf('REQ-%d-00006', $year);
+
+        $tenant = Tenant::where('slug', 'flexible-req-co')->firstOrFail();
+        $tenant->run(function () use ($softDeletedNo) {
+            $req = Requisition::create([
+                'requisition_no' => $softDeletedNo,
+                'project_id' => 1,
+                'department' => 'Site',
+                'resource_type' => 'other',
+                'requestor_id' => 1,
+                'status' => RequisitionStatus::Draft,
+                'fulfillment_type' => 'cash_disbursement',
+                'addressed_to' => 'finance',
+                'original_amount' => '100.00',
+            ]);
+            $req->delete();
+        });
+        tenancy()->end();
+
+        $this->post('/login', [
+            'email' => 'engineer@flexible.local',
+            'password' => 'password',
+        ])->assertRedirect();
+
+        $this->post('/requisitions', [
+            'project_id' => 1,
+            'department' => 'Site',
+            'fulfillment_type' => 'cash_disbursement',
+            'addressed_to' => 'finance',
+            'items' => [
+                [
+                    'description' => 'After soft-deleted number',
+                    'unit' => 'lump',
+                    'quantity' => '1',
+                    'unit_cost' => '1000',
+                ],
+            ],
+        ])->assertRedirect();
+
+        $tenant->run(function () use ($year, $softDeletedNo) {
+            $this->assertNotNull(Requisition::withTrashed()->where('requisition_no', $softDeletedNo)->first());
+            $created = Requisition::whereNull('deleted_at')->latest('id')->firstOrFail();
+            $this->assertSame(sprintf('REQ-%d-00007', $year), $created->requisition_no);
+        });
+    }
 }

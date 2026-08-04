@@ -188,6 +188,7 @@ class MenuConfigurationTest extends TestCase
                             'Requisition List',
                             'Categories',
                             'Departments',
+                            'Positions',
                             'Review Queue',
                             'Fulfill Queue',
                             'Fulfilled List',
@@ -197,6 +198,7 @@ class MenuConfigurationTest extends TestCase
                             '/requisitions',
                             '/requisitions/categories',
                             '/requisitions/departments',
+                            '/requisitions/positions',
                             '/requisitions/review-queue',
                             '/requisitions/fulfill-queue',
                             '/requisitions/fulfilled',
@@ -242,6 +244,7 @@ class MenuConfigurationTest extends TestCase
                         '/requisitions',
                         '/requisitions/categories',
                         '/requisitions/departments',
+                        '/requisitions/positions',
                         '/requisitions/fulfilled',
                     ];
                 })
@@ -342,6 +345,7 @@ class MenuConfigurationTest extends TestCase
                     'requisitions.new',
                     'requisitions.categories',
                     'requisitions.departments',
+                    'requisitions.positions',
                     'requisitions.review_queue',
                     'requisitions.fulfill_queue',
                     'requisitions.fulfilled',

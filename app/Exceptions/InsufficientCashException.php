@@ -12,7 +12,7 @@ class InsufficientCashException extends Exception
         ?string $remedy = null,
         string $poolLabel = 'cash on hand',
     ) {
-        $remedy ??= 'Amend the requisition down to available cash, or request additional funds.';
+        $remedy ??= 'Amend the requisition down to available cash, or reject it. Approved requests cannot be amended later.';
 
         parent::__construct(
             "Insufficient {$poolLabel}. Required: {$required}, Available: {$available}. {$remedy}"

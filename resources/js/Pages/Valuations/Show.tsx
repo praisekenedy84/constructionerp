@@ -5,7 +5,7 @@ import StatusBadge from '@/Components/Shared/StatusBadge';
 import { Button } from '@/Components/ui/button';
 import { formatCurrency, formatDate } from '@/lib/formatters';
 import { hasPermission } from '@/lib/permissions';
-import { PageProps, Project, Valuation, ValuationDeduction } from '@/types';
+import { PageProps, Project, ProjectPhase, Valuation, ValuationDeduction } from '@/types';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 
 interface ValuationsShowProps extends PageProps {
@@ -20,10 +20,12 @@ interface ValuationsShowProps extends PageProps {
         total_compliance: string;
         net_project_amount: string;
     };
+    phases?: ProjectPhase[];
 }
 
 export default function ValuationsShow() {
-    const { project, valuation, summary, auth } = usePage<ValuationsShowProps>().props;
+    const { project, valuation, summary, auth, phases = [] } = usePage<ValuationsShowProps>().props;
+    const phase = phases.find((entry) => entry.id === valuation.phase_id);
     const deductions = valuation.deductions ?? [];
     const isDraft = valuation.status === 'draft';
     const canUpdate = hasPermission(auth.user, 'valuations', 'update');
@@ -114,6 +116,12 @@ export default function ValuationsShow() {
                 <DataPanel title="Certificate">
                     <dl className="grid gap-4 text-sm sm:grid-cols-2">
                         <div>
+                            <dt className="text-slate-500">Phase</dt>
+                            <dd className="mt-1 font-medium">
+                                {phase ? `Phase ${phase.sequence_no}: ${phase.name}` : '—'}
+                            </dd>
+                        </div>
+                        <div>
                             <dt className="text-slate-500">Status</dt>
                             <dd className="mt-1">
                                 <StatusBadge status={String(valuation.status)} />
@@ -166,7 +174,7 @@ export default function ValuationsShow() {
                                         <td className="px-6 py-3 text-slate-600">
                                             {d.calculation_type === 'fixed_amount'
                                                 ? `Fixed ${formatCurrency(d.fixed_amount)}`
-                                                : `${d.rate}% of contract`}
+                                                : `${d.rate}% of phase disbursed amount`}
                                         </td>
                                         <td className="px-6 py-3 text-right text-red-600">
                                             −{formatCurrency(d.amount)}

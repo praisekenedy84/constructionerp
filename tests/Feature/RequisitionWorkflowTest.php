@@ -370,6 +370,7 @@ class RequisitionWorkflowTest extends TestCase
         $this->get('/requisitions/review-queue')->assertInertia(fn ($page) => $page
             ->component('Requisitions/Review')
             ->has('approvalSteps.data', 1)
+            ->has('cashByRequisitionId')
         );
     }
 }

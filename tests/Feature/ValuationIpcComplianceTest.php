@@ -3,8 +3,10 @@
 namespace Tests\Feature;
 
 use App\Models\ComplianceRule;
+use App\Models\CashAllocation;
 use App\Models\Expense;
 use App\Models\Project;
+use App\Models\ProjectPhase;
 use App\Models\Tenant;
 use App\Models\Valuation;
 use App\Models\ValuationDeduction;
@@ -40,6 +42,20 @@ class ValuationIpcComplianceTest extends TestCase
         return $tenant;
     }
 
+    private function createPhase(int $projectId, string $amount, string $name = 'Phase 1'): int
+    {
+        $this->post("/projects/{$projectId}/phases", [
+            'name' => $name,
+            'disbursed_amount' => $amount,
+        ])->assertRedirect();
+
+        tenancy()->initialize(Tenant::where('slug', 'ipc-co')->firstOrFail());
+        $id = (int) ProjectPhase::where('project_id', $projectId)->where('name', $name)->value('id');
+        tenancy()->end();
+
+        return $id;
+    }
+
     private function createProject(string $code = 'IPC-PRJ', string $contract = '1000000'): int
     {
         $this->post('/projects', [
@@ -68,26 +84,31 @@ class ValuationIpcComplianceTest extends TestCase
         $this->post('/projects/compliance-rules', [
             'name' => 'Retention',
             'description' => 'Retention deduction',
+            'rule_type' => 'retention',
             'is_active' => true,
         ])->assertRedirect();
 
         $this->post('/projects/compliance-rules', [
             'name' => 'Material test fee',
+            'rule_type' => 'material_test',
             'is_active' => true,
         ])->assertRedirect();
 
         $this->post('/projects/compliance-rules', [
             'name' => 'Advance recovery',
+            'rule_type' => 'advance_recovery',
             'is_active' => true,
         ])->assertRedirect();
 
         $this->post('/projects/compliance-rules', [
             'name' => 'WHT',
+            'rule_type' => 'wht',
             'is_active' => true,
         ])->assertRedirect();
 
         $this->post('/projects/compliance-rules', [
             'name' => 'Site lab',
+            'rule_type' => 'other',
             'is_active' => true,
         ])->assertRedirect();
 
@@ -111,20 +132,27 @@ class ValuationIpcComplianceTest extends TestCase
         $this->post('/projects/compliance-rules', [
             'name' => 'Retention',
             'description' => 'Standard retention',
+            'rule_type' => 'retention',
             'is_active' => true,
         ])->assertRedirect();
 
         tenancy()->initialize(Tenant::where('slug', 'ipc-co')->firstOrFail());
-        $this->assertDatabaseHas('compliance_rules', ['name' => 'Retention', 'is_active' => 1]);
+        $this->assertDatabaseHas('compliance_rules', [
+            'name' => 'Retention',
+            'rule_type' => 'retention',
+            'is_active' => 1,
+        ]);
     }
 
     public function test_ipc_stores_user_filled_rate_and_fixed_compliance_and_reduces_net_budget(): void
     {
         $this->loginAsTenantAdmin();
         $projectId = $this->createProject();
+        $phaseId = $this->createPhase($projectId, '1000000');
         $rules = $this->createRules();
 
         $this->post("/projects/{$projectId}/valuations", [
+            'phase_id' => $phaseId,
             'compliance_items' => [
                 [
                     'compliance_rule_id' => $rules['retention'],
@@ -176,9 +204,11 @@ class ValuationIpcComplianceTest extends TestCase
     {
         $this->loginAsTenantAdmin();
         $projectId = $this->createProject('MULTI-IPC', '500000');
+        $phaseId = $this->createPhase($projectId, '500000');
         $rules = $this->createRules();
 
         $this->post("/projects/{$projectId}/valuations", [
+            'phase_id' => $phaseId,
             'compliance_items' => [
                 [
                     'compliance_rule_id' => $rules['retention'],
@@ -189,6 +219,7 @@ class ValuationIpcComplianceTest extends TestCase
         ])->assertRedirect();
 
         $this->post("/projects/{$projectId}/valuations", [
+            'phase_id' => $phaseId,
             'compliance_items' => [
                 [
                     'compliance_rule_id' => $rules['advance'],
@@ -209,10 +240,12 @@ class ValuationIpcComplianceTest extends TestCase
     {
         $this->loginAsTenantAdmin();
         $projectId = $this->createProject('FAIL-IPC');
+        $phaseId = $this->createPhase($projectId, '1000000');
         $rules = $this->createRules();
 
         $this->from("/projects/{$projectId}/valuations/create")
             ->post("/projects/{$projectId}/valuations", [
+                'phase_id' => $phaseId,
                 'compliance_items' => [
                     [
                         'compliance_rule_id' => $rules['retention'],
@@ -229,9 +262,11 @@ class ValuationIpcComplianceTest extends TestCase
     {
         $this->loginAsTenantAdmin();
         $projectId = $this->createProject('EDIT-IPC');
+        $phaseId = $this->createPhase($projectId, '1000000');
         $rules = $this->createRules();
 
         $this->post("/projects/{$projectId}/valuations", [
+            'phase_id' => $phaseId,
             'compliance_items' => [
                 [
                     'compliance_rule_id' => $rules['retention'],
@@ -246,6 +281,7 @@ class ValuationIpcComplianceTest extends TestCase
         tenancy()->end();
 
         $this->put("/projects/{$projectId}/valuations/{$valuationId}", [
+            'phase_id' => $phaseId,
             'compliance_items' => [
                 [
                     'compliance_rule_id' => $rules['wht'],
@@ -277,9 +313,11 @@ class ValuationIpcComplianceTest extends TestCase
     {
         $this->loginAsTenantAdmin();
         $projectId = $this->createProject('DEL-IPC');
+        $phaseId = $this->createPhase($projectId, '1000000');
         $rules = $this->createRules();
 
         $this->post("/projects/{$projectId}/valuations", [
+            'phase_id' => $phaseId,
             'compliance_items' => [
                 [
                     'compliance_rule_id' => $rules['retention'],
@@ -290,6 +328,7 @@ class ValuationIpcComplianceTest extends TestCase
         ])->assertRedirect();
 
         $this->post("/projects/{$projectId}/valuations", [
+            'phase_id' => $phaseId,
             'compliance_items' => [
                 [
                     'compliance_rule_id' => $rules['material'],
@@ -319,9 +358,11 @@ class ValuationIpcComplianceTest extends TestCase
     {
         $this->loginAsTenantAdmin();
         $projectId = $this->createProject('CERT-DEL');
+        $phaseId = $this->createPhase($projectId, '1000000');
         $rules = $this->createRules();
 
         $this->post("/projects/{$projectId}/valuations", [
+            'phase_id' => $phaseId,
             'compliance_items' => [
                 [
                     'compliance_rule_id' => $rules['retention'],
@@ -346,5 +387,108 @@ class ValuationIpcComplianceTest extends TestCase
         tenancy()->initialize(Tenant::where('slug', 'ipc-co')->firstOrFail());
         $this->assertDatabaseHas('valuations', ['id' => $valuationId, 'deleted_at' => null]);
         $this->assertSame('900000.00', (string) Project::findOrFail($projectId)->net_budget);
+    }
+
+    public function test_releasing_retention_adds_held_amount_back_to_budget(): void
+    {
+        $this->loginAsTenantAdmin();
+        $projectId = $this->createProject('REL-RET');
+        $phaseId = $this->createPhase($projectId, '1000000');
+        $rules = $this->createRules();
+
+        $this->post("/projects/{$projectId}/valuations", [
+            'phase_id' => $phaseId,
+            'compliance_items' => [[
+                'compliance_rule_id' => $rules['retention'],
+                'calculation_type' => 'rate_percent',
+                'rate' => '10',
+            ]],
+        ])->assertRedirect();
+
+        $this->post("/projects/{$projectId}/phases/{$phaseId}/retention/release")
+            ->assertRedirect();
+
+        tenancy()->initialize(Tenant::where('slug', 'ipc-co')->firstOrFail());
+        $project = Project::findOrFail($projectId);
+        $phase = ProjectPhase::findOrFail($phaseId);
+        $this->assertSame('1000000.00', (string) $project->net_budget);
+        $this->assertSame('0.00', (string) $phase->retention_held_amount);
+        $this->assertSame('100000.00', (string) $phase->retention_released_amount);
+    }
+
+    public function test_forfeiting_retention_keeps_budget_reduced(): void
+    {
+        $this->loginAsTenantAdmin();
+        $projectId = $this->createProject('FOR-RET');
+        $phaseId = $this->createPhase($projectId, '1000000');
+        $rules = $this->createRules();
+
+        $this->post("/projects/{$projectId}/valuations", [
+            'phase_id' => $phaseId,
+            'compliance_items' => [[
+                'compliance_rule_id' => $rules['retention'],
+                'calculation_type' => 'rate_percent',
+                'rate' => '10',
+            ]],
+        ])->assertRedirect();
+
+        $this->post("/projects/{$projectId}/phases/{$phaseId}/retention/forfeit")
+            ->assertRedirect();
+
+        tenancy()->initialize(Tenant::where('slug', 'ipc-co')->firstOrFail());
+        $project = Project::findOrFail($projectId);
+        $phase = ProjectPhase::findOrFail($phaseId);
+        $this->assertSame('900000.00', (string) $project->net_budget);
+        $this->assertSame('0.00', (string) $phase->retention_held_amount);
+        $this->assertSame('100000.00', (string) $phase->retention_forfeited_amount);
+    }
+
+    public function test_adding_phase_can_include_ipcs_for_that_phase(): void
+    {
+        $this->loginAsTenantAdmin();
+        $projectId = $this->createProject('PHASE-IPCS', '1000000');
+        $rules = $this->createRules();
+
+        $this->post("/projects/{$projectId}/phases", [
+            'name' => 'Phase 2 Batch',
+            'disbursed_amount' => '300000',
+            'ipcs' => [
+                [
+                    'compliance_items' => [
+                        [
+                            'compliance_rule_id' => $rules['retention'],
+                            'calculation_type' => 'rate_percent',
+                            'rate' => '10',
+                        ],
+                    ],
+                ],
+            ],
+        ])->assertRedirect();
+
+        tenancy()->initialize(Tenant::where('slug', 'ipc-co')->firstOrFail());
+        $phase = ProjectPhase::where('project_id', $projectId)->where('name', 'Phase 2 Batch')->firstOrFail();
+        $this->assertSame('300000.00', (string) $phase->disbursed_amount);
+        $this->assertSame(1, Valuation::where('phase_id', $phase->id)->count());
+        // 300,000 − 10% retention = 270,000
+        $this->assertSame('270000.00', (string) Project::findOrFail($projectId)->net_budget);
+    }
+
+    public function test_finance_approval_is_blocked_when_phase_budget_not_yet_disbursed(): void
+    {
+        $this->loginAsTenantAdmin();
+        $projectId = $this->createProject('NO-DISB-PHASE');
+
+        $this->post('/finance/cash-requests', [
+            'project_id' => $projectId,
+            'requested_amount' => '20000',
+        ])->assertRedirect();
+
+        tenancy()->initialize(Tenant::where('slug', 'ipc-co')->firstOrFail());
+        $allocationId = (int) CashAllocation::where('project_id', $projectId)->latest('id')->value('id');
+        tenancy()->end();
+
+        $this->post("/finance/cash-requests/{$allocationId}/approve", [
+            'approved_amount' => '20000',
+        ])->assertRedirect()->assertSessionHas('error');
     }
 }

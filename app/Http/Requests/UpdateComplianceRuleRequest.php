@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\ComplianceRuleType;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -19,6 +20,7 @@ class UpdateComplianceRuleRequest extends FormRequest
             'description' => $this->filled('description')
                 ? trim((string) $this->input('description'))
                 : null,
+            'rule_type' => (string) $this->input('rule_type', ComplianceRuleType::Other->value),
             'is_active' => filter_var($this->input('is_active', true), FILTER_VALIDATE_BOOLEAN),
         ]);
     }
@@ -35,6 +37,7 @@ class UpdateComplianceRuleRequest extends FormRequest
                 Rule::unique('compliance_rules', 'name')->ignore($ruleId),
             ],
             'description' => ['nullable', 'string', 'max:1000'],
+            'rule_type' => ['required', Rule::enum(ComplianceRuleType::class)],
             'is_active' => ['boolean'],
         ];
     }

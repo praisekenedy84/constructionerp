@@ -7,7 +7,7 @@ import DataPanel from '@/Components/Shared/DataPanel';
 import PageHeader from '@/Components/Shared/PageHeader';
 import { Button } from '@/Components/ui/button';
 import { formatCurrency } from '@/lib/formatters';
-import { PageProps, Project, Valuation, ValuationDeduction } from '@/types';
+import { PageProps, Project, ProjectPhase, Valuation, ValuationDeduction } from '@/types';
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import { FormEvent } from 'react';
 
@@ -16,6 +16,7 @@ interface ValuationsEditProps extends PageProps {
     valuation: Valuation & { deductions: ValuationDeduction[] };
     other_ipcs_compliance_total: string;
     available_rules: AvailableComplianceRule[];
+    phases: ProjectPhase[];
 }
 
 function toFormItems(
@@ -48,13 +49,16 @@ function toFormItems(
 }
 
 export default function ValuationsEdit() {
-    const { project, valuation, other_ipcs_compliance_total, available_rules } =
+    const { project, valuation, other_ipcs_compliance_total, available_rules, phases } =
         usePage<ValuationsEditProps>().props;
     const { data, setData, put, processing, errors } = useForm<{
+        phase_id: string;
         compliance_items: ComplianceItemForm[];
     }>({
+        phase_id: String(valuation.phase_id),
         compliance_items: toFormItems(valuation.deductions ?? [], available_rules),
     });
+    const selectedPhase = phases.find((phase) => String(phase.id) === data.phase_id) ?? null;
 
     function submit(e: FormEvent) {
         e.preventDefault();
@@ -90,11 +94,38 @@ export default function ValuationsEdit() {
                 </DataPanel>
 
                 <form onSubmit={submit} className="space-y-6">
+                    <DataPanel title="Phase">
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-slate-700">Phase</label>
+                            <select
+                                className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
+                                value={data.phase_id}
+                                onChange={(e) => setData('phase_id', e.target.value)}
+                            >
+                                {phases.map((phase) => (
+                                    <option key={phase.id} value={phase.id}>
+                                        Phase {phase.sequence_no}: {phase.name} (
+                                        {formatCurrency(phase.disbursed_amount)})
+                                    </option>
+                                ))}
+                            </select>
+                            {selectedPhase && (
+                                <p className="text-sm text-slate-600">
+                                    Rate % is calculated from phase disbursed amount:{' '}
+                                    <span className="font-semibold">
+                                        {formatCurrency(selectedPhase.disbursed_amount)}
+                                    </span>
+                                </p>
+                            )}
+                            {errors.phase_id && <p className="text-sm text-red-600">{errors.phase_id}</p>}
+                        </div>
+                    </DataPanel>
                     <DataPanel title={`${ipcLabel} Compliance Rules`}>
                         <ComplianceItemsEditor
                             items={data.compliance_items}
                             availableRules={available_rules}
-                            contractAmount={String(project.contract_amount)}
+                            baseAmount={String(selectedPhase?.disbursed_amount ?? '0')}
+                            baseLabel="Phase disbursed amount"
                             otherIpcsTotal={other_ipcs_compliance_total}
                             ipcLabel={ipcLabel}
                             errors={errors}

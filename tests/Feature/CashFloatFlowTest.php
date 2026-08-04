@@ -300,6 +300,10 @@ class CashFloatFlowTest extends TestCase
             session()->has('error') || session()->has('errors'),
             'Approving beyond uncommitted cash should fail'
         );
+        $this->assertStringContainsString(
+            'Amend the requisition down to available cash, or reject it',
+            (string) session('error'),
+        );
 
         Tenant::where('slug', 'cash-float-co')->first()->run(function () {
             $this->assertSame(
@@ -307,5 +311,23 @@ class CashFloatFlowTest extends TestCase
                 Requisition::where('requisition_no', 'REQ-2026-00102')->first()->status
             );
         });
+
+        $this->get('/requisitions/review-queue')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Requisitions/Review')
+                ->where('cashByRequisitionId', function ($cash) {
+                    $rows = collect($cash);
+                    if ($rows->isEmpty()) {
+                        return false;
+                    }
+
+                    $entry = $rows->first(fn ($row) => ($row['exceeds'] ?? false) === true);
+
+                    return $entry
+                        && (float) $entry['available'] === 20000.0
+                        && (float) $entry['required'] === 50000.0;
+                })
+            );
     }
 }

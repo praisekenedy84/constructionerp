@@ -29,6 +29,7 @@ class Requisition extends Model
         'requestor_id',
         'recipient_name',
         'recipient_position',
+        'position_id',
         'status',
         'fulfillment_type',
         'addressed_to',
@@ -130,6 +131,11 @@ class Requisition extends Model
     public function assignedDepartment(): BelongsTo
     {
         return $this->belongsTo(Department::class, 'department_id');
+    }
+
+    public function position(): BelongsTo
+    {
+        return $this->belongsTo(Position::class, 'position_id');
     }
 
     public function requestor(): BelongsTo

@@ -30,6 +30,8 @@ export interface ProjectFormValues {
     start_date: string;
     end_date: string;
     status: ProjectStatus;
+    initial_phase_name?: string;
+    initial_phase_disbursed_amount?: string;
     ipcs?: ProjectIpcForm[];
 }
 
@@ -74,6 +76,8 @@ export default function ProjectForm({
 }: ProjectFormProps) {
     const { data, setData, post, put, processing, errors } = useForm({
         ...initial,
+        initial_phase_name: initial.initial_phase_name ?? 'Phase 1',
+        initial_phase_disbursed_amount: initial.initial_phase_disbursed_amount ?? '',
         ipcs: initial.ipcs ?? (mode === 'create' ? [emptyIpc()] : []),
     });
 
@@ -81,21 +85,22 @@ export default function ProjectForm({
     const headTitle = mode === 'create' ? 'New Project' : `Edit ${data.code || 'Project'}`;
     const showIpcs = mode === 'create';
     const contract = parseNumber(data.contract_amount);
+    const phaseDisbursed = parseNumber(data.initial_phase_disbursed_amount);
 
     const projectSummary = useMemo(() => {
         const ipcs = data.ipcs ?? [];
         const totals = ipcs.map((ipc, index) => ({
             index,
-            total: ipcTotal(ipc, contract),
+            total: ipcTotal(ipc, phaseDisbursed),
         }));
         const complianceSum = totals.reduce((sum, row) => sum + row.total, 0);
 
         return {
             totals,
             complianceSum,
-            netProject: Math.max(contract - complianceSum, 0),
+            netProject: Math.max(phaseDisbursed - complianceSum, 0),
         };
-    }, [contract, data.ipcs]);
+    }, [phaseDisbursed, data.ipcs]);
 
     function submit(e: FormEvent) {
         e.preventDefault();
@@ -130,8 +135,8 @@ export default function ProjectForm({
                     title={title}
                     description={
                         showIpcs
-                            ? 'Enter project details, then add IPCs and their compliance rules on this page.'
-                            : 'Update project details. Manage IPCs from the project IPCs page.'
+                            ? 'Enter project details, record the first client disbursement as Phase 1, then add Phase 1 IPCs.'
+                            : 'Update project details. Manage phases and IPCs from the project page.'
                     }
                 />
 
@@ -230,13 +235,58 @@ export default function ProjectForm({
 
                     {showIpcs && (
                         <div className="space-y-4">
+                            <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+                                <h3 className="mb-1 text-sm font-semibold text-slate-900">
+                                    Initial Phase (client disbursement)
+                                </h3>
+                                <p className="mb-4 text-xs text-slate-500">
+                                    Record the first batch paid by the client. IPC rate % uses this
+                                    amount, not the full contract.
+                                </p>
+                                <div className="grid gap-4 sm:grid-cols-2">
+                                    <div className="space-y-2">
+                                        <Label htmlFor="initial_phase_name">Phase name</Label>
+                                        <Input
+                                            id="initial_phase_name"
+                                            value={data.initial_phase_name ?? ''}
+                                            onChange={(e) =>
+                                                setData('initial_phase_name', e.target.value)
+                                            }
+                                            placeholder="Phase 1"
+                                        />
+                                        {errors.initial_phase_name && (
+                                            <p className="text-sm text-red-600">
+                                                {errors.initial_phase_name}
+                                            </p>
+                                        )}
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="initial_phase_disbursed_amount">
+                                            Client disbursed amount (TZS)
+                                        </Label>
+                                        <AmountInput
+                                            id="initial_phase_disbursed_amount"
+                                            value={data.initial_phase_disbursed_amount ?? ''}
+                                            onValueChange={(v) =>
+                                                setData('initial_phase_disbursed_amount', v)
+                                            }
+                                        />
+                                        {errors.initial_phase_disbursed_amount && (
+                                            <p className="text-sm text-red-600">
+                                                {errors.initial_phase_disbursed_amount}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
                             <div className="flex items-center justify-between gap-3">
                                 <div>
                                     <h3 className="text-sm font-semibold text-slate-900">
-                                        Project IPCs
+                                        Phase 1 IPCs
                                     </h3>
                                     <p className="text-xs text-slate-500">
-                                        Add IPC-1, IPC-2, … and select compliance rules for each.
+                                        Add IPC-1, IPC-2, … for this initial disbursement phase.
                                     </p>
                                 </div>
                                 <Button
@@ -289,7 +339,8 @@ export default function ProjectForm({
                                         <ComplianceItemsEditor
                                             items={ipc.compliance_items}
                                             availableRules={availableRules}
-                                            contractAmount={data.contract_amount}
+                                            baseAmount={data.initial_phase_disbursed_amount ?? '0'}
+                                            baseLabel="Phase 1 disbursed amount"
                                             ipcLabel={`IPC-${index + 1}`}
                                             errorPrefix={`ipcs.${index}`}
                                             summaryMode="ipc-only"
@@ -316,6 +367,14 @@ export default function ProjectForm({
                                             {formatCurrency(contract || null)}
                                         </dd>
                                     </div>
+                                    <div className="flex justify-between gap-4">
+                                        <dt className="text-slate-600">
+                                            Phase 1 client disbursement
+                                        </dt>
+                                        <dd className="font-medium">
+                                            {formatCurrency(phaseDisbursed || null)}
+                                        </dd>
+                                    </div>
                                     {projectSummary.totals
                                         .filter((row) => row.total > 0)
                                         .map((row) => (
@@ -329,15 +388,15 @@ export default function ProjectForm({
                                         ))}
                                     <div className="flex justify-between gap-4 border-t border-slate-200 pt-3">
                                         <dt className="font-semibold text-slate-900">
-                                            Net project amount
+                                            Initial net budget
                                         </dt>
                                         <dd className="text-lg font-bold text-slate-900">
                                             {formatCurrency(projectSummary.netProject)}
                                         </dd>
                                     </div>
                                     <p className="pt-1 text-xs text-slate-500">
-                                        Net project amount = Contract − Sum of IPCs&apos; compliance
-                                        rules
+                                        Initial net budget = Phase 1 disbursement − Phase 1 IPCs
+                                        compliance (held retention can be released later)
                                     </p>
                                 </dl>
                             </div>

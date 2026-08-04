@@ -25,6 +25,15 @@ class ComplianceRuleController extends Controller
         return Inertia::render('ComplianceRules/Index', [
             'rules' => $listing->paginate(25),
             'filters' => $listing->filters(),
+            'rule_types' => [
+                ['value' => 'other', 'label' => 'Other'],
+                ['value' => 'retention', 'label' => 'Retention'],
+                ['value' => 'advance_recovery', 'label' => 'Advance recovery'],
+                ['value' => 'wht', 'label' => 'Withholding tax'],
+                ['value' => 'defect_liability', 'label' => 'Defect liability'],
+                ['value' => 'material_test', 'label' => 'Material test'],
+                ['value' => 'hiv_report', 'label' => 'HIV report'],
+            ],
         ]);
     }
 

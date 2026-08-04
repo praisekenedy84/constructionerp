@@ -24,8 +24,9 @@ export interface ComplianceItemForm {
 interface ComplianceItemsEditorProps {
     items: ComplianceItemForm[];
     availableRules: AvailableComplianceRule[];
-    /** Project contract amount — rate % is calculated against this. */
-    contractAmount: string;
+    /** Phase disbursement amount — rate % is calculated against this. */
+    baseAmount: string;
+    baseLabel?: string;
     /** Sum of compliance from other IPCs (excluded from this form). */
     otherIpcsTotal?: string | number;
     ipcLabel?: string;
@@ -67,7 +68,8 @@ export function computeItemAmount(item: ComplianceItemForm, contract: number): n
 export default function ComplianceItemsEditor({
     items,
     availableRules,
-    contractAmount,
+    baseAmount,
+    baseLabel = 'Phase disbursed amount',
     otherIpcsTotal = 0,
     ipcLabel = 'This IPC',
     errorPrefix = '',
@@ -76,7 +78,7 @@ export default function ComplianceItemsEditor({
     errors = {},
     onChange,
 }: ComplianceItemsEditorProps) {
-    const contract = parseNumber(contractAmount);
+    const contract = parseNumber(baseAmount);
     const otherTotal = parseNumber(otherIpcsTotal);
     const itemErrorKey = (index: number, field: string) =>
         errorPrefix
@@ -146,7 +148,7 @@ export default function ComplianceItemsEditor({
                     <div>
                         <h3 className="text-sm font-semibold text-slate-900">Compliance Rules</h3>
                         <p className="text-xs text-slate-500">
-                            Select a predefined rule, then choose rate % of contract or a fixed
+                            Select a predefined rule, then choose rate % of phase amount or a fixed
                             amount.
                         </p>
                     </div>
@@ -238,7 +240,7 @@ export default function ComplianceItemsEditor({
                                 </div>
                                 {item.calculation_type === 'rate_percent' ? (
                                     <div className="space-y-1.5">
-                                        <Label>Rate % of contract</Label>
+                                        <Label>Rate % of phase amount</Label>
                                         <Input
                                             type="number"
                                             step="0.01"
@@ -301,10 +303,16 @@ export default function ComplianceItemsEditor({
                 <p className="text-sm text-red-600">{errors[itemsErrorKey]}</p>
             )}
 
+            {contract <= 0 && (
+                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                    Enter a {baseLabel.toLowerCase()} first so rate % amounts can calculate while you type.
+                </p>
+            )}
+
             <dl className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm">
                 {summaryMode === 'full' && (
                     <div className="flex justify-between gap-4">
-                        <dt className="text-slate-600">Contract amount</dt>
+                        <dt className="text-slate-600">{baseLabel}</dt>
                         <dd className="font-medium">{formatCurrency(contract || null)}</dd>
                     </div>
                 )}
@@ -344,7 +352,7 @@ export default function ComplianceItemsEditor({
                             </dd>
                         </div>
                         <p className="pt-1 text-xs text-slate-500">
-                            Net project amount = Contract − Sum of all IPCs&apos; compliance rules
+                            Net project amount = sum of phase budgets after IPC deductions and retention state
                         </p>
                     </>
                 )}

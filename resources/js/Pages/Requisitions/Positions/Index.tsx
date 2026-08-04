@@ -14,29 +14,27 @@ import { Head, router, useForm, usePage } from '@inertiajs/react';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { FormEvent, useState } from 'react';
 
-export interface ComplianceRuleRow {
+export interface PositionRow {
     id: number;
     name: string;
     description: string | null;
-    rule_type: string;
     is_active: boolean;
+    sort_order: number;
     created_at: string;
 }
 
-interface ComplianceRulesIndexProps extends PageProps {
-    rules: Paginated<ComplianceRuleRow>;
+interface PositionsIndexProps extends PageProps {
+    positions: Paginated<PositionRow>;
     filters: ListingFilters;
-    rule_types: Array<{ value: string; label: string }>;
 }
 
 type FormMode = 'create' | 'edit';
 
-export default function ComplianceRulesIndex() {
-    const { rules, filters, auth, rule_types } = usePage<ComplianceRulesIndexProps>().props;
-    const rows = rules.data ?? [];
-    const canCreate = hasPermission(auth.user, 'projects', 'create');
-    const canUpdate = hasPermission(auth.user, 'projects', 'update');
-    const canDelete = hasPermission(auth.user, 'projects', 'delete-soft');
+export default function PositionsIndex() {
+    const { positions, filters, auth } = usePage<PositionsIndexProps>().props;
+    const rows = positions.data ?? [];
+    const canCreate = hasPermission(auth.user, 'requisitions', 'create');
+    const canUpdate = hasPermission(auth.user, 'requisitions', 'update');
 
     const [open, setOpen] = useState(false);
     const [mode, setMode] = useState<FormMode>('create');
@@ -45,8 +43,8 @@ export default function ComplianceRulesIndex() {
     const { data, setData, post, put, processing, errors, reset, clearErrors, isDirty } = useForm({
         name: '',
         description: '',
-        rule_type: 'other',
         is_active: true as boolean,
+        sort_order: 0,
     });
 
     function openCreate() {
@@ -54,19 +52,24 @@ export default function ComplianceRulesIndex() {
         reset();
         setMode('create');
         setEditingId(null);
-        setData({ name: '', description: '', rule_type: 'other', is_active: true });
+        setData({
+            name: '',
+            description: '',
+            is_active: true,
+            sort_order: 0,
+        });
         setOpen(true);
     }
 
-    function openEdit(rule: ComplianceRuleRow) {
+    function openEdit(position: PositionRow) {
         clearErrors();
         setMode('edit');
-        setEditingId(rule.id);
+        setEditingId(position.id);
         setData({
-            name: rule.name,
-            description: rule.description ?? '',
-            rule_type: rule.rule_type,
-            is_active: rule.is_active,
+            name: position.name,
+            description: position.description ?? '',
+            is_active: position.is_active,
+            sort_order: position.sort_order,
         });
         setOpen(true);
     }
@@ -84,7 +87,7 @@ export default function ComplianceRulesIndex() {
     function submit(e: FormEvent) {
         e.preventDefault();
         if (mode === 'create') {
-            post('/projects/compliance-rules', {
+            post('/requisitions/positions', {
                 onSuccess: () => {
                     reset();
                     setOpen(false);
@@ -97,7 +100,7 @@ export default function ComplianceRulesIndex() {
             return;
         }
 
-        put(`/projects/compliance-rules/${editingId}`, {
+        put(`/requisitions/positions/${editingId}`, {
             onSuccess: () => {
                 reset();
                 setOpen(false);
@@ -106,48 +109,52 @@ export default function ComplianceRulesIndex() {
         });
     }
 
-    function archiveRule(rule: ComplianceRuleRow) {
-        if (!confirm(`Archive compliance rule “${rule.name}”? It will no longer appear in IPC dropdowns.`)) {
+    function archivePosition(position: PositionRow) {
+        if (
+            !confirm(
+                `Remove position “${position.name}”? If it is already used on requisitions it will be deactivated instead.`,
+            )
+        ) {
             return;
         }
-        router.delete(`/projects/compliance-rules/${rule.id}`);
+        router.delete(`/requisitions/positions/${position.id}`);
     }
 
     return (
-        <AppShell title="Compliance Rules">
-            <Head title="Compliance Rules" />
+        <AppShell title="Positions">
+            <Head title="Positions" />
             <div className="space-y-6">
                 <PageHeader
-                    title="Compliance Rules"
-                    description="Predefine rules once, then select them from the dropdown when creating IPCs."
+                    title="Positions"
+                    description="Define the recipient positions staff pick when creating requisitions."
                     actions={
                         canCreate ? (
                             <Button onClick={openCreate}>
                                 <Plus className="h-4 w-4" />
-                                New Compliance Rule
+                                New Position
                             </Button>
                         ) : undefined
                     }
                 />
 
                 <ListToolbar
-                    baseUrl="/projects/compliance-rules"
+                    baseUrl="/requisitions/positions"
                     filters={filters}
                     searchPlaceholder="Search name, description…"
                     sortOptions={[
+                        { value: 'sort_order', label: 'Sort order' },
                         { value: 'name', label: 'Name' },
                         { value: 'is_active', label: 'Status' },
                         { value: 'created_at', label: 'Date created' },
                     ]}
                 />
 
-                <DataPanel title="Defined Rules" noPadding>
+                <DataPanel title="Defined Positions" noPadding>
                     <table className="w-full text-sm">
                         <thead>
                             <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs text-slate-500">
                                 <th className="px-6 py-3 font-medium">Name</th>
                                 <th className="px-6 py-3 font-medium">Description</th>
-                                <th className="px-6 py-3 font-medium">Type</th>
                                 <th className="px-6 py-3 font-medium">Status</th>
                                 <th className="px-6 py-3 text-right font-medium">Actions</th>
                             </tr>
@@ -155,32 +162,29 @@ export default function ComplianceRulesIndex() {
                         <tbody className="divide-y divide-slate-100">
                             {rows.length === 0 ? (
                                 <tr>
-                                    <td colSpan={5} className="px-6 py-12 text-center text-slate-500">
-                                        No compliance rules yet. Create Retention, WHT, or any
-                                        project-specific rule.
+                                    <td colSpan={4} className="px-6 py-12 text-center text-slate-500">
+                                        No positions yet. Create the options staff should see when
+                                        raising a requisition for someone else.
                                     </td>
                                 </tr>
                             ) : (
-                                rows.map((rule) => (
-                                    <tr key={rule.id}>
+                                rows.map((position) => (
+                                    <tr key={position.id}>
                                         <td className="px-6 py-4 font-medium text-slate-900">
-                                            {rule.name}
+                                            {position.name}
                                         </td>
                                         <td className="px-6 py-4 text-slate-600">
-                                            {rule.description || '—'}
-                                        </td>
-                                        <td className="px-6 py-4 text-slate-600">
-                                            {rule_types.find((type) => type.value === rule.rule_type)?.label ?? rule.rule_type}
+                                            {position.description || '—'}
                                         </td>
                                         <td className="px-6 py-4">
                                             <span
                                                 className={
-                                                    rule.is_active
+                                                    position.is_active
                                                         ? 'text-green-700'
                                                         : 'text-slate-400'
                                                 }
                                             >
-                                                {rule.is_active ? 'Active' : 'Inactive'}
+                                                {position.is_active ? 'Active' : 'Inactive'}
                                             </span>
                                         </td>
                                         <td className="px-6 py-4">
@@ -190,19 +194,19 @@ export default function ComplianceRulesIndex() {
                                                         type="button"
                                                         variant="ghost"
                                                         size="sm"
-                                                        onClick={() => openEdit(rule)}
-                                                        aria-label={`Edit ${rule.name}`}
+                                                        onClick={() => openEdit(position)}
+                                                        aria-label={`Edit ${position.name}`}
                                                     >
                                                         <Pencil className="h-4 w-4" />
                                                     </Button>
                                                 )}
-                                                {canDelete && (
+                                                {canUpdate && (
                                                     <Button
                                                         type="button"
                                                         variant="ghost"
                                                         size="sm"
-                                                        onClick={() => archiveRule(rule)}
-                                                        aria-label={`Archive ${rule.name}`}
+                                                        onClick={() => archivePosition(position)}
+                                                        aria-label={`Archive ${position.name}`}
                                                     >
                                                         <Trash2 className="h-4 w-4 text-slate-500" />
                                                     </Button>
@@ -214,32 +218,32 @@ export default function ComplianceRulesIndex() {
                             )}
                         </tbody>
                     </table>
-                    <PaginationLinks paginator={rules} />
+                    <PaginationLinks paginator={positions} />
                 </DataPanel>
             </div>
 
             <Dialog
                 open={open}
                 onOpenChange={(next) => (next ? undefined : closeDialog())}
-                title={mode === 'create' ? 'New Compliance Rule' : 'Edit Compliance Rule'}
-                description="This name appears in the IPC compliance dropdown."
+                title={mode === 'create' ? 'New Position' : 'Edit Position'}
+                description="The position name appears in the requisition form recipient dropdown."
             >
                 <form onSubmit={submit} className="space-y-4">
                     <div className="space-y-2">
-                        <Label htmlFor="rule_name">Rule name</Label>
+                        <Label htmlFor="position_name">Position name</Label>
                         <Input
-                            id="rule_name"
+                            id="position_name"
                             value={data.name}
                             onChange={(e) => setData('name', e.target.value)}
-                            placeholder="e.g. Retention, WHT, Material test"
+                            placeholder="e.g. Site Foreman, Project Manager"
                             required
                         />
                         {errors.name && <p className="text-sm text-red-600">{errors.name}</p>}
                     </div>
                     <div className="space-y-2">
-                        <Label htmlFor="rule_description">Description (optional)</Label>
+                        <Label htmlFor="position_description">Description (optional)</Label>
                         <Input
-                            id="rule_description"
+                            id="position_description"
                             value={data.description}
                             onChange={(e) => setData('description', e.target.value)}
                             placeholder="Short note for staff"
@@ -249,23 +253,17 @@ export default function ComplianceRulesIndex() {
                         )}
                     </div>
                     <div className="space-y-2">
-                        <Label htmlFor="rule_type">Rule type</Label>
-                        <select
-                            id="rule_type"
-                            className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
-                            value={data.rule_type}
-                            onChange={(e) => setData('rule_type', e.target.value)}
-                        >
-                            {rule_types.map((type) => (
-                                <option key={type.value} value={type.value}>
-                                    {type.label}
-                                </option>
-                            ))}
-                        </select>
-                        <p className="text-xs text-slate-500">
-                            Mark retention here so phase IPCs can hold, release, or forfeit it correctly.
-                        </p>
-                        {errors.rule_type && <p className="text-sm text-red-600">{errors.rule_type}</p>}
+                        <Label htmlFor="position_sort_order">Sort order</Label>
+                        <Input
+                            id="position_sort_order"
+                            type="number"
+                            min={0}
+                            value={String(data.sort_order)}
+                            onChange={(e) => setData('sort_order', Number(e.target.value) || 0)}
+                        />
+                        {errors.sort_order && (
+                            <p className="text-sm text-red-600">{errors.sort_order}</p>
+                        )}
                     </div>
                     {mode === 'edit' && (
                         <label className="flex items-center gap-2 text-sm text-slate-700">
@@ -275,13 +273,13 @@ export default function ComplianceRulesIndex() {
                                 checked={data.is_active}
                                 onChange={(e) => setData('is_active', e.target.checked)}
                             />
-                            Active (available in IPC dropdowns)
+                            Active (available in requisition dropdown)
                         </label>
                     )}
                     <DialogFormActions
                         onCancel={closeDialog}
                         processing={processing}
-                        submitLabel={mode === 'create' ? 'Create Rule' : 'Save Changes'}
+                        submitLabel={mode === 'create' ? 'Create Position' : 'Save Changes'}
                         processingLabel={mode === 'create' ? 'Creating…' : 'Saving…'}
                     />
                 </form>

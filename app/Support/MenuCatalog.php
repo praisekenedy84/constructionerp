@@ -50,6 +50,7 @@ class MenuCatalog
                     ['key' => 'requisitions.list', 'label' => 'Requisition List', 'href' => '/requisitions', 'permission' => null],
                     ['key' => 'requisitions.categories', 'label' => 'Categories', 'href' => '/requisitions/categories', 'permission' => null],
                     ['key' => 'requisitions.departments', 'label' => 'Departments', 'href' => '/requisitions/departments', 'permission' => null],
+                    ['key' => 'requisitions.positions', 'label' => 'Positions', 'href' => '/requisitions/positions', 'permission' => null],
                     ['key' => 'requisitions.review_queue', 'label' => 'Review Queue', 'href' => '/requisitions/review-queue', 'permission' => 'requisitions:approve'],
                     ['key' => 'requisitions.fulfill_queue', 'label' => 'Fulfill Queue', 'href' => '/requisitions/fulfill-queue', 'permission' => 'requisitions:fulfill'],
                     ['key' => 'requisitions.fulfilled', 'label' => 'Fulfilled List', 'href' => '/requisitions/fulfilled', 'permission' => null],

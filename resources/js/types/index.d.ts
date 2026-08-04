@@ -65,6 +65,25 @@ export interface Project {
     created_at?: string;
 }
 
+export type PhaseStatus = 'pending' | 'in_progress' | 'succeeded' | 'unsatisfactory' | 'closed';
+export type RetentionStatus = 'none' | 'held' | 'released' | 'forfeited';
+
+export interface ProjectPhase {
+    id: number;
+    project_id: number;
+    sequence_no: number;
+    name: string;
+    status: PhaseStatus;
+    disbursed_amount: string;
+    retention_held_amount: string;
+    retention_released_amount: string;
+    retention_forfeited_amount: string;
+    other_deductions_amount: string;
+    phase_net_budget: string;
+    retention_status: RetentionStatus;
+    valuations_count?: number;
+}
+
 export type BoqCategory =
     | 'materials'
     | 'labor'
@@ -243,6 +262,14 @@ export interface Department {
     sort_order?: number;
 }
 
+export interface Position {
+    id: number;
+    name: string;
+    description?: string | null;
+    is_active?: boolean;
+    sort_order?: number;
+}
+
 export interface Requisition {
     id: number;
     requisition_no: string;
@@ -255,6 +282,7 @@ export interface Requisition {
     requestor_id: number;
     recipient_name?: string | null;
     recipient_position?: string | null;
+    position_id?: number | null;
     status: RequisitionStatus;
     fulfillment_type: FulfillmentType;
     addressed_to?: RequisitionAddressedTo;
@@ -531,6 +559,7 @@ export type ValuationStatus = 'draft' | 'certified';
 export interface Valuation {
     id: number;
     project_id: number;
+    phase_id: number;
     certificate_no: number;
     gross_value: string;
     total_deductions: string;
@@ -622,6 +651,16 @@ export interface ReconciliationSummary {
     disbursed: string;
     outstanding: string;
     cash_on_hand: string;
+}
+
+export interface CashAvailability {
+    spends_cash: boolean;
+    scope: 'organization' | 'project';
+    cash_on_hand: string;
+    committed: string;
+    available: string;
+    required: string;
+    exceeds: boolean;
 }
 
 export interface Paginated<T> {

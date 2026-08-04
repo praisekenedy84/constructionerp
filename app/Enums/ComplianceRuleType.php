@@ -4,6 +4,7 @@ namespace App\Enums;
 
 enum ComplianceRuleType: string
 {
+    case Other = 'other';
     case Retention = 'retention';
     case AdvanceRecovery = 'advance_recovery';
     case Wht = 'wht';

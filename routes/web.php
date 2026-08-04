@@ -13,6 +13,7 @@ use App\Http\Controllers\ComplianceRuleController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DepartmentController;
 use App\Http\Controllers\EmployeeController;
+use App\Http\Controllers\PositionController;
 use App\Http\Controllers\EquipmentController;
 use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\FinanceController;
@@ -22,6 +23,7 @@ use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PayrollController;
 use App\Http\Controllers\ProjectController;
+use App\Http\Controllers\ProjectPhaseController;
 use App\Http\Controllers\PurchaseOrderController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\RequisitionCategoryController;
@@ -83,6 +85,9 @@ Route::middleware('auth')->group(function () {
         Route::get('/projects/{id}/valuations/{valuationId}/edit', [ValuationController::class, 'edit'])->name('projects.valuations.edit');
         Route::put('/projects/{id}/valuations/{valuationId}', [ValuationController::class, 'update'])->name('projects.valuations.update');
         Route::delete('/projects/{id}/valuations/{valuationId}', [ValuationController::class, 'destroy'])->name('projects.valuations.destroy');
+        Route::post('/projects/{id}/phases', [ProjectPhaseController::class, 'store'])->name('projects.phases.store');
+        Route::post('/projects/{id}/phases/{phaseId}/retention/release', [ProjectPhaseController::class, 'releaseRetention'])->name('projects.phases.retention.release');
+        Route::post('/projects/{id}/phases/{phaseId}/retention/forfeit', [ProjectPhaseController::class, 'forfeitRetention'])->name('projects.phases.retention.forfeit');
     });
 
     Route::post('/boq/revisions', [BOQRevisionController::class, 'store'])->name('boq.revisions.store');
@@ -98,6 +103,10 @@ Route::middleware('auth')->group(function () {
     Route::post('/requisitions/departments', [DepartmentController::class, 'store'])->name('requisitions.departments.store');
     Route::put('/requisitions/departments/{id}', [DepartmentController::class, 'update'])->name('requisitions.departments.update');
     Route::delete('/requisitions/departments/{id}', [DepartmentController::class, 'destroy'])->name('requisitions.departments.destroy');
+    Route::get('/requisitions/positions', [PositionController::class, 'index'])->name('requisitions.positions.index');
+    Route::post('/requisitions/positions', [PositionController::class, 'store'])->name('requisitions.positions.store');
+    Route::put('/requisitions/positions/{id}', [PositionController::class, 'update'])->name('requisitions.positions.update');
+    Route::delete('/requisitions/positions/{id}', [PositionController::class, 'destroy'])->name('requisitions.positions.destroy');
     Route::get('/requisitions/create', [RequisitionController::class, 'create'])->name('requisitions.create');
     Route::post('/requisitions', [RequisitionController::class, 'store'])->name('requisitions.store');
     Route::get('/requisitions/review-queue', [RequisitionController::class, 'reviewQueue'])->name('requisitions.review-queue');

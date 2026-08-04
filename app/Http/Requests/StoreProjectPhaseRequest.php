@@ -3,12 +3,12 @@
 namespace App\Http\Requests;
 
 use App\Enums\ComplianceCalculationType;
-use App\Enums\ProjectStatus;
+use App\Enums\PhaseStatus;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
-class StoreProjectRequest extends FormRequest
+class StoreProjectPhaseRequest extends FormRequest
 {
     public function authorize(): bool
     {
@@ -44,17 +44,12 @@ class StoreProjectRequest extends FormRequest
 
                 return ['compliance_items' => $items];
             })
-            // Drop completely empty IPC shells (no filled compliance rows).
             ->filter(fn (array $ipc) => $ipc['compliance_items'] !== [])
             ->values()
             ->all();
 
         $this->merge([
-            'wht_percentage' => $this->blankToNull($this->input('wht_percentage')) ?? 0,
-            'location' => $this->input('location') ?: '',
-            'client' => $this->input('client') ?: '',
-            'initial_phase_name' => trim((string) ($this->input('initial_phase_name') ?: 'Phase 1')),
-            'initial_phase_disbursed_amount' => $this->blankToNull($this->input('initial_phase_disbursed_amount')),
+            'name' => trim((string) ($this->input('name') ?: '')),
             'ipcs' => $ipcs,
         ]);
     }
@@ -62,17 +57,9 @@ class StoreProjectRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'code' => ['required', 'string', 'max:50', 'unique:projects,code'],
-            'name' => ['required', 'string', 'max:255'],
-            'client' => ['nullable', 'string', 'max:255'],
-            'location' => ['nullable', 'string', 'max:255'],
-            'contract_amount' => ['required', 'numeric', 'min:0'],
-            'wht_percentage' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'start_date' => ['nullable', 'date'],
-            'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
-            'status' => ['nullable', Rule::enum(ProjectStatus::class)],
-            'initial_phase_name' => ['nullable', 'string', 'max:255'],
-            'initial_phase_disbursed_amount' => ['nullable', 'numeric', 'gt:0'],
+            'name' => ['nullable', 'string', 'max:255'],
+            'status' => ['nullable', Rule::enum(PhaseStatus::class)],
+            'disbursed_amount' => ['required', 'numeric', 'gt:0'],
             'ipcs' => ['nullable', 'array'],
             'ipcs.*.compliance_items' => ['required', 'array', 'min:1'],
             'ipcs.*.compliance_items.*.compliance_rule_id' => [
@@ -91,28 +78,7 @@ class StoreProjectRequest extends FormRequest
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $validator) {
-            $ipcs = $this->input('ipcs', []);
-            $hasIpcs = is_array($ipcs) && $ipcs !== [];
-            $disbursed = $this->input('initial_phase_disbursed_amount');
-            $contract = $this->input('contract_amount');
-
-            if ($hasIpcs && ($disbursed === null || $disbursed === '' || (float) $disbursed <= 0)) {
-                $validator->errors()->add(
-                    'initial_phase_disbursed_amount',
-                    'Enter the Phase 1 client disbursement amount before adding IPCs.',
-                );
-            }
-
-            if ($disbursed !== null && $disbursed !== '' && is_numeric($disbursed) && is_numeric($contract)) {
-                if ((float) $disbursed > (float) $contract) {
-                    $validator->errors()->add(
-                        'initial_phase_disbursed_amount',
-                        'Phase 1 disbursement cannot exceed the contract amount.',
-                    );
-                }
-            }
-
-            foreach ($ipcs as $ipcIndex => $ipc) {
+            foreach ($this->input('ipcs', []) as $ipcIndex => $ipc) {
                 if (! is_array($ipc)) {
                     continue;
                 }

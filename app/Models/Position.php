@@ -2,29 +2,28 @@
 
 namespace App\Models;
 
-use App\Enums\ComplianceRuleType;
 use App\Traits\LogsActivity;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-class ComplianceRule extends Model
+class Position extends Model
 {
     use LogsActivity, SoftDeletes;
 
     protected $fillable = [
         'name',
         'description',
-        'rule_type',
         'is_active',
+        'sort_order',
     ];
 
     protected function casts(): array
     {
         return [
-            'rule_type' => ComplianceRuleType::class,
             'is_active' => 'boolean',
+            'sort_order' => 'integer',
         ];
     }
 
@@ -33,8 +32,13 @@ class ComplianceRule extends Model
         return $query->where('is_active', true);
     }
 
-    public function deductions(): HasMany
+    public function scopeOrdered(Builder $query): Builder
     {
-        return $this->hasMany(ValuationDeduction::class);
+        return $query->orderBy('sort_order')->orderBy('name');
+    }
+
+    public function requisitions(): HasMany
+    {
+        return $this->hasMany(Requisition::class);
     }
 }

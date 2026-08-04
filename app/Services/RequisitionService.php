@@ -25,6 +25,7 @@ use App\Models\RequisitionItem;
 use App\Models\RequisitionStatusHistory;
 use App\Models\User;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -47,61 +48,75 @@ class RequisitionService
      *     requestor_id: int,
      *     recipient_name?: string|null,
      *     recipient_position?: string|null,
+     *     position_id?: int|null,
      *     fulfillment_type: FulfillmentType|string,
      *     items: array<int, array<string, mixed>>,
      * }  $data
      */
     public function create(array $data): Requisition
     {
-        return DB::transaction(function () use ($data) {
-            $originalAmount = '0';
-            $projectId = isset($data['project_id']) && $data['project_id'] !== ''
-                ? (int) $data['project_id']
-                : null;
-            $headerBoqId = $projectId ? ($data['boq_item_id'] ?? null) : null;
+        $attempts = 0;
 
-            $resourceType = RequisitionResourceType::Other;
+        while (true) {
+            try {
+                return DB::transaction(function () use ($data) {
+                    $originalAmount = '0';
+                    $projectId = isset($data['project_id']) && $data['project_id'] !== ''
+                        ? (int) $data['project_id']
+                        : null;
+                    $headerBoqId = $projectId ? ($data['boq_item_id'] ?? null) : null;
 
-            $fulfillmentType = $data['fulfillment_type'] instanceof FulfillmentType
-                ? $data['fulfillment_type']
-                : FulfillmentType::from($data['fulfillment_type']);
+                    $resourceType = RequisitionResourceType::Other;
 
-            $addressedTo = $this->resolveAddressedTo($data['addressed_to'] ?? null, $fulfillmentType);
+                    $fulfillmentType = $data['fulfillment_type'] instanceof FulfillmentType
+                        ? $data['fulfillment_type']
+                        : FulfillmentType::from($data['fulfillment_type']);
 
-            $normalizedItems = [];
+                    $addressedTo = $this->resolveAddressedTo($data['addressed_to'] ?? null, $fulfillmentType);
 
-            foreach ($data['items'] as $item) {
-                $normalized = $this->normalizeItem($item, $headerBoqId);
-                $originalAmount = bcadd($originalAmount, $normalized['line_total'], 2);
-                $normalizedItems[] = $normalized;
+                    $normalizedItems = [];
+
+                    foreach ($data['items'] as $item) {
+                        $normalized = $this->normalizeItem($item, $headerBoqId);
+                        $originalAmount = bcadd($originalAmount, $normalized['line_total'], 2);
+                        $normalizedItems[] = $normalized;
+                    }
+
+                    $requisition = Requisition::create([
+                        'requisition_no' => $this->generateRequisitionNo(),
+                        'project_id' => $projectId,
+                        'boq_item_id' => $headerBoqId,
+                        'department' => $data['department'],
+                        'department_id' => $data['department_id'] ?? null,
+                        'requisition_category_id' => $data['requisition_category_id'] ?? null,
+                        'resource_type' => $resourceType,
+                        'requestor_id' => $data['requestor_id'],
+                        'recipient_name' => $data['recipient_name'] ?? null,
+                        'recipient_position' => $data['recipient_position'] ?? null,
+                        'position_id' => $data['position_id'] ?? null,
+                        'status' => RequisitionStatus::Draft,
+                        'fulfillment_type' => $fulfillmentType,
+                        'addressed_to' => $addressedTo,
+                        'original_amount' => $originalAmount,
+                    ]);
+
+                    foreach ($normalizedItems as $item) {
+                        RequisitionItem::create([
+                            'requisition_id' => $requisition->id,
+                            ...$item,
+                        ]);
+                    }
+
+                    return $requisition->load('items');
+                });
+            } catch (QueryException $e) {
+                $attempts++;
+
+                if ($attempts >= 5 || ! $this->isRequisitionNoUniqueViolation($e)) {
+                    throw $e;
+                }
             }
-
-            $requisition = Requisition::create([
-                'requisition_no' => $this->generateRequisitionNo(),
-                'project_id' => $projectId,
-                'boq_item_id' => $headerBoqId,
-                'department' => $data['department'],
-                'department_id' => $data['department_id'] ?? null,
-                'requisition_category_id' => $data['requisition_category_id'] ?? null,
-                'resource_type' => $resourceType,
-                'requestor_id' => $data['requestor_id'],
-                'recipient_name' => $data['recipient_name'] ?? null,
-                'recipient_position' => $data['recipient_position'] ?? null,
-                'status' => RequisitionStatus::Draft,
-                'fulfillment_type' => $fulfillmentType,
-                'addressed_to' => $addressedTo,
-                'original_amount' => $originalAmount,
-            ]);
-
-            foreach ($normalizedItems as $item) {
-                RequisitionItem::create([
-                    'requisition_id' => $requisition->id,
-                    ...$item,
-                ]);
-            }
-
-            return $requisition->load('items');
-        });
+        }
     }
 
     /**
@@ -113,6 +128,7 @@ class RequisitionService
      *     resource_type: RequisitionResourceType|string,
      *     recipient_name?: string|null,
      *     recipient_position?: string|null,
+     *     position_id?: int|null,
      *     fulfillment_type: FulfillmentType|string,
      *     items: array<int, array<string, mixed>>,
      * }  $data
@@ -161,6 +177,9 @@ class RequisitionService
                 'recipient_position' => array_key_exists('recipient_position', $data)
                     ? $data['recipient_position']
                     : $requisition->recipient_position,
+                'position_id' => array_key_exists('position_id', $data)
+                    ? $data['position_id']
+                    : $requisition->position_id,
                 'fulfillment_type' => $fulfillmentType,
                 'addressed_to' => $addressedTo,
                 'original_amount' => $originalAmount,
@@ -780,11 +799,26 @@ class RequisitionService
         }
     }
 
-    private function assertCashAvailable(Requisition $req, string $amount, User $actor, array $opts): void
+    /**
+     * Uncommitted cash available to approve/amend a finance-addressed requisition.
+     *
+     * @return array{
+     *     spends_cash: bool,
+     *     scope: 'organization'|'project',
+     *     cash_on_hand: string,
+     *     committed: string,
+     *     available: string,
+     *     required: string,
+     *     exceeds: bool,
+     * }|null
+     */
+    public function cashAvailability(Requisition $req, ?string $amount = null): ?array
     {
         if (! $this->spendsCashFloat($req)) {
-            return;
+            return null;
         }
+
+        $required = $amount ?? (string) ($req->amended_amount ?? $req->original_amount);
 
         $position = $this->reportService->cashPosition(
             $req->isOrganizationWide()
@@ -825,7 +859,22 @@ class RequisitionService
 
         $available = bcsub($cashOnHand, $committedElsewhere, 2);
 
-        if (bccomp($available, $amount, 2) >= 0) {
+        return [
+            'spends_cash' => true,
+            'scope' => $req->isOrganizationWide() ? 'organization' : 'project',
+            'cash_on_hand' => $cashOnHand,
+            'committed' => $committedElsewhere,
+            'available' => $available,
+            'required' => $required,
+            'exceeds' => bccomp($required, $available, 2) === 1,
+        ];
+    }
+
+    private function assertCashAvailable(Requisition $req, string $amount, User $actor, array $opts): void
+    {
+        $availability = $this->cashAvailability($req, $amount);
+
+        if ($availability === null || ! $availability['exceeds']) {
             return;
         }
 
@@ -836,14 +885,18 @@ class RequisitionService
         $this->notifyRole('Finance Manager', 'cash_shortfall', [
             'requisition_id' => $req->id,
             'requisition_no' => $req->requisition_no,
-            'required' => $amount,
-            'available' => $available,
-            'cash_on_hand' => $cashOnHand,
-            'committed' => $committedElsewhere,
-            'scope' => $req->isOrganizationWide() ? 'organization' : 'project',
+            'required' => $availability['required'],
+            'available' => $availability['available'],
+            'cash_on_hand' => $availability['cash_on_hand'],
+            'committed' => $availability['committed'],
+            'scope' => $availability['scope'],
         ]);
 
-        throw new InsufficientCashException($amount, $available);
+        throw new InsufficientCashException(
+            $availability['required'],
+            $availability['available'],
+            'Amend the requisition down to available cash, or reject it. Approved requests cannot be amended later.',
+        );
     }
 
     /**
@@ -906,16 +959,32 @@ class RequisitionService
         $year = now()->year;
         $prefix = "REQ-{$year}-";
 
-        $last = Requisition::where('requisition_no', 'like', "{$prefix}%")
+        // Soft-deleted rows still occupy the unique index, so include them when
+        // allocating the next number. Lock to reduce concurrent collisions.
+        $last = Requisition::withTrashed()
+            ->where('requisition_no', 'like', "{$prefix}%")
             ->orderByDesc('requisition_no')
+            ->lockForUpdate()
             ->value('requisition_no');
 
         $sequence = 1;
 
-        if ($last && preg_match('/REQ-\d{4}-(\d{5})$/', $last, $matches)) {
+        if ($last && preg_match('/REQ-\d{4}-(\d+)$/', $last, $matches)) {
             $sequence = (int) $matches[1] + 1;
         }
 
         return $prefix.str_pad((string) $sequence, 5, '0', STR_PAD_LEFT);
+    }
+
+    private function isRequisitionNoUniqueViolation(QueryException $e): bool
+    {
+        $message = $e->getMessage();
+
+        return str_contains($message, 'requisitions_requisition_no_unique')
+            || (str_contains($message, 'requisition_no') && (
+                str_contains($message, 'Unique violation')
+                || str_contains($message, 'UNIQUE constraint failed')
+                || (string) $e->getCode() === '23505'
+            ));
     }
 }

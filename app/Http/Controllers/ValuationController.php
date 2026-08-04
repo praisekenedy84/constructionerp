@@ -7,6 +7,7 @@ use App\Http\Requests\StoreValuationRequest;
 use App\Http\Requests\UpdateValuationRequest;
 use App\Models\ComplianceRule;
 use App\Models\Project;
+use App\Models\ProjectPhase;
 use App\Models\Valuation;
 use App\Services\ValuationService;
 use App\Support\ListingQuery;
@@ -34,19 +35,16 @@ class ValuationController extends Controller
             ->sort(['certificate_no', 'total_deductions', 'created_at'], 'certificate_no', 'desc');
 
         $totalCompliance = bcadd((string) $project->valuations()->sum('total_deductions'), '0', 2);
-        $netProjectAmount = bcsub(bcadd((string) $project->contract_amount, '0', 2), $totalCompliance, 2);
-        if (bccomp($netProjectAmount, '0', 2) === -1) {
-            $netProjectAmount = '0.00';
-        }
 
         return Inertia::render('Projects/Valuations/Index', [
             'project' => $project,
             'valuations' => $listing->paginate(25),
             'filters' => $listing->filters(),
+            'phases' => $project->phases()->orderBy('sequence_no')->get(),
             'summary' => [
                 'contract_amount' => (string) $project->contract_amount,
                 'total_compliance' => $totalCompliance,
-                'net_project_amount' => $netProjectAmount,
+                'net_project_amount' => (string) $project->net_budget,
             ],
         ]);
     }
@@ -56,6 +54,7 @@ class ValuationController extends Controller
         $this->authorizePermission($request->user(), 'valuations', 'create');
 
         $project = Project::findOrFail($id);
+        $phases = $project->phases()->orderBy('sequence_no')->get();
         $otherCompliance = bcadd((string) $project->valuations()->sum('total_deductions'), '0', 2);
         $nextNo = (int) $project->valuations()->max('certificate_no') + 1;
 
@@ -64,6 +63,7 @@ class ValuationController extends Controller
             'next_certificate_no' => $nextNo,
             'other_ipcs_compliance_total' => $otherCompliance,
             'available_rules' => $this->availableRules(),
+            'phases' => $phases,
         ]);
     }
 
@@ -74,6 +74,7 @@ class ValuationController extends Controller
         $project = Project::findOrFail($id);
         $valuation = $this->valuationService->create(
             $project,
+            ProjectPhase::findOrFail((int) $request->validated('phase_id')),
             $request->validated('compliance_items') ?? [],
             $request->user(),
         );
@@ -91,18 +92,15 @@ class ValuationController extends Controller
         $valuation = $project->valuations()->with(['deductions', 'creator', 'certifier'])->findOrFail($valuationId);
 
         $totalCompliance = bcadd((string) $project->valuations()->sum('total_deductions'), '0', 2);
-        $netProjectAmount = bcsub(bcadd((string) $project->contract_amount, '0', 2), $totalCompliance, 2);
-        if (bccomp($netProjectAmount, '0', 2) === -1) {
-            $netProjectAmount = '0.00';
-        }
 
         return Inertia::render('Valuations/Show', [
             'project' => $project,
             'valuation' => $valuation,
+            'phases' => $project->phases()->orderBy('sequence_no')->get(),
             'summary' => [
                 'contract_amount' => (string) $project->contract_amount,
                 'total_compliance' => $totalCompliance,
-                'net_project_amount' => $netProjectAmount,
+                'net_project_amount' => (string) $project->net_budget,
             ],
         ]);
     }
@@ -135,6 +133,7 @@ class ValuationController extends Controller
             'valuation' => $valuation,
             'other_ipcs_compliance_total' => $otherCompliance,
             'available_rules' => $this->availableRules($attachedRuleIds),
+            'phases' => $project->phases()->orderBy('sequence_no')->get(),
         ]);
     }
 
@@ -146,6 +145,10 @@ class ValuationController extends Controller
         $valuation = $project->valuations()->findOrFail($valuationId);
 
         try {
+            $phaseId = (int) $request->validated('phase_id');
+            if ($phaseId !== (int) $valuation->phase_id) {
+                $valuation->update(['phase_id' => $phaseId]);
+            }
             $this->valuationService->updateDraft(
                 $valuation,
                 $request->validated('compliance_items') ?? [],

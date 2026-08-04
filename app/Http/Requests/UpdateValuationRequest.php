@@ -22,6 +22,13 @@ class UpdateValuationRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'phase_id' => [
+                'required',
+                'integer',
+                Rule::exists('project_phases', 'id')->where(
+                    fn ($q) => $q->where('project_id', (int) $this->route('id'))->whereNull('deleted_at')
+                ),
+            ],
             'compliance_items' => ['required', 'array', 'min:1'],
             'compliance_items.*.compliance_rule_id' => [
                 'required',

@@ -38,7 +38,7 @@ class ProjectCreateTest extends TestCase
         return $tenant;
     }
 
-    public function test_project_can_be_created_with_full_contract_as_net_budget(): void
+    public function test_project_starts_with_zero_net_budget_before_phase_disbursement(): void
     {
         $tenant = $this->loginAsTenantAdmin();
 
@@ -57,7 +57,7 @@ class ProjectCreateTest extends TestCase
         $tenant->run(function () use (&$projectId) {
             $project = Project::where('code', 'PRJ-100')->first();
             $this->assertNotNull($project);
-            $this->assertSame('1000000.00', (string) $project->net_budget);
+            $this->assertSame('0.00', (string) $project->net_budget);
             $this->assertSame('5.00', (string) $project->wht_percentage);
             $projectId = $project->id;
         });
@@ -71,11 +71,13 @@ class ProjectCreateTest extends TestCase
 
         $this->post('/projects/compliance-rules', [
             'name' => 'Retention',
+            'rule_type' => 'retention',
             'is_active' => true,
         ])->assertRedirect();
 
         $this->post('/projects/compliance-rules', [
             'name' => 'Material test',
+            'rule_type' => 'material_test',
             'is_active' => true,
         ])->assertRedirect();
 
@@ -93,6 +95,8 @@ class ProjectCreateTest extends TestCase
             'wht_percentage' => '5',
             'start_date' => '2026-01-01',
             'end_date' => '2026-12-31',
+            'initial_phase_name' => 'Phase 1',
+            'initial_phase_disbursed_amount' => '200000',
             'ipcs' => [
                 [
                     'compliance_items' => [
@@ -118,11 +122,16 @@ class ProjectCreateTest extends TestCase
         tenancy()->initialize(Tenant::where('slug', 'project-co')->firstOrFail());
         $project = Project::where('code', 'PRJ-IPC')->firstOrFail();
         $this->assertSame(2, Valuation::where('project_id', $project->id)->count());
-        // 100,000 + 5,000 = 105,000; net = 895,000
-        $this->assertSame('895000.00', (string) $project->net_budget);
+        // Phase disbursed 200,000 − retention 20,000 − material 5,000 = 175,000
+        $this->assertSame('175000.00', (string) $project->net_budget);
+        $this->assertDatabaseHas('project_phases', [
+            'project_id' => $project->id,
+            'name' => 'Phase 1',
+            'disbursed_amount' => '200000.00',
+        ]);
     }
 
-    public function test_project_can_be_updated_and_net_budget_resyncs_from_contract(): void
+    public function test_project_update_keeps_net_budget_phase_driven(): void
     {
         $this->loginAsTenantAdmin();
 
@@ -160,7 +169,7 @@ class ProjectCreateTest extends TestCase
 
         $this->assertSame('Updated Name', $project->name);
         $this->assertSame('active', $project->status->value);
-        $this->assertSame('2000000.00', (string) $project->net_budget);
+        $this->assertSame('0.00', (string) $project->net_budget);
     }
 
     public function test_project_can_be_soft_deleted(): void

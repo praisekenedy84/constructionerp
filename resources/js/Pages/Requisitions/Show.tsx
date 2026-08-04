@@ -1,5 +1,6 @@
 import AppShell from '@/Components/Layout/AppShell';
 import AmendRequisitionForm from '@/Components/Domain/AmendRequisitionForm';
+import CashShortfallApproveDialog from '@/Components/Domain/CashShortfallApproveDialog';
 import RequisitionTimeline from '@/Components/Domain/RequisitionTimeline';
 import DataPanel from '@/Components/Shared/DataPanel';
 import { IconLink } from '@/Components/Shared/LinkButton';
@@ -14,13 +15,14 @@ import { formatCurrency, formatQuantity } from '@/lib/formatters';
 import { canOverrideLimits, hasPermission } from '@/lib/permissions';
 import {
     ApprovalStep,
+    CashAvailability,
     InventoryItem,
     PageProps,
     Requisition,
     StockLocation,
 } from '@/types';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
-import { FormEvent } from 'react';
+import { FormEvent, useRef, useState } from 'react';
 import { ClipboardCheck, ExternalLink, Pencil } from 'lucide-react';
 
 interface CategoryOption {
@@ -35,6 +37,7 @@ interface RequisitionsShowProps extends PageProps {
     stockLocations: StockLocation[];
     inventoryCategories: CategoryOption[];
     cashOnHand: string;
+    cashAvailability?: CashAvailability | null;
     canEdit?: boolean;
     canDecide?: boolean;
 }
@@ -47,6 +50,7 @@ export default function RequisitionsShow() {
         stockLocations,
         inventoryCategories = [],
         cashOnHand,
+        cashAvailability = null,
         canEdit,
         canDecide,
         pendingStep,
@@ -80,6 +84,11 @@ export default function RequisitionsShow() {
     const approveForm = useForm({ action: 'approved', comment: '', override: false });
     const rejectForm = useForm({ action: 'rejected', comment: '' });
     const showOverride = canOverrideLimits(auth.user);
+    const canAmend = hasPermission(auth.user, 'requisitions', 'amend');
+    const exceedsCash = Boolean(cashAvailability?.exceeds);
+    const [cashDialogOpen, setCashDialogOpen] = useState(false);
+    const amendSectionRef = useRef<HTMLDivElement>(null);
+    const rejectSectionRef = useRef<HTMLDivElement>(null);
 
     function transition(e: FormEvent, toStatus: string) {
         e.preventDefault();
@@ -96,13 +105,47 @@ export default function RequisitionsShow() {
 
     function submitResolve(
         form: ReturnType<typeof useForm>,
-        e: FormEvent,
+        e?: FormEvent,
     ) {
-        e.preventDefault();
+        e?.preventDefault();
         if (!pendingStep) {
             return;
         }
         form.post(`/approvals/steps/${pendingStep.id}/resolve`);
+    }
+
+    function handleApproveSubmit(e: FormEvent) {
+        e.preventDefault();
+        if (!pendingStep) {
+            return;
+        }
+
+        if (exceedsCash && !approveForm.data.override) {
+            setCashDialogOpen(true);
+            return;
+        }
+
+        submitResolve(approveForm);
+    }
+
+    function focusSection(ref: { current: HTMLDivElement | null }) {
+        setCashDialogOpen(false);
+        window.requestAnimationFrame(() => {
+            ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+    }
+
+    function approveWithOverride() {
+        if (!pendingStep) {
+            return;
+        }
+        setCashDialogOpen(false);
+        approveForm.transform((data) => ({ ...data, override: true }));
+        approveForm.post(`/approvals/steps/${pendingStep.id}/resolve`, {
+            onFinish: () => {
+                approveForm.transform((data) => data);
+            },
+        });
     }
 
     const amount = requisition.amended_amount ?? requisition.original_amount;
@@ -216,8 +259,19 @@ export default function RequisitionsShow() {
                     </DataPanel>
                     <DataPanel title="Cash on Hand">
                         <p className="text-sm font-medium text-slate-700">
-                            {formatCurrency(cashOnHand)}
+                            {formatCurrency(cashAvailability?.cash_on_hand ?? cashOnHand)}
                         </p>
+                        {cashAvailability && (
+                            <p
+                                className={`mt-1 text-xs ${
+                                    exceedsCash ? 'font-medium text-amber-700' : 'text-slate-500'
+                                }`}
+                            >
+                                Available after commitments:{' '}
+                                {formatCurrency(cashAvailability.available)}
+                                {exceedsCash ? ' · Below this request' : ''}
+                            </p>
+                        )}
                         <p className="mt-1 text-xs capitalize text-slate-500">
                             {requisition.project_id ? 'Project float' : 'Organization float'} · To{' '}
                             {String(
@@ -482,10 +536,7 @@ export default function RequisitionsShow() {
                             <p className="mb-3 text-xs text-slate-500">
                                 Pending step: {pendingStep.required_role}
                             </p>
-                            <form
-                                onSubmit={(e) => submitResolve(approveForm, e)}
-                                className="space-y-3"
-                            >
+                            <form onSubmit={handleApproveSubmit} className="space-y-3">
                                 <div className="space-y-2">
                                     <Label>Comment (optional)</Label>
                                     <Input
@@ -495,7 +546,7 @@ export default function RequisitionsShow() {
                                         }
                                     />
                                 </div>
-                                {showOverride && (
+                                {showOverride && !exceedsCash && (
                                     <label className="flex items-center gap-2 text-sm">
                                         <input
                                             type="checkbox"
@@ -507,6 +558,16 @@ export default function RequisitionsShow() {
                                         Override BOQ / cash limits
                                     </label>
                                 )}
+                                {exceedsCash && (
+                                    <p className="text-xs text-amber-700">
+                                        This request exceeds available cash. Amend or reject —
+                                        approved requests cannot be amended later
+                                        {showOverride
+                                            ? '. Override is available in the reminder dialog'
+                                            : ''}
+                                        .
+                                    </p>
+                                )}
                                 <Button
                                     type="submit"
                                     disabled={approveForm.processing}
@@ -517,44 +578,48 @@ export default function RequisitionsShow() {
                             </form>
                         </DataPanel>
 
-                        {hasPermission(auth.user, 'requisitions', 'amend') && pendingStep && (
-                            <DataPanel
-                                title="Amend"
-                                description="Edit line quantities and costs. Total is derived from the amended lines."
-                            >
-                                <AmendRequisitionForm
-                                    items={requisition.items ?? []}
-                                    originalAmount={String(requisition.original_amount)}
-                                    resolveUrl={`/approvals/steps/${pendingStep.id}/resolve`}
-                                    showOverride={showOverride}
-                                />
-                            </DataPanel>
+                        {canAmend && (
+                            <div ref={amendSectionRef}>
+                                <DataPanel
+                                    title="Amend"
+                                    description="Edit line quantities and costs. Total is derived from the amended lines."
+                                >
+                                    <AmendRequisitionForm
+                                        items={requisition.items ?? []}
+                                        originalAmount={String(requisition.original_amount)}
+                                        resolveUrl={`/approvals/steps/${pendingStep.id}/resolve`}
+                                        showOverride={showOverride}
+                                    />
+                                </DataPanel>
+                            </div>
                         )}
 
-                        <DataPanel title="Reject">
-                            <form
-                                onSubmit={(e) => submitResolve(rejectForm, e)}
-                                className="space-y-3"
-                            >
-                                <div className="space-y-2">
-                                    <Label>Comment</Label>
-                                    <Input
-                                        value={rejectForm.data.comment}
-                                        onChange={(e) =>
-                                            rejectForm.setData('comment', e.target.value)
-                                        }
-                                    />
-                                </div>
-                                <Button
-                                    type="submit"
-                                    variant="outline"
-                                    disabled={rejectForm.processing}
-                                    className="border-red-200 text-red-700 hover:bg-red-50"
+                        <div ref={rejectSectionRef}>
+                            <DataPanel title="Reject">
+                                <form
+                                    onSubmit={(e) => submitResolve(rejectForm, e)}
+                                    className="space-y-3"
                                 >
-                                    Reject
-                                </Button>
-                            </form>
-                        </DataPanel>
+                                    <div className="space-y-2">
+                                        <Label>Comment</Label>
+                                        <Input
+                                            value={rejectForm.data.comment}
+                                            onChange={(e) =>
+                                                rejectForm.setData('comment', e.target.value)
+                                            }
+                                        />
+                                    </div>
+                                    <Button
+                                        type="submit"
+                                        variant="outline"
+                                        disabled={rejectForm.processing}
+                                        className="border-red-200 text-red-700 hover:bg-red-50"
+                                    >
+                                        Reject
+                                    </Button>
+                                </form>
+                            </DataPanel>
+                        </div>
                     </div>
                 )}
 
@@ -944,6 +1009,22 @@ export default function RequisitionsShow() {
                     </DataPanel>
                 )}
             </div>
+
+            {cashAvailability && (
+                <CashShortfallApproveDialog
+                    open={cashDialogOpen}
+                    onOpenChange={setCashDialogOpen}
+                    availability={cashAvailability}
+                    canAmend={canAmend}
+                    canOverride={showOverride}
+                    overrideChecked={approveForm.data.override}
+                    onOverrideChange={(checked) => approveForm.setData('override', checked)}
+                    onAmend={() => focusSection(amendSectionRef)}
+                    onReject={() => focusSection(rejectSectionRef)}
+                    onApproveWithOverride={approveWithOverride}
+                    processing={approveForm.processing}
+                />
+            )}
         </AppShell>
     );
 }

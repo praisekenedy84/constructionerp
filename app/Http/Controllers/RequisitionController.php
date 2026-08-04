@@ -10,6 +10,7 @@ use App\Models\ApprovalStep;
 use App\Models\BoqItem;
 use App\Models\Department;
 use App\Models\InventoryItem;
+use App\Models\Position;
 use App\Models\Project;
 use App\Models\Requisition;
 use App\Models\RequisitionCategory;
@@ -195,6 +196,7 @@ class RequisitionController extends Controller
                         ? ['project_id' => $requisition->project_id]
                         : ['scope' => 'organization']
                 )['cash_on_hand'],
+            'cashAvailability' => $this->requisitionService->cashAvailability($requisition),
         ]);
     }
 
@@ -269,8 +271,24 @@ class RequisitionController extends Controller
             ->dateRange('assigned_at')
             ->sort(['assigned_at', 'level', 'required_role'], 'assigned_at');
 
+        $approvalSteps = $listing->paginate(25);
+
+        $cashByRequisitionId = [];
+        foreach ($approvalSteps->getCollection() as $step) {
+            $requisition = $step->requisition;
+            if (! $requisition || isset($cashByRequisitionId[$requisition->id])) {
+                continue;
+            }
+
+            $availability = $this->requisitionService->cashAvailability($requisition);
+            if ($availability !== null) {
+                $cashByRequisitionId[$requisition->id] = $availability;
+            }
+        }
+
         return Inertia::render('Requisitions/Review', [
-            'approvalSteps' => $listing->paginate(25),
+            'approvalSteps' => $approvalSteps,
+            'cashByRequisitionId' => $cashByRequisitionId,
             'filters' => $listing->filters([
                 'requisition_id' => $request->input('requisition_id'),
             ]),
@@ -404,12 +422,29 @@ class RequisitionController extends Controller
             }
         }
 
+        $positions = Position::query()
+            ->active()
+            ->ordered()
+            ->get(['id', 'name', 'description', 'is_active']);
+
+        if ($requisition?->position_id
+            && ! $positions->contains('id', $requisition->position_id)) {
+            $currentPosition = Position::query()
+                ->whereKey($requisition->position_id)
+                ->first(['id', 'name', 'description', 'is_active']);
+
+            if ($currentPosition) {
+                $positions = $positions->prepend($currentPosition)->values();
+            }
+        }
+
         return [
             'projects' => Project::orderBy('name')->get(['id', 'code', 'name']),
             'boqItems' => $boqItems,
             'inventoryItems' => InventoryItem::orderBy('name')->get(['id', 'code', 'name', 'unit', 'category']),
             'categories' => $categories,
             'departments' => $departments,
+            'positions' => $positions,
         ];
     }
 }

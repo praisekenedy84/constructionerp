@@ -14,6 +14,7 @@ class RequisitionItem extends Model
         'requisition_id',
         'boq_item_id',
         'inventory_item_id',
+        'requisition_category_id',
         'description',
         'unit',
         'quantity',
@@ -24,6 +25,9 @@ class RequisitionItem extends Model
         'original_line_total',
         'original_description',
         'details',
+        'recipient_name',
+        'position_id',
+        'recipient_position',
     ];
 
     protected function casts(): array
@@ -59,5 +63,15 @@ class RequisitionItem extends Model
     public function inventoryItem(): BelongsTo
     {
         return $this->belongsTo(InventoryItem::class);
+    }
+
+    public function category(): BelongsTo
+    {
+        return $this->belongsTo(RequisitionCategory::class, 'requisition_category_id');
+    }
+
+    public function position(): BelongsTo
+    {
+        return $this->belongsTo(Position::class, 'position_id');
     }
 }

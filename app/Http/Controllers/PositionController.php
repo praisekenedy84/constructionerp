@@ -44,9 +44,12 @@ class PositionController extends Controller
         $position = Position::findOrFail($id);
         $position->update($request->validated());
 
-        // Keep denormalized position labels on linked requisitions in sync.
+        // Keep denormalized position labels in sync on header + recipient rows.
         $position->requisitions()->update([
             'recipient_position' => $position->name,
+        ]);
+        $position->recipientRows()->update([
+            'position_name' => $position->name,
         ]);
 
         return back()->with('success', 'Position updated.');
@@ -58,7 +61,9 @@ class PositionController extends Controller
 
         $position = Position::findOrFail($id);
 
-        if ($position->requisitions()->exists()) {
+        if ($position->requisitions()->exists()
+            || $position->recipientRows()->exists()
+            || \App\Models\RequisitionItem::query()->where('position_id', $position->id)->exists()) {
             $position->update(['is_active' => false]);
 
             return back()->with(

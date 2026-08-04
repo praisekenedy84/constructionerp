@@ -167,16 +167,33 @@ export default function FulfillQueue() {
                                                 {selected.department}
                                             </dd>
                                         </div>
-                                        {(selected.recipient_name || selected.recipient_position) && (
+                                        {((selected.recipients?.length ?? 0) > 0 ||
+                                            selected.recipient_name ||
+                                            selected.recipient_position) && (
                                             <div className="sm:col-span-2">
                                                 <dt className="text-xs text-slate-500">
                                                     On behalf of
                                                 </dt>
                                                 <dd className="text-sm font-medium text-slate-900">
-                                                    {selected.recipient_name || '—'}
-                                                    {selected.recipient_position
-                                                        ? ` · ${selected.recipient_position}`
-                                                        : ''}
+                                                    {(selected.recipients?.length ?? 0) > 0
+                                                        ? selected.recipients
+                                                              ?.map((r) =>
+                                                                  [
+                                                                      r.name === '—'
+                                                                          ? null
+                                                                          : r.name,
+                                                                      r.position_name,
+                                                                  ]
+                                                                      .filter(Boolean)
+                                                                      .join(' · '),
+                                                              )
+                                                              .filter(Boolean)
+                                                              .join('; ')
+                                                        : `${selected.recipient_name || '—'}${
+                                                              selected.recipient_position
+                                                                  ? ` · ${selected.recipient_position}`
+                                                                  : ''
+                                                          }`}
                                                 </dd>
                                             </div>
                                         )}
@@ -189,11 +206,15 @@ export default function FulfillQueue() {
                                         <div>
                                             <dt className="text-xs text-slate-500">Category</dt>
                                             <dd className="text-sm font-medium text-slate-900">
-                                                {selected.category?.name ??
-                                                    String(selected.resource_type ?? '—').replace(
-                                                        /_/g,
-                                                        ' ',
-                                                    )}
+                                                {(selected.categories?.length ?? 0) > 0
+                                                    ? selected.categories
+                                                          ?.map((c) => c.name)
+                                                          .join(', ')
+                                                    : selected.category?.name ??
+                                                      String(selected.resource_type ?? '—').replace(
+                                                          /_/g,
+                                                          ' ',
+                                                      )}
                                             </dd>
                                         </div>
                                         <div>

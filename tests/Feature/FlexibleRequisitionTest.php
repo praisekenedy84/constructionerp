@@ -322,6 +322,89 @@ class FlexibleRequisitionTest extends TestCase
         });
     }
 
+    public function test_can_create_requisition_with_multiple_recipients_and_categories(): void
+    {
+        $this->seedTenant();
+
+        $tenant = Tenant::where('slug', 'flexible-req-co')->firstOrFail();
+        $categoryIds = [];
+        $positionId = null;
+        $tenant->run(function () use (&$categoryIds, &$positionId) {
+            $categoryIds = \App\Models\RequisitionCategory::query()
+                ->orderBy('id')
+                ->limit(2)
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+
+            if (count($categoryIds) < 2) {
+                $extra = \App\Models\RequisitionCategory::create([
+                    'name' => 'Extra Category',
+                    'is_active' => true,
+                    'sort_order' => 99,
+                ]);
+                $categoryIds[] = $extra->id;
+            }
+
+            $positionId = \App\Models\Position::query()->value('id');
+            if (! $positionId) {
+                $positionId = \App\Models\Position::create([
+                    'name' => 'Site Foreman',
+                    'is_active' => true,
+                    'sort_order' => 1,
+                ])->id;
+            }
+        });
+        tenancy()->end();
+
+        $this->post('/login', [
+            'email' => 'engineer@flexible.local',
+            'password' => 'password',
+        ])->assertRedirect();
+
+        $this->post('/requisitions', [
+            'project_id' => 1,
+            'department' => 'Site',
+            'fulfillment_type' => 'cash_disbursement',
+            'addressed_to' => 'finance',
+            'items' => [
+                [
+                    'description' => 'Line for Alice',
+                    'unit' => 'lump',
+                    'quantity' => '1',
+                    'unit_cost' => '5000',
+                    'requisition_category_id' => $categoryIds[0],
+                    'recipient_name' => 'Alice Worker',
+                    'position_id' => $positionId,
+                ],
+                [
+                    'description' => 'Line for Bob',
+                    'unit' => 'lump',
+                    'quantity' => '1',
+                    'unit_cost' => '3000',
+                    'requisition_category_id' => $categoryIds[1],
+                    'recipient_name' => 'Bob Helper',
+                    'position_id' => null,
+                ],
+            ],
+        ])->assertRedirect();
+
+        $tenant->run(function () use ($categoryIds, $positionId) {
+            $req = Requisition::with(['items', 'recipients', 'categories'])->latest('id')->firstOrFail();
+            $this->assertCount(2, $req->items);
+            $this->assertSame((int) $categoryIds[0], (int) $req->items[0]->requisition_category_id);
+            $this->assertSame((int) $categoryIds[1], (int) $req->items[1]->requisition_category_id);
+            $this->assertSame('Alice Worker', $req->items[0]->recipient_name);
+            $this->assertSame((int) $positionId, (int) $req->items[0]->position_id);
+            $this->assertSame('Bob Helper', $req->items[1]->recipient_name);
+            $this->assertEqualsCanonicalizing(
+                $categoryIds,
+                $req->categories->pluck('id')->map(fn ($id) => (int) $id)->all(),
+            );
+            $this->assertCount(2, $req->recipients);
+        });
+    }
+
     public function test_new_requisition_number_skips_soft_deleted_numbers(): void
     {
         $this->seedTenant();

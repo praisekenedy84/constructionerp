@@ -177,11 +177,15 @@ export interface RequisitionItem {
     requisition_id: number;
     boq_item_id: number | null;
     inventory_item_id?: number | null;
+    requisition_category_id?: number | null;
     description: string;
     unit?: string | null;
     quantity: string;
     unit_cost: string;
     line_total: string;
+    recipient_name?: string | null;
+    position_id?: number | null;
+    recipient_position?: string | null;
     original_quantity?: string | null;
     original_unit_cost?: string | null;
     original_line_total?: string | null;
@@ -199,6 +203,8 @@ export interface RequisitionItem {
     } | null;
     boq_item?: BoqItem;
     inventory_item?: InventoryItem;
+    category?: RequisitionCategory | null;
+    position?: Position | null;
 }
 
 export interface RequisitionStatusHistory {
@@ -270,6 +276,14 @@ export interface Position {
     sort_order?: number;
 }
 
+export interface RequisitionRecipient {
+    id?: number;
+    name: string;
+    position_id?: number | null;
+    position_name?: string | null;
+    sort_order?: number;
+}
+
 export interface Requisition {
     id: number;
     requisition_no: string;
@@ -293,6 +307,8 @@ export interface Requisition {
     project?: Project | null;
     boq_item?: BoqItem;
     category?: RequisitionCategory | null;
+    categories?: RequisitionCategory[];
+    recipients?: RequisitionRecipient[];
     requestor?: { id: number; name: string; email?: string };
     items?: RequisitionItem[];
     history?: RequisitionStatusHistory[];

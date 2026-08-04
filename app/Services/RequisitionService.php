@@ -22,6 +22,7 @@ use App\Models\Notification;
 use App\Models\Requisition;
 use App\Models\RequisitionAttachment;
 use App\Models\RequisitionItem;
+use App\Models\RequisitionRecipient;
 use App\Models\RequisitionStatusHistory;
 use App\Models\User;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -107,7 +108,10 @@ class RequisitionService
                         ]);
                     }
 
-                    return $requisition->load('items');
+                    $this->syncCategories($requisition, $data['requisition_category_ids'] ?? []);
+                    $this->syncRecipients($requisition, $data['recipients'] ?? []);
+
+                    return $requisition->load(['items', 'recipients', 'categories']);
                 });
             } catch (QueryException $e) {
                 $attempts++;
@@ -196,7 +200,15 @@ class RequisitionService
                 ]);
             }
 
-            return $requisition->fresh(['items']);
+            if (array_key_exists('requisition_category_ids', $data)) {
+                $this->syncCategories($requisition, $data['requisition_category_ids'] ?? []);
+            }
+
+            if (array_key_exists('recipients', $data)) {
+                $this->syncRecipients($requisition, $data['recipients'] ?? []);
+            }
+
+            return $requisition->fresh(['items', 'recipients', 'categories']);
         });
     }
 
@@ -326,6 +338,22 @@ class RequisitionService
             'boq_item_id' => $item['boq_item_id'] ?? $headerBoqId,
             'inventory_item_id' => $inventoryItemId,
             'description' => $description,
+            'requisition_category_id' => isset($item['requisition_category_id']) && $item['requisition_category_id'] !== ''
+                ? (int) $item['requisition_category_id']
+                : null,
+            'recipient_name' => array_key_exists('recipient_name', $item)
+                ? ($item['recipient_name'] !== null && $item['recipient_name'] !== ''
+                    ? trim((string) $item['recipient_name'])
+                    : null)
+                : null,
+            'position_id' => isset($item['position_id']) && $item['position_id'] !== ''
+                ? (int) $item['position_id']
+                : null,
+            'recipient_position' => array_key_exists('recipient_position', $item)
+                ? ($item['recipient_position'] !== null && $item['recipient_position'] !== ''
+                    ? (string) $item['recipient_position']
+                    : null)
+                : null,
         ], $item, $unit);
     }
 
@@ -702,13 +730,16 @@ class RequisitionService
             ? trim($lineDescriptions).' ['.$req->requisition_no.']'
             : 'Requisition '.$req->requisition_no;
 
+        $categoryLabel = $req->categoryLabel();
+
         $expense = Expense::create([
             'project_id' => $req->project_id,
             'boq_item_id' => $req->boq_item_id,
             'requisition_id' => $req->id,
             'category' => $category,
-            'sub_type' => $req->category?->name
-                ?? ($req->department !== '' ? $req->department : 'Requisition'),
+            'sub_type' => $categoryLabel !== '—'
+                ? $categoryLabel
+                : ($req->department !== '' ? $req->department : 'Requisition'),
             'activity_ref' => $req->requisition_no,
             'amount' => $amount,
             'description' => $description,
@@ -952,6 +983,55 @@ class RequisitionService
         }
 
         return $total;
+    }
+
+    /**
+     * @param  list<int|string>  $categoryIds
+     */
+    private function syncCategories(Requisition $requisition, array $categoryIds): void
+    {
+        $sync = [];
+        foreach (array_values($categoryIds) as $index => $categoryId) {
+            $id = (int) $categoryId;
+            if ($id <= 0) {
+                continue;
+            }
+            $sync[$id] = ['sort_order' => $index];
+        }
+
+        $requisition->categories()->sync($sync);
+
+        $primaryId = array_key_first($sync);
+        if ($primaryId !== null && (int) $requisition->requisition_category_id !== (int) $primaryId) {
+            $requisition->update(['requisition_category_id' => $primaryId]);
+        }
+    }
+
+    /**
+     * @param  list<array{name?: string, position_id?: int|null, position_name?: string|null}>  $recipients
+     */
+    private function syncRecipients(Requisition $requisition, array $recipients): void
+    {
+        $requisition->recipients()->delete();
+
+        foreach (array_values($recipients) as $index => $recipient) {
+            $name = trim((string) ($recipient['name'] ?? ''));
+            $positionId = isset($recipient['position_id']) && $recipient['position_id'] !== ''
+                ? (int) $recipient['position_id']
+                : null;
+
+            if ($name === '' && ! $positionId) {
+                continue;
+            }
+
+            RequisitionRecipient::create([
+                'requisition_id' => $requisition->id,
+                'name' => $name !== '' ? $name : '—',
+                'position_id' => $positionId,
+                'position_name' => $recipient['position_name'] ?? null,
+                'sort_order' => $index,
+            ]);
+        }
     }
 
     private function generateRequisitionNo(): string

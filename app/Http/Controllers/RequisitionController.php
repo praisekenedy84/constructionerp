@@ -88,7 +88,7 @@ class RequisitionController extends Controller
     {
         $this->authorizePermission($request->user(), 'requisitions', 'update');
 
-        $requisition = Requisition::with(['items.inventoryItem'])->findOrFail($id);
+        $requisition = Requisition::with(['items.inventoryItem', 'items.category', 'recipients', 'categories'])->findOrFail($id);
 
         if (! $requisition->isVisibleTo($request->user())) {
             abort(403, 'This draft requisition is only visible to its author until published.');
@@ -145,9 +145,13 @@ class RequisitionController extends Controller
             'project',
             'boqItem',
             'category',
+            'categories',
+            'recipients.position',
             'requestor',
             'items.boqItem',
             'items.inventoryItem',
+            'items.category',
+            'items.position',
             'statusHistories.actor',
             'attachments.uploader',
             'approvalSteps',
@@ -262,6 +266,9 @@ class RequisitionController extends Controller
                 'requisition.requestor',
                 'requisition.boqItem',
                 'requisition.items',
+                'requisition.items.category',
+                'requisition.recipients',
+                'requisition.categories',
             ])
             ->where('status', 'pending')
             ->whereHas('requisition', fn ($q) => $q->where('status', 'under_review'));
@@ -302,7 +309,7 @@ class RequisitionController extends Controller
 
         $query = Requisition::query()
             ->whereIn('status', ['approved', 'amended'])
-            ->with(['project', 'requestor', 'category', 'boqItem', 'items']);
+            ->with(['project', 'requestor', 'category', 'categories', 'recipients', 'boqItem', 'items']);
 
         if ($request->filled('fulfillment_type')) {
             $query->where('fulfillment_type', $request->string('fulfillment_type'));
@@ -334,7 +341,7 @@ class RequisitionController extends Controller
         $query = Requisition::query()
             ->visibleTo($request->user())
             ->whereIn('status', ['fulfilled', 'closed'])
-            ->with(['project', 'requestor', 'category', 'boqItem', 'items']);
+            ->with(['project', 'requestor', 'category', 'categories', 'recipients', 'boqItem', 'items']);
 
         if ($request->filled('fulfillment_type')) {
             $query->where('fulfillment_type', $request->string('fulfillment_type'));
@@ -395,10 +402,24 @@ class RequisitionController extends Controller
             ->ordered()
             ->get(['id', 'name', 'description', 'is_active']);
 
-        if ($requisition?->requisition_category_id
-            && ! $categories->contains('id', $requisition->requisition_category_id)) {
+        $selectedCategoryIds = collect();
+        if ($requisition) {
+            $selectedCategoryIds = $requisition->relationLoaded('categories')
+                ? $requisition->categories->pluck('id')
+                : $requisition->categories()->pluck('requisition_categories.id');
+
+            if ($selectedCategoryIds->isEmpty() && $requisition->requisition_category_id) {
+                $selectedCategoryIds = collect([$requisition->requisition_category_id]);
+            }
+        }
+
+        foreach ($selectedCategoryIds as $categoryId) {
+            if ($categories->contains('id', $categoryId)) {
+                continue;
+            }
+
             $current = RequisitionCategory::query()
-                ->whereKey($requisition->requisition_category_id)
+                ->whereKey($categoryId)
                 ->first(['id', 'name', 'description', 'is_active']);
 
             if ($current) {
@@ -427,10 +448,24 @@ class RequisitionController extends Controller
             ->ordered()
             ->get(['id', 'name', 'description', 'is_active']);
 
-        if ($requisition?->position_id
-            && ! $positions->contains('id', $requisition->position_id)) {
+        $selectedPositionIds = collect();
+        if ($requisition) {
+            $selectedPositionIds = $requisition->relationLoaded('recipients')
+                ? $requisition->recipients->pluck('position_id')->filter()
+                : $requisition->recipients()->pluck('position_id')->filter();
+
+            if ($selectedPositionIds->isEmpty() && $requisition->position_id) {
+                $selectedPositionIds = collect([$requisition->position_id]);
+            }
+        }
+
+        foreach ($selectedPositionIds as $positionId) {
+            if ($positions->contains('id', $positionId)) {
+                continue;
+            }
+
             $currentPosition = Position::query()
-                ->whereKey($requisition->position_id)
+                ->whereKey($positionId)
                 ->first(['id', 'name', 'description', 'is_active']);
 
             if ($currentPosition) {

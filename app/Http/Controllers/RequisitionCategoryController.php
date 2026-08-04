@@ -53,7 +53,7 @@ class RequisitionCategoryController extends Controller
 
         $category = RequisitionCategory::findOrFail($id);
 
-        if ($category->requisitions()->exists()) {
+        if ($category->requisitions()->exists() || $category->primaryRequisitions()->exists()) {
             $category->update(['is_active' => false]);
 
             return back()->with(

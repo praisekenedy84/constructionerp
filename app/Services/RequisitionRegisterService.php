@@ -50,6 +50,10 @@ class RequisitionRegisterService
                 'requisition.project',
                 'requisition.requestor',
                 'requisition.category',
+                'requisition.categories',
+                'requisition.recipients',
+                'category',
+                'position',
             ]);
     }
 
@@ -64,10 +68,14 @@ class RequisitionRegisterService
         }
 
         if ($request->filled('category_id')) {
-            $query->whereHas(
-                'requisition',
-                fn (Builder $q) => $q->where('requisition_category_id', $request->integer('category_id')),
-            );
+            $categoryId = $request->integer('category_id');
+            $query->whereHas('requisition', function (Builder $q) use ($categoryId) {
+                $q->where('requisition_category_id', $categoryId)
+                    ->orWhereHas(
+                        'categories',
+                        fn (Builder $c) => $c->where('requisition_categories.id', $categoryId),
+                    );
+            });
         }
 
         if ($request->filled('department')) {
@@ -102,12 +110,21 @@ class RequisitionRegisterService
                             ->orWhere('recipient_name', 'like', "%{$search}%")
                             ->orWhere('recipient_position', 'like', "%{$search}%")
                             ->orWhereHas(
+                                'recipients',
+                                fn (Builder $r) => $r->where('name', 'like', "%{$search}%")
+                                    ->orWhere('position_name', 'like', "%{$search}%"),
+                            )
+                            ->orWhereHas(
                                 'project',
                                 fn (Builder $p) => $p->where('name', 'like', "%{$search}%")
                                     ->orWhere('code', 'like', "%{$search}%"),
                             )
                             ->orWhereHas('requestor', fn (Builder $u) => $u->where('name', 'like', "%{$search}%"))
-                            ->orWhereHas('category', fn (Builder $c) => $c->where('name', 'like', "%{$search}%"));
+                            ->orWhereHas('category', fn (Builder $c) => $c->where('name', 'like', "%{$search}%"))
+                            ->orWhereHas(
+                                'categories',
+                                fn (Builder $c) => $c->where('requisition_categories.name', 'like', "%{$search}%"),
+                            );
                     });
             });
         }
@@ -279,14 +296,17 @@ class RequisitionRegisterService
             'requisition_id' => $item->requisition_id,
             'date' => optional($requisition?->created_at)->toDateString(),
             'requested_by' => $requisition?->requestor?->name ?? '—',
-            'recipient_name' => $requisition?->recipient_name ?? '—',
-            'recipient_position' => $requisition?->recipient_position ?? '—',
+            'recipient_name' => $item->recipient_name
+                ?: $this->formatRecipientNames($requisition),
+            'recipient_position' => $item->recipient_position
+                ?: $this->formatRecipientPositions($requisition),
             'requisition_no' => $requisition?->requisition_no ?? '—',
             'sn' => (int) ($item->line_sn ?? 0),
             'department' => $requisition?->department ?? '—',
             'description' => $item->description,
-            'category' => $requisition?->category?->name
-                ?? (string) ($requisition?->resource_type?->value ?? $requisition?->resource_type ?? '—'),
+            'category' => $item->category?->name
+                ?? $requisition?->categoryLabel()
+                ?? '—',
             'project_code' => $requisition?->project?->code ?? 'ORG',
             'project_name' => $requisition?->project?->name ?? 'Organization',
             'unit' => $item->unit ?? '—',
@@ -306,5 +326,39 @@ class RequisitionRegisterService
         return collect($values)
             ->map(fn (string $value) => "'".str_replace("'", "''", $value)."'")
             ->implode(',');
+    }
+
+    private function formatRecipientNames(?Requisition $requisition): string
+    {
+        if (! $requisition) {
+            return '—';
+        }
+
+        $rows = $requisition->relationLoaded('recipients')
+            ? $requisition->recipients
+            : $requisition->recipients()->get();
+
+        if ($rows->isNotEmpty()) {
+            return $rows->pluck('name')->filter()->implode(', ') ?: '—';
+        }
+
+        return $requisition->recipient_name ?: '—';
+    }
+
+    private function formatRecipientPositions(?Requisition $requisition): string
+    {
+        if (! $requisition) {
+            return '—';
+        }
+
+        $rows = $requisition->relationLoaded('recipients')
+            ? $requisition->recipients
+            : $requisition->recipients()->get();
+
+        if ($rows->isNotEmpty()) {
+            return $rows->pluck('position_name')->filter()->implode(', ') ?: '—';
+        }
+
+        return $requisition->recipient_position ?: '—';
     }
 }

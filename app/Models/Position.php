@@ -41,4 +41,9 @@ class Position extends Model
     {
         return $this->hasMany(Requisition::class);
     }
+
+    public function recipientRows(): HasMany
+    {
+        return $this->hasMany(RequisitionRecipient::class);
+    }
 }

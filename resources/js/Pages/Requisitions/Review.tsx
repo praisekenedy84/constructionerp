@@ -234,20 +234,36 @@ export default function RequisitionsReview() {
                                                 {requisition.department}
                                             </dd>
                                         </div>
-                                        {(requisition.recipient_name ||
-                                            requisition.recipient_position) && (
+                                        {(requisition.recipients?.length ?? 0) > 0 ||
+                                        requisition.recipient_name ||
+                                        requisition.recipient_position ? (
                                             <div className="sm:col-span-2">
                                                 <dt className="text-xs text-slate-500">
                                                     On behalf of
                                                 </dt>
                                                 <dd className="text-sm font-medium text-slate-900">
-                                                    {requisition.recipient_name || '—'}
-                                                    {requisition.recipient_position
-                                                        ? ` · ${requisition.recipient_position}`
-                                                        : ''}
+                                                    {(requisition.recipients?.length ?? 0) > 0
+                                                        ? requisition.recipients
+                                                              ?.map((r) =>
+                                                                  [
+                                                                      r.name === '—'
+                                                                          ? null
+                                                                          : r.name,
+                                                                      r.position_name,
+                                                                  ]
+                                                                      .filter(Boolean)
+                                                                      .join(' · '),
+                                                              )
+                                                              .filter(Boolean)
+                                                              .join('; ')
+                                                        : `${requisition.recipient_name || '—'}${
+                                                              requisition.recipient_position
+                                                                  ? ` · ${requisition.recipient_position}`
+                                                                  : ''
+                                                          }`}
                                                 </dd>
                                             </div>
-                                        )}
+                                        ) : null}
                                         <div>
                                             <dt className="text-xs text-slate-500">Project</dt>
                                             <dd className="text-sm font-medium text-slate-900">
@@ -276,6 +292,16 @@ export default function RequisitionsReview() {
                                                 >
                                                     <span className="text-slate-700">
                                                         {item.description}
+                                                        {item.category?.name
+                                                            ? ` · ${item.category.name}`
+                                                            : ''}
+                                                        {item.recipient_name &&
+                                                        item.recipient_name !== '—'
+                                                            ? ` · ${item.recipient_name}`
+                                                            : ''}
+                                                        {item.recipient_position
+                                                            ? ` (${item.recipient_position})`
+                                                            : ''}
                                                     </span>
                                                     <span className="shrink-0 text-slate-600">
                                                         {formatQuantity(item.quantity)} ×{' '}

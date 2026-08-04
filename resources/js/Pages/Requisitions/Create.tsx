@@ -42,6 +42,9 @@ interface LineItemForm {
     key: string;
     source: LineSource;
     inventory_item_id: string;
+    requisition_category_id: string;
+    recipient_name: string;
+    position_id: string;
     description: string;
     unit: string;
     quantity: string;
@@ -55,21 +58,30 @@ function nextLineKey(): string {
     return `line-${Date.now()}-${lineKeySeq}`;
 }
 
-const emptyLine = (): LineItemForm => ({
+const emptyLine = (defaults?: Partial<LineItemForm>): LineItemForm => ({
     key: nextLineKey(),
     source: 'new',
     inventory_item_id: '',
+    requisition_category_id: '',
+    recipient_name: '',
+    position_id: '',
     description: '',
     unit: '',
     quantity: '',
     unit_cost: '',
+    ...defaults,
 });
 
-function lineFromItem(item: RequisitionItem): LineItemForm {
+function lineFromItem(item: RequisitionItem, fallbackCategoryId: string): LineItemForm {
     return {
         ...emptyLine(),
         source: item.inventory_item_id ? 'catalog' : 'new',
         inventory_item_id: item.inventory_item_id ? String(item.inventory_item_id) : '',
+        requisition_category_id: item.requisition_category_id
+            ? String(item.requisition_category_id)
+            : fallbackCategoryId,
+        recipient_name: item.recipient_name === '—' ? '' : (item.recipient_name ?? ''),
+        position_id: item.position_id ? String(item.position_id) : '',
         description: item.description ?? '',
         unit: item.unit ?? '',
         quantity: item.quantity ?? '',
@@ -104,19 +116,17 @@ export default function RequisitionsCreate() {
         usePage<RequisitionsCreateProps>().props;
     const isEditing = Boolean(requisition);
 
-    const initialCategory =
-        categories.find((category) => category.id === requisition?.requisition_category_id) ??
-        categories[0] ??
-        null;
     const initialDepartment =
         departments.find((department) => department.id === requisition?.department_id) ??
         departments.find((department) => department.name === requisition?.department) ??
         departments[0] ??
         null;
-    const initialPosition =
-        positions.find((position) => position.id === requisition?.position_id) ??
-        positions.find((position) => position.name === requisition?.recipient_position) ??
-        null;
+    const fallbackCategoryId =
+        (requisition?.categories?.[0] && String(requisition.categories[0].id)) ||
+        (requisition?.requisition_category_id
+            ? String(requisition.requisition_category_id)
+            : '') ||
+        (categories[0] ? String(categories[0].id) : '');
     const initialAddressedTo = (requisition?.addressed_to ?? 'finance') as RequisitionAddressedTo;
 
     const { data, setData, post, put, processing, errors, transform } = useForm({
@@ -128,30 +138,27 @@ export default function RequisitionsCreate() {
         project_id: requisition?.project_id ? String(requisition.project_id) : '',
         boq_item_id: requisition?.boq_item_id ? String(requisition.boq_item_id) : '',
         department_id: initialDepartment ? String(initialDepartment.id) : '',
-        requisition_category_id: initialCategory ? String(initialCategory.id) : '',
         addressed_to: initialAddressedTo,
         fulfillment_type: (requisition?.fulfillment_type ??
             defaultFulfillment(initialAddressedTo)) as FulfillmentType,
-        recipient_name: requisition?.recipient_name ?? '',
-        position_id: initialPosition ? String(initialPosition.id) : '',
         items:
             requisition?.items && requisition.items.length > 0
-                ? requisition.items.map(lineFromItem)
-                : [emptyLine()],
+                ? requisition.items.map((item) => lineFromItem(item, fallbackCategoryId))
+                : [emptyLine({ requisition_category_id: fallbackCategoryId })],
     });
 
     transform((form) => ({
         project_id: form.scope === 'project' ? form.project_id || null : null,
         boq_item_id: form.scope === 'project' ? form.boq_item_id || null : null,
         department_id: form.department_id,
-        requisition_category_id: form.requisition_category_id,
         addressed_to: form.addressed_to,
         fulfillment_type: form.fulfillment_type,
-        recipient_name: form.recipient_name.trim() || null,
-        position_id: form.position_id || null,
         items: form.items.map((item) => ({
             inventory_item_id:
                 item.source === 'catalog' && item.inventory_item_id ? item.inventory_item_id : null,
+            requisition_category_id: item.requisition_category_id || null,
+            recipient_name: item.recipient_name.trim() || null,
+            position_id: item.position_id || null,
             description: item.description,
             unit: item.unit || null,
             quantity: item.quantity,
@@ -178,7 +185,16 @@ export default function RequisitionsCreate() {
     function addLine(e?: FormEvent) {
         e?.preventDefault();
         e?.stopPropagation();
-        setData('items', [...data.items, emptyLine()]);
+        const previous = data.items[data.items.length - 1];
+        setData('items', [
+            ...data.items,
+            emptyLine({
+                requisition_category_id:
+                    previous?.requisition_category_id || fallbackCategoryId,
+                recipient_name: previous?.recipient_name ?? '',
+                position_id: previous?.position_id ?? '',
+            }),
+        ]);
     }
 
     function removeLine(index: number) {
@@ -197,7 +213,7 @@ export default function RequisitionsCreate() {
                 return item;
             }
 
-            const next = { ...item, [field]: value };
+            const next: LineItemForm = { ...item, [field]: value };
 
             if (field === 'source' && value === 'new') {
                 next.inventory_item_id = '';
@@ -216,10 +232,6 @@ export default function RequisitionsCreate() {
         });
 
         setData('items', items);
-    }
-
-    function setCategory(categoryId: string) {
-        setData('requisition_category_id', categoryId);
     }
 
     function setAddressedTo(value: RequisitionAddressedTo) {
@@ -343,36 +355,6 @@ export default function RequisitionsCreate() {
                                 )}
                             </div>
                             <div className="space-y-2">
-                                <Label>Category</Label>
-                                <select
-                                    className="flex h-10 w-full rounded-md border border-slate-200 px-3 text-sm"
-                                    value={data.requisition_category_id}
-                                    onChange={(e) => setCategory(e.target.value)}
-                                    required
-                                >
-                                    {categories.length === 0 && (
-                                        <option value="">No categories defined</option>
-                                    )}
-                                    {categories.map((category) => (
-                                        <option key={category.id} value={category.id}>
-                                            {category.name}
-                                            {!category.is_active ? ' (inactive)' : ''}
-                                        </option>
-                                    ))}
-                                </select>
-                                {errors.requisition_category_id && (
-                                    <p className="text-sm text-red-600">
-                                        {errors.requisition_category_id}
-                                    </p>
-                                )}
-                                {categories.length === 0 && (
-                                    <p className="text-sm text-amber-700">
-                                        Define categories under Requisitions → Categories before
-                                        creating a request.
-                                    </p>
-                                )}
-                            </div>
-                            <div className="space-y-2">
                                 <Label>Addressed to</Label>
                                 <select
                                     className="flex h-10 w-full rounded-md border border-slate-200 px-3 text-sm"
@@ -417,65 +399,6 @@ export default function RequisitionsCreate() {
                                     <p className="text-sm text-red-600">{errors.fulfillment_type}</p>
                                 )}
                             </div>
-                            <div className="space-y-2 sm:col-span-2 rounded-md border border-dashed border-slate-200 bg-slate-50/60 p-3">
-                                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                                    On behalf of (optional)
-                                </p>
-                                <p className="mb-3 text-xs text-slate-500">
-                                    Use when requesting for someone else, especially people not in
-                                    the system.
-                                </p>
-                                <div className="grid gap-4 sm:grid-cols-2">
-                                    <div className="space-y-2">
-                                        <Label htmlFor="recipient_name">Recipient name</Label>
-                                        <Input
-                                            id="recipient_name"
-                                            value={data.recipient_name}
-                                            onChange={(e) =>
-                                                setData('recipient_name', e.target.value)
-                                            }
-                                            placeholder="e.g. John Doe"
-                                        />
-                                        {errors.recipient_name && (
-                                            <p className="text-sm text-red-600">
-                                                {errors.recipient_name}
-                                            </p>
-                                        )}
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label htmlFor="position_id">Recipient position</Label>
-                                        <select
-                                            id="position_id"
-                                            className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-                                            value={data.position_id}
-                                            onChange={(e) => setData('position_id', e.target.value)}
-                                        >
-                                            <option value="">No position selected</option>
-                                            {positions.length === 0 && (
-                                                <option value="" disabled>
-                                                    No positions defined
-                                                </option>
-                                            )}
-                                            {positions.map((position) => (
-                                                <option key={position.id} value={position.id}>
-                                                    {position.name}
-                                                    {!position.is_active ? ' (inactive)' : ''}
-                                                </option>
-                                            ))}
-                                        </select>
-                                        {errors.position_id && (
-                                            <p className="text-sm text-red-600">
-                                                {errors.position_id}
-                                            </p>
-                                        )}
-                                        {errors.recipient_position && !errors.position_id && (
-                                            <p className="text-sm text-red-600">
-                                                {errors.recipient_position}
-                                            </p>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
                             {!isOrganization && (
                                 <div className="space-y-2 sm:col-span-2">
                                     <Label>BOQ Item (optional cost allocation)</Label>
@@ -517,8 +440,8 @@ export default function RequisitionsCreate() {
                         }
                     >
                         <p className="mb-4 text-sm text-slate-500">
-                            Add description, quantity, and unit cost for each line. Optionally pick from
-                            the inventory catalog.
+                            Each line has its own category and optional recipient. New lines copy
+                            the previous line&apos;s category and recipient.
                         </p>
                         <div className="space-y-4">
                             {data.items.map((item, index) => (
@@ -542,6 +465,85 @@ export default function RequisitionsCreate() {
                                         )}
                                     </div>
 
+                                    <div className="grid gap-3 sm:grid-cols-2">
+                                        <div className="space-y-2">
+                                            <Label>Category</Label>
+                                            <select
+                                                className="flex h-10 w-full rounded-md border border-slate-200 px-3 text-sm"
+                                                value={item.requisition_category_id}
+                                                onChange={(e) =>
+                                                    updateLine(
+                                                        index,
+                                                        'requisition_category_id',
+                                                        e.target.value,
+                                                    )
+                                                }
+                                                required
+                                            >
+                                                {categories.length === 0 && (
+                                                    <option value="">No categories defined</option>
+                                                )}
+                                                {categories.map((category) => (
+                                                    <option key={category.id} value={category.id}>
+                                                        {category.name}
+                                                        {!category.is_active ? ' (inactive)' : ''}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                            {errors[`items.${index}.requisition_category_id`] && (
+                                                <p className="text-sm text-red-600">
+                                                    {
+                                                        errors[
+                                                            `items.${index}.requisition_category_id`
+                                                        ]
+                                                    }
+                                                </p>
+                                            )}
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label>Recipient position (optional)</Label>
+                                            <select
+                                                className="flex h-10 w-full rounded-md border border-slate-200 px-3 text-sm"
+                                                value={item.position_id}
+                                                onChange={(e) =>
+                                                    updateLine(index, 'position_id', e.target.value)
+                                                }
+                                            >
+                                                <option value="">No position selected</option>
+                                                {positions.map((position) => (
+                                                    <option key={position.id} value={position.id}>
+                                                        {position.name}
+                                                        {!position.is_active ? ' (inactive)' : ''}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                            {errors[`items.${index}.position_id`] && (
+                                                <p className="text-sm text-red-600">
+                                                    {errors[`items.${index}.position_id`]}
+                                                </p>
+                                            )}
+                                        </div>
+                                        <div className="space-y-2 sm:col-span-2">
+                                            <Label>Recipient name (optional)</Label>
+                                            <Input
+                                                placeholder="e.g. John Doe — leave blank if for requestor"
+                                                value={item.recipient_name}
+                                                onChange={(e) =>
+                                                    updateLine(
+                                                        index,
+                                                        'recipient_name',
+                                                        e.target.value,
+                                                    )
+                                                }
+                                            />
+                                            {errors[`items.${index}.recipient_name`] && (
+                                                <p className="text-sm text-red-600">
+                                                    {errors[`items.${index}.recipient_name`]}
+                                                </p>
+                                            )}
+                                        </div>
+                                    </div>
+
                                     <div className="flex flex-wrap gap-2">
                                         <Button
                                             type="button"
@@ -554,7 +556,9 @@ export default function RequisitionsCreate() {
                                         <Button
                                             type="button"
                                             size="sm"
-                                            variant={item.source === 'catalog' ? 'default' : 'outline'}
+                                            variant={
+                                                item.source === 'catalog' ? 'default' : 'outline'
+                                            }
                                             onClick={() => updateLine(index, 'source', 'catalog')}
                                         >
                                             From catalog

@@ -178,11 +178,22 @@ export default function RequisitionsShow() {
                 <PageHeader
                     title={requisition.requisition_no}
                     description={`Requested by ${requisition.requestor?.name ?? 'Unknown'}${
-                        requisition.recipient_name
-                            ? ` · On behalf of ${requisition.recipient_name}${
-                                  requisition.recipient_position
-                                      ? ` (${requisition.recipient_position})`
-                                      : ''
+                        (requisition.recipients?.length ?? 0) > 0 || requisition.recipient_name
+                            ? ` · On behalf of ${
+                                  (requisition.recipients?.length ?? 0) > 0
+                                      ? requisition.recipients
+                                            ?.map((r) =>
+                                                [r.name === '—' ? null : r.name, r.position_name]
+                                                    .filter(Boolean)
+                                                    .join(' · '),
+                                            )
+                                            .filter(Boolean)
+                                            .join('; ')
+                                      : `${requisition.recipient_name ?? ''}${
+                                            requisition.recipient_position
+                                                ? ` (${requisition.recipient_position})`
+                                                : ''
+                                        }`
                               }`
                             : ''
                     } · ${requisition.department} · ${requisition.project?.name ?? 'Organization'}`}
@@ -209,26 +220,46 @@ export default function RequisitionsShow() {
                     }
                 />
 
-                {(requisition.recipient_name || requisition.recipient_position) && (
-                    <DataPanel title="Recipient (on behalf of)">
-                        <div className="grid gap-4 sm:grid-cols-2 text-sm">
-                            <div>
-                                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                                    Name
-                                </p>
-                                <p className="mt-1 text-slate-900">
-                                    {requisition.recipient_name || '—'}
-                                </p>
+                {((requisition.recipients?.length ?? 0) > 0 ||
+                    requisition.recipient_name ||
+                    requisition.recipient_position) && (
+                    <DataPanel title="Recipients (on behalf of)">
+                        {(requisition.recipients?.length ?? 0) > 0 ? (
+                            <ul className="divide-y divide-slate-100 text-sm">
+                                {requisition.recipients?.map((recipient, index) => (
+                                    <li
+                                        key={recipient.id ?? index}
+                                        className="flex flex-wrap justify-between gap-2 py-2"
+                                    >
+                                        <span className="font-medium text-slate-900">
+                                            {recipient.name === '—' ? '—' : recipient.name}
+                                        </span>
+                                        <span className="text-slate-600">
+                                            {recipient.position_name || '—'}
+                                        </span>
+                                    </li>
+                                ))}
+                            </ul>
+                        ) : (
+                            <div className="grid gap-4 sm:grid-cols-2 text-sm">
+                                <div>
+                                    <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                                        Name
+                                    </p>
+                                    <p className="mt-1 text-slate-900">
+                                        {requisition.recipient_name || '—'}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                                        Position
+                                    </p>
+                                    <p className="mt-1 text-slate-900">
+                                        {requisition.recipient_position || '—'}
+                                    </p>
+                                </div>
                             </div>
-                            <div>
-                                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                                    Position
-                                </p>
-                                <p className="mt-1 text-slate-900">
-                                    {requisition.recipient_position || '—'}
-                                </p>
-                            </div>
-                        </div>
+                        )}
                     </DataPanel>
                 )}
 
@@ -278,7 +309,9 @@ export default function RequisitionsShow() {
                                 requisition.addressed_to ??
                                     (isStockFulfillment ? 'storekeeper' : 'finance'),
                             )}{' '}
-                            · {requisition.category?.name ??
+                            · {(requisition.categories?.length ?? 0) > 0
+                                ? requisition.categories?.map((c) => c.name).join(', ')
+                                : requisition.category?.name ??
                                 String(requisition.resource_type ?? '—').replace(/_/g, ' ')}{' '}
                             ·{' '}
                             {fulfillmentLabel}
@@ -292,6 +325,8 @@ export default function RequisitionsShow() {
                             <thead>
                                 <tr className="text-left text-xs text-slate-500">
                                     <th className="pb-2 font-medium">Description</th>
+                                    <th className="pb-2 font-medium">Category</th>
+                                    <th className="pb-2 font-medium">Recipient</th>
                                     <th className="pb-2 font-medium">Unit</th>
                                     <th className="pb-2 text-right font-medium">Qty</th>
                                     <th className="pb-2 text-right font-medium">Unit Cost</th>
@@ -303,6 +338,14 @@ export default function RequisitionsShow() {
                                     const changed =
                                         item.original_line_total != null &&
                                         String(item.original_line_total) !== String(item.line_total);
+                                    const recipientLabel = [
+                                        item.recipient_name && item.recipient_name !== '—'
+                                            ? item.recipient_name
+                                            : null,
+                                        item.recipient_position,
+                                    ]
+                                        .filter(Boolean)
+                                        .join(' · ');
                                     return (
                                     <tr key={item.id}>
                                         <td className="py-2 text-slate-900">
@@ -313,46 +356,17 @@ export default function RequisitionsShow() {
                                                         Was: {item.original_description}
                                                     </div>
                                                 )}
-                                            {item.details?.workers && (
-                                                <div className="text-xs text-slate-500">
-                                                    {item.details.workers} workers ×{' '}
-                                                    {item.details.days} days @{' '}
-                                                    {formatCurrency(item.details.rate_per_day ?? '0')}
-                                                    /day
-                                                </div>
-                                            )}
-                                            {item.details?.duration && (
-                                                <div className="text-xs text-slate-500">
-                                                    {item.details.duration}{' '}
-                                                    {item.details.duration_unit}
-                                                    (s) @ {formatCurrency(item.details.rate ?? '0')}
-                                                </div>
-                                            )}
-                                            {item.details?.trips && (
-                                                <div className="text-xs text-slate-500">
-                                                    {item.details.trips} trips @{' '}
-                                                    {formatCurrency(item.details.cost_per_trip ?? '0')}
-                                                    /trip
-                                                </div>
-                                            )}
-                                            {item.details?.estimated_amount && (
-                                                <div className="text-xs text-slate-500">
-                                                    Cash estimate:{' '}
-                                                    {formatCurrency(item.details.estimated_amount)}
-                                                </div>
-                                            )}
                                             {item.inventory_item && (
                                                 <div className="text-xs text-slate-500">
                                                     Catalog: {item.inventory_item.code}
                                                 </div>
                                             )}
-                                            {!item.inventory_item_id &&
-                                                !item.details &&
-                                                requisition.resource_type !== 'cash' && (
-                                                    <div className="text-xs text-slate-400">
-                                                        New item request
-                                                    </div>
-                                                )}
+                                        </td>
+                                        <td className="py-2 text-slate-600">
+                                            {item.category?.name ?? '—'}
+                                        </td>
+                                        <td className="py-2 text-slate-600">
+                                            {recipientLabel || '—'}
                                         </td>
                                         <td className="py-2 text-slate-600">{item.unit ?? '—'}</td>
                                         <td className="py-2 text-right text-slate-600">

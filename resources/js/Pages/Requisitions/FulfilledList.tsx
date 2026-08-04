@@ -137,11 +137,15 @@ export default function FulfilledList() {
                                                         <div>{req.project?.name ?? 'Organization'}</div>
                                                     </td>
                                                     <td className="px-4 py-3 text-slate-600">
-                                                        {req.category?.name ??
-                                                            String(req.resource_type ?? '—').replace(
-                                                                /_/g,
-                                                                ' ',
-                                                            )}
+                                                        {(req.categories?.length ?? 0) > 0
+                                                            ? req.categories
+                                                                  ?.map((c) => c.name)
+                                                                  .join(', ')
+                                                            : req.category?.name ??
+                                                              String(req.resource_type ?? '—').replace(
+                                                                  /_/g,
+                                                                  ' ',
+                                                              )}
                                                     </td>
                                                     <td className="px-4 py-3 text-slate-700">
                                                         <div className="max-w-[220px]">

@@ -10,6 +10,7 @@ use App\Traits\LogsActivity;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -128,6 +129,17 @@ class Requisition extends Model
         return $this->belongsTo(RequisitionCategory::class, 'requisition_category_id');
     }
 
+    public function categories(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            RequisitionCategory::class,
+            'requisition_requisition_category',
+        )
+            ->withPivot('sort_order')
+            ->withTimestamps()
+            ->orderByPivot('sort_order');
+    }
+
     public function assignedDepartment(): BelongsTo
     {
         return $this->belongsTo(Department::class, 'department_id');
@@ -138,9 +150,61 @@ class Requisition extends Model
         return $this->belongsTo(Position::class, 'position_id');
     }
 
+    public function recipients(): HasMany
+    {
+        return $this->hasMany(RequisitionRecipient::class)->orderBy('sort_order')->orderBy('id');
+    }
+
     public function requestor(): BelongsTo
     {
         return $this->belongsTo(User::class, 'requestor_id');
+    }
+
+    /** Comma-separated category names for display / expense sub_type. */
+    public function categoryLabel(): string
+    {
+        $names = $this->relationLoaded('categories')
+            ? $this->categories->pluck('name')
+            : $this->categories()->pluck('requisition_categories.name');
+
+        $joined = $names->filter()->unique()->implode(', ');
+
+        if ($joined !== '') {
+            return $joined;
+        }
+
+        return $this->category?->name
+            ?? (string) ($this->resource_type?->value ?? $this->resource_type ?? '—');
+    }
+
+    /** Display string for one or more recipients. */
+    public function recipientsLabel(): string
+    {
+        $rows = $this->relationLoaded('recipients')
+            ? $this->recipients
+            : $this->recipients()->get();
+
+        if ($rows->isEmpty()) {
+            if ($this->recipient_name || $this->recipient_position) {
+                $label = trim((string) $this->recipient_name);
+                if ($this->recipient_position) {
+                    $label .= ($label !== '' ? ' · ' : '').$this->recipient_position;
+                }
+
+                return $label !== '' ? $label : '—';
+            }
+
+            return '—';
+        }
+
+        return $rows->map(function (RequisitionRecipient $recipient) {
+            $label = trim((string) $recipient->name);
+            if ($recipient->position_name) {
+                $label .= ($label !== '' && $label !== '—' ? ' · ' : '').$recipient->position_name;
+            }
+
+            return $label !== '' ? $label : '—';
+        })->implode('; ');
     }
 
     public function items(): HasMany

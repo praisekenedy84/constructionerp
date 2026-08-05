@@ -13,7 +13,7 @@ import { Dialog } from '@/Components/ui/dialog';
 import { confirmDiscardIfDirty, DialogFormActions } from '@/Components/ui/dialog-form';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
-import { formatCurrency, formatDate } from '@/lib/formatters';
+import { formatCurrency, formatDate, formatPercent } from '@/lib/formatters';
 import {
     aggregateBudgetByType,
     aggregateBudgetTimeline,
@@ -25,19 +25,32 @@ import { FormEvent, useState } from 'react';
 
 interface BudgetShowProps extends PageProps {
     project: Project;
+    gross_budget: string;
+    ipc_deductions: string;
+    ledger_spend: string;
+    utilized_budget: string;
     remaining_budget: string;
+    utilization_percentage: string;
     transactions: Paginated<BudgetTransaction>;
     filters: ListingFilters;
 }
 
 export default function BudgetShow() {
-    const { project, remaining_budget, transactions, filters } = usePage<BudgetShowProps>().props;
+    const {
+        project,
+        gross_budget,
+        ipc_deductions,
+        utilized_budget,
+        remaining_budget,
+        utilization_percentage,
+        transactions,
+        filters,
+    } = usePage<BudgetShowProps>().props;
     const rows = transactions.data ?? [];
     const budgetByType = aggregateBudgetByType(rows);
     const budgetTimeline = aggregateBudgetTimeline(rows);
-    const utilized = parseFloat(project.net_budget) - parseFloat(remaining_budget);
     const budgetOverview = [
-        { name: 'Utilized', amount: utilized },
+        { name: 'Utilized', amount: parseFloat(utilized_budget) || 0 },
         { name: 'Remaining', amount: parseFloat(remaining_budget) || 0 },
     ];
     const [open, setOpen] = useState(false);
@@ -85,7 +98,17 @@ export default function BudgetShow() {
                     }
                 />
 
-                <div className="grid gap-4 sm:grid-cols-3">
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+                    <DataPanel title="Phase Budget">
+                        <p className="text-2xl font-bold text-slate-900">
+                            {formatCurrency(gross_budget)}
+                        </p>
+                    </DataPanel>
+                    <DataPanel title="IPC Deductions">
+                        <p className="text-2xl font-bold text-amber-700">
+                            {formatCurrency(ipc_deductions)}
+                        </p>
+                    </DataPanel>
                     <DataPanel title="Net Budget">
                         <p className="text-2xl font-bold text-slate-900">
                             {formatCurrency(project.net_budget)}
@@ -98,15 +121,19 @@ export default function BudgetShow() {
                     </DataPanel>
                     <DataPanel title="Utilized">
                         <p className="text-2xl font-bold text-slate-600">
-                            {formatCurrency(
-                                parseFloat(project.net_budget) - parseFloat(remaining_budget),
-                            )}
+                            {formatCurrency(utilized_budget)}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">
+                            {formatPercent(utilization_percentage)} of phase budget
                         </p>
                     </DataPanel>
                 </div>
 
                 <div className="grid gap-6 lg:grid-cols-2">
-                    <DataPanel title="Budget Allocation" description="Utilized vs remaining budget">
+                    <DataPanel
+                        title="Budget Allocation"
+                        description="IPC deductions and later charges vs remaining budget"
+                    >
                         <SimpleBarChart
                             data={budgetOverview}
                             xKey="name"
@@ -116,7 +143,10 @@ export default function BudgetShow() {
                         />
                     </DataPanel>
 
-                    <DataPanel title="Spend by Category" description="Budget transactions by type">
+                    <DataPanel
+                        title="Ledger Spend by Category"
+                        description="Budget transactions after IPC deductions"
+                    >
                         <SimplePieChart
                             data={budgetByType}
                             valueLabel="Amount"
@@ -125,7 +155,10 @@ export default function BudgetShow() {
                     </DataPanel>
                 </div>
 
-                <DataPanel title="Cumulative Spend" description="Running total of budget utilization">
+                <DataPanel
+                    title="Cumulative Ledger Spend"
+                    description="Running total of budget transactions after IPC deductions"
+                >
                     <SimpleLineChart
                         data={budgetTimeline}
                         xKey="date"

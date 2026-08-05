@@ -9,11 +9,73 @@ use Illuminate\Support\Facades\DB;
 
 class BudgetService
 {
+    /**
+     * @return array{
+     *     gross_budget: string,
+     *     ipc_deductions: string,
+     *     ledger_spend: string,
+     *     utilized_budget: string,
+     *     remaining_budget: string,
+     *     utilization_percentage: string
+     * }
+     */
+    public function summary(Project $project): array
+    {
+        $grossBudget = bcadd((string) $project->phases()->sum('disbursed_amount'), '0', 2);
+        $netBudget = bcadd((string) $project->net_budget, '0', 2);
+        $ledgerSpend = bcadd(
+            (string) BudgetTransaction::where('project_id', $project->id)->sum('amount'),
+            '0',
+            2,
+        );
+        $ipcDeductions = bcsub($grossBudget, $netBudget, 2);
+        if (bccomp($ipcDeductions, '0', 2) === -1) {
+            $ipcDeductions = '0.00';
+        }
+
+        $utilizedBudget = bcadd($ipcDeductions, $ledgerSpend, 2);
+        $remainingBudget = bcsub($netBudget, $ledgerSpend, 2);
+
+        return [
+            'gross_budget' => $grossBudget,
+            'ipc_deductions' => $ipcDeductions,
+            'ledger_spend' => $ledgerSpend,
+            'utilized_budget' => $utilizedBudget,
+            'remaining_budget' => $remainingBudget,
+            'utilization_percentage' => bccomp($grossBudget, '0', 2) === 0
+                ? '0.00'
+                : bcmul(bcdiv($utilizedBudget, $grossBudget, 6), '100', 2),
+        ];
+    }
+
+    public function ledgerSpend(Project $project): string
+    {
+        return $this->summary($project)['ledger_spend'];
+    }
+
     public function remainingBudget(Project $project): string
     {
-        $spent = (string) BudgetTransaction::where('project_id', $project->id)->sum('amount');
+        return $this->summary($project)['remaining_budget'];
+    }
 
-        return bcsub((string) $project->net_budget, $spent, 2);
+    public function grossBudget(Project $project): string
+    {
+        return $this->summary($project)['gross_budget'];
+    }
+
+    public function ipcDeductions(Project $project): string
+    {
+        return $this->summary($project)['ipc_deductions'];
+    }
+
+    public function utilizedBudget(Project $project): string
+    {
+        return $this->summary($project)['utilized_budget'];
+    }
+
+    public function utilizationPercentage(Project $project): string
+    {
+        return $this->summary($project)['utilization_percentage'];
     }
 
     /**

@@ -3,8 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\BudgetTransaction;
-use App\Models\ComplianceRule;
 use App\Models\CashAllocation;
+use App\Models\ComplianceRule;
 use App\Models\Expense;
 use App\Models\Project;
 use App\Models\ProjectPhase;
@@ -13,6 +13,7 @@ use App\Models\Valuation;
 use App\Models\ValuationDeduction;
 use App\Services\AuthService;
 use App\Services\BudgetService;
+use App\Services\ReportService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -265,9 +266,17 @@ class ValuationIpcComplianceTest extends TestCase
 
         // 50,000,000 phase − (5,000,000 retention + 3,550,000 fees) = 41,450,000
         $project = Project::findOrFail($projectId);
+        $budget = app(BudgetService::class)->summary($project);
         $this->assertSame('41450000.00', (string) $project->net_budget);
-        $this->assertSame('41450000.00', app(BudgetService::class)->remainingBudget($project));
+        $this->assertSame('41450000.00', $budget['remaining_budget']);
+        $this->assertSame('8550000.00', $budget['ipc_deductions']);
+        $this->assertSame('8550000.00', $budget['utilized_budget']);
+        $this->assertSame('17.10', $budget['utilization_percentage']);
         $this->assertSame(0, BudgetTransaction::where('project_id', $projectId)->count());
+
+        $report = app(ReportService::class)->executiveDashboard(['project_id' => $projectId]);
+        $this->assertSame('8550000.00', $report['projects'][0]['spent']);
+        $this->assertSame('17.10', $report['projects'][0]['utilization_pct']);
     }
 
     public function test_editing_a_draft_ipc_does_not_accumulate_budget_charges(): void

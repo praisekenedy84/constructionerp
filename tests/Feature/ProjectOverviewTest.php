@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Enums\BudgetTransactionType;
 use App\Models\BudgetTransaction;
 use App\Models\Project;
+use App\Models\ProjectPhase;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Services\AuthService;
@@ -62,6 +63,14 @@ class ProjectOverviewTest extends TestCase
                 'created_at' => now(),
             ]);
 
+            ProjectPhase::create([
+                'project_id' => $project->id,
+                'sequence_no' => 1,
+                'name' => 'Phase 1',
+                'disbursed_amount' => '1000.00',
+                'phase_net_budget' => '1000.00',
+            ]);
+
             $projectId = $project->id;
         });
 
@@ -73,6 +82,7 @@ class ProjectOverviewTest extends TestCase
                 ->component('Projects/Show')
                 ->where('project.remaining_budget', '600.00')
                 ->where('project.profit_percentage', '60.00')
+                ->where('project.utilization_percentage', '40.00')
             );
 
         $this->get('/projects')
@@ -80,6 +90,7 @@ class ProjectOverviewTest extends TestCase
             ->assertInertia(fn ($page) => $page
                 ->component('Projects/Index')
                 ->where('projects.data.0.profit_percentage', '60.00')
+                ->where('projects.data.0.utilization_percentage', '40.00')
             );
     }
 }

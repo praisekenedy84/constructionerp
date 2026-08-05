@@ -195,9 +195,12 @@ export default function ProjectsShow() {
                             {formatCurrency(project.contract_amount)}
                         </p>
                     </DataPanel>
-                    <DataPanel title="Profit">
+                    <DataPanel title="Budget Utilization">
                         <p className="text-2xl font-bold text-blue-700">
-                            {formatPercent(project.profit_percentage)}
+                            {formatPercent(project.utilization_percentage)}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">
+                            Includes IPC deductions and subsequent budget charges
                         </p>
                     </DataPanel>
                 </div>

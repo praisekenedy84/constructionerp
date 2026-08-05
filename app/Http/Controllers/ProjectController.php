@@ -72,7 +72,7 @@ class ProjectController extends Controller
         unset($validated['ipcs'], $validated['initial_phase_name'], $validated['initial_phase_disbursed_amount']);
 
         $project = DB::transaction(function () use ($request, $validated, $ipcs, $initialPhaseName, $initialPhaseDisbursed) {
-            $project = $this->persistProject(new Project(), $validated);
+            $project = $this->persistProject(new Project, $validated);
             $phase = null;
 
             $shouldCreatePhase = ($initialPhaseDisbursed !== null && $initialPhaseDisbursed !== '')
@@ -210,13 +210,15 @@ class ProjectController extends Controller
 
     private function withBudgetSummary(Project $project): Project
     {
-        $remainingBudget = $this->budgetService->remainingBudget($project);
+        $budget = $this->budgetService->summary($project);
+        $remainingBudget = $budget['remaining_budget'];
         $profitPercentage = bccomp((string) $project->net_budget, '0', 2) === 0
             ? '0.00'
             : bcmul(bcdiv($remainingBudget, (string) $project->net_budget, 4), '100', 2);
 
         $project->setAttribute('remaining_budget', $remainingBudget);
         $project->setAttribute('profit_percentage', $profitPercentage);
+        $project->setAttribute('utilization_percentage', $budget['utilization_percentage']);
 
         return $project;
     }

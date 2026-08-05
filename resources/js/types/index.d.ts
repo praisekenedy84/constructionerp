@@ -58,6 +58,7 @@ export interface Project {
     net_budget: string;
     remaining_budget?: string;
     profit_percentage?: string;
+    utilization_percentage?: string;
     physical_progress_pct: string;
     start_date: string;
     end_date: string;

@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Enums\ApprovalStepStatus;
 use App\Enums\CashAllocationStatus;
-use App\Enums\ExpenseCategory;
 use App\Enums\FulfillmentType;
 use App\Enums\ProjectStatus;
 use App\Enums\RequisitionAddressedTo;
@@ -16,16 +15,16 @@ use App\Models\BudgetTransaction;
 use App\Models\CashAllocation;
 use App\Models\CashDisbursement;
 use App\Models\EquipmentAssignment;
-use App\Models\Expense;
 use App\Models\PayrollItem;
 use App\Models\PayrollRun;
 use App\Models\Project;
-use App\Models\Requisition;
 use App\Models\ReportSchedule;
+use App\Models\Requisition;
 use App\Models\StockBalance;
 use App\Models\User;
-use App\Models\Valuation;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ReportService
@@ -59,19 +58,20 @@ class ReportService
             ->get();
 
         $projectSummaries = $projects->map(function (Project $project) {
-            $spent = (string) BudgetTransaction::where('project_id', $project->id)->sum('amount');
+            $budget = $this->budgetService->summary($project);
 
             return [
                 'id' => $project->id,
                 'code' => $project->code,
                 'name' => $project->name,
                 'status' => $project->status->value,
+                'gross_budget' => $budget['gross_budget'],
                 'net_budget' => (string) $project->net_budget,
-                'remaining_budget' => $this->budgetService->remainingBudget($project),
-                'spent' => $spent,
-                'utilization_pct' => bccomp((string) $project->net_budget, '0', 2) === 0
-                    ? '0'
-                    : bcmul(bcdiv($spent, (string) $project->net_budget, 4), '100', 2),
+                'ipc_deductions' => $budget['ipc_deductions'],
+                'ledger_spend' => $budget['ledger_spend'],
+                'remaining_budget' => $budget['remaining_budget'],
+                'spent' => $budget['utilized_budget'],
+                'utilization_pct' => $budget['utilization_percentage'],
                 'physical_progress_pct' => (string) $project->physical_progress_pct,
             ];
         });
@@ -98,11 +98,11 @@ class ReportService
         $activeProjects = collect($executive['projects'])
             ->where('status', ProjectStatus::Active->value);
 
-        $totalNetBudget = $this->sumDecimal($activeProjects->pluck('net_budget')->all());
+        $totalGrossBudget = $this->sumDecimal($activeProjects->pluck('gross_budget')->all());
         $totalSpent = $this->sumDecimal($activeProjects->pluck('spent')->all());
-        $budgetUtilization = bccomp($totalNetBudget, '0', 2) === 0
+        $budgetUtilization = bccomp($totalGrossBudget, '0', 2) === 0
             ? 0.0
-            : (float) bcmul(bcdiv($totalSpent, $totalNetBudget, 4), '100', 2);
+            : (float) bcmul(bcdiv($totalSpent, $totalGrossBudget, 6), '100', 2);
 
         $openRequisitions = Requisition::query()
             ->when($filters['project_id'] ?? null, fn ($q, $id) => $q->where('project_id', $id))
@@ -560,7 +560,7 @@ class ReportService
 
             $schedule->update(['last_run_at' => now()]);
 
-            \Illuminate\Support\Facades\Log::info('Report schedule executed', [
+            Log::info('Report schedule executed', [
                 'schedule_id' => $schedule->id,
                 'report_slug' => $schedule->report_slug,
                 'recipients' => $schedule->recipients,
@@ -630,9 +630,9 @@ class ReportService
     }
 
     /**
-     * @return \Illuminate\Database\Eloquent\Collection<int, ReportSchedule>
+     * @return Collection<int, ReportSchedule>
      */
-    public function schedules(): \Illuminate\Database\Eloquent\Collection
+    public function schedules(): Collection
     {
         return ReportSchedule::query()->orderByDesc('created_at')->get();
     }

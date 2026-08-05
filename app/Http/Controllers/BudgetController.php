@@ -28,10 +28,11 @@ class BudgetController extends Controller
             ->search(['type', 'reason', 'creator.name'])
             ->dateRange('created_at')
             ->sort(['created_at', 'amount', 'type']);
+        $budget = $this->budgetService->summary($project);
 
         return Inertia::render('Budgets/Show', [
             'project' => $project,
-            'remaining_budget' => $this->budgetService->remainingBudget($project),
+            ...$budget,
             'transactions' => $listing->paginate(ListingQuery::PER_PAGE),
             'filters' => $listing->filters(),
         ]);

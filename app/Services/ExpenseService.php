@@ -151,6 +151,12 @@ class ExpenseService
             return;
         }
 
+        // IPC compliance lines are already withheld from the phase disbursement when
+        // net_budget is computed, so charging them here would deduct the same money twice.
+        if ($expense->valuation_id) {
+            return;
+        }
+
         $this->budgetService->createTransaction((int) $expense->project_id, [
             'type' => BudgetTransactionType::DirectExpense,
             'amount' => bcadd((string) $expense->amount, '0', 2),

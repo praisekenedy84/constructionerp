@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\BudgetTransaction;
 use App\Models\ComplianceRule;
 use App\Models\CashAllocation;
 use App\Models\Expense;
@@ -11,6 +12,7 @@ use App\Models\Tenant;
 use App\Models\Valuation;
 use App\Models\ValuationDeduction;
 use App\Services\AuthService;
+use App\Services\BudgetService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -234,6 +236,75 @@ class ValuationIpcComplianceTest extends TestCase
         $this->assertSame(2, Valuation::where('project_id', $projectId)->count());
         $project = Project::findOrFail($projectId);
         $this->assertSame('435000.00', (string) $project->net_budget);
+    }
+
+    public function test_ipc_compliance_is_deducted_from_remaining_budget_only_once(): void
+    {
+        $this->loginAsTenantAdmin();
+        $projectId = $this->createProject('NET-ONCE', '100000000');
+        $phaseId = $this->createPhase($projectId, '50000000');
+        $rules = $this->createRules();
+
+        $this->post("/projects/{$projectId}/valuations", [
+            'phase_id' => $phaseId,
+            'compliance_items' => [
+                [
+                    'compliance_rule_id' => $rules['retention'],
+                    'calculation_type' => 'rate_percent',
+                    'rate' => '10',
+                ],
+                [
+                    'compliance_rule_id' => $rules['material'],
+                    'calculation_type' => 'fixed_amount',
+                    'fixed_amount' => '3550000',
+                ],
+            ],
+        ])->assertRedirect();
+
+        tenancy()->initialize(Tenant::where('slug', 'ipc-co')->firstOrFail());
+
+        // 50,000,000 phase − (5,000,000 retention + 3,550,000 fees) = 41,450,000
+        $project = Project::findOrFail($projectId);
+        $this->assertSame('41450000.00', (string) $project->net_budget);
+        $this->assertSame('41450000.00', app(BudgetService::class)->remainingBudget($project));
+        $this->assertSame(0, BudgetTransaction::where('project_id', $projectId)->count());
+    }
+
+    public function test_editing_a_draft_ipc_does_not_accumulate_budget_charges(): void
+    {
+        $this->loginAsTenantAdmin();
+        $projectId = $this->createProject('NO-DRIFT', '1000000');
+        $phaseId = $this->createPhase($projectId, '1000000');
+        $rules = $this->createRules();
+
+        $this->post("/projects/{$projectId}/valuations", [
+            'phase_id' => $phaseId,
+            'compliance_items' => [[
+                'compliance_rule_id' => $rules['retention'],
+                'calculation_type' => 'rate_percent',
+                'rate' => '10',
+            ]],
+        ])->assertRedirect();
+
+        tenancy()->initialize(Tenant::where('slug', 'ipc-co')->firstOrFail());
+        $valuationId = (int) Valuation::where('project_id', $projectId)->value('id');
+        tenancy()->end();
+
+        for ($i = 0; $i < 3; $i++) {
+            $this->put("/projects/{$projectId}/valuations/{$valuationId}", [
+                'phase_id' => $phaseId,
+                'compliance_items' => [[
+                    'compliance_rule_id' => $rules['retention'],
+                    'calculation_type' => 'rate_percent',
+                    'rate' => '10',
+                ]],
+            ])->assertRedirect("/projects/{$projectId}/valuations/{$valuationId}");
+        }
+
+        tenancy()->initialize(Tenant::where('slug', 'ipc-co')->firstOrFail());
+        $project = Project::findOrFail($projectId);
+        $this->assertSame('900000.00', (string) $project->net_budget);
+        $this->assertSame('900000.00', app(BudgetService::class)->remainingBudget($project));
     }
 
     public function test_rate_compliance_requires_positive_rate(): void

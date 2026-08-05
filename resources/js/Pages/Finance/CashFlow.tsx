@@ -9,9 +9,7 @@ import { AmountInput } from '@/Components/ui/amount-input';
 import { Button } from '@/Components/ui/button';
 import { Dialog } from '@/Components/ui/dialog';
 import { confirmDiscardIfDirty, DialogFormActions } from '@/Components/ui/dialog-form';
-import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
-import { PaymentMethodSelect } from '@/Components/ui/payment-method-select';
 import { formatCurrency, formatDate } from '@/lib/formatters';
 import { aggregateCashFlowTimeline } from '@/lib/chart-helpers';
 import { CashAllocation, ListingFilters, PageProps, Paginated, Project } from '@/types';
@@ -34,8 +32,6 @@ export default function CashFlow() {
     const { data, setData, post, processing, errors, reset, clearErrors, isDirty } = useForm({
         project_id: String(project.id),
         requested_amount: '',
-        method: '',
-        reference_no: '',
     });
 
     function openDialog() {
@@ -48,7 +44,7 @@ export default function CashFlow() {
             return;
         }
         setOpen(false);
-        reset('requested_amount', 'method', 'reference_no');
+        reset('requested_amount');
         setData('project_id', String(project.id));
         clearErrors();
     }
@@ -57,7 +53,7 @@ export default function CashFlow() {
         e.preventDefault();
         post('/finance/cash-requests', {
             onSuccess: () => {
-                reset('requested_amount', 'method', 'reference_no');
+                reset('requested_amount');
                 setData('project_id', String(project.id));
                 setOpen(false);
             },
@@ -168,7 +164,7 @@ export default function CashFlow() {
                 open={open}
                 onOpenChange={(next) => (next ? openDialog() : closeDialog())}
                 title="Create New Fund Request"
-                description="Choose a project for project cash float, or Organization (general) for company-wide funds. Manager approves via Fund Approvals."
+                description="Choose a project for project cash float, or Administrative for company-wide funds. Manager approves via Fund Approvals."
             >
                 <form onSubmit={submit} className="space-y-4">
                     <div className="space-y-2">
@@ -179,7 +175,7 @@ export default function CashFlow() {
                             value={data.project_id}
                             onChange={(e) => setData('project_id', e.target.value)}
                         >
-                            <option value="">Organization (general)</option>
+                            <option value="">Administrative</option>
                             {(projects ?? [project]).map((p) => (
                                 <option key={p.id} value={p.id}>
                                     {p.code} — {p.name}
@@ -201,24 +197,6 @@ export default function CashFlow() {
                         {errors.requested_amount && (
                             <p className="text-sm text-red-600">{errors.requested_amount}</p>
                         )}
-                    </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="cash-method">Payment method</Label>
-                        <PaymentMethodSelect
-                            id="cash-method"
-                            value={data.method}
-                            onChange={(e) => setData('method', e.target.value)}
-                            optional
-                        />
-                        {errors.method && <p className="text-sm text-red-600">{errors.method}</p>}
-                    </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="cash-reference">Reference No</Label>
-                        <Input
-                            id="cash-reference"
-                            value={data.reference_no}
-                            onChange={(e) => setData('reference_no', e.target.value)}
-                        />
                     </div>
                     <DialogFormActions
                         onCancel={closeDialog}

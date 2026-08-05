@@ -94,7 +94,7 @@ export default function Overhead() {
     const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
     const { data, setData, post, put, processing, errors, reset, clearErrors, isDirty } = useForm({
         category: 'indirect' as const,
-        sub_type: 'General',
+        sub_type: 'Administrative',
         amount: '',
         description: '',
         expense_date: new Date().toISOString().split('T')[0],
@@ -128,7 +128,7 @@ export default function Overhead() {
         clearErrors();
         setData({
             category: 'indirect',
-            sub_type: expense.sub_type || 'General',
+            sub_type: expense.sub_type || 'Administrative',
             amount: expense.amount,
             description: expense.description ?? '',
             expense_date: expense.expense_date.slice(0, 10),
@@ -169,7 +169,7 @@ export default function Overhead() {
     function deleteExpense(expense: Expense) {
         if (
             !confirm(
-                `Delete overhead expense of ${formatCurrency(expense.amount)}? Any cash payment will be returned to organization cash on hand.`,
+                `Delete overhead expense of ${formatCurrency(expense.amount)}? Any cash payment will be returned to administrative cash on hand.`,
             )
         ) {
             return;
@@ -184,7 +184,7 @@ export default function Overhead() {
             <div className="space-y-6">
                 <PageHeader
                     title="Overhead Expenses"
-                    description="Indirect company costs paid from organization cash on hand — including fulfilled organization requisitions."
+                    description="Indirect company costs paid from administrative cash on hand — including fulfilled administrative requisitions."
                     actions={
                         <div className="flex flex-wrap gap-2">
                             <a href={exportHref(filters)} target="_blank" rel="noopener noreferrer">
@@ -194,7 +194,7 @@ export default function Overhead() {
                                 </Button>
                             </a>
                             <Link href="/finance/organization-cash">
-                                <Button variant="outline">Organization Cash</Button>
+                                <Button variant="outline">Administrative Cash</Button>
                             </Link>
                             <Button onClick={openDialog}>
                                 <Plus className="mr-2 h-4 w-4" />
@@ -205,12 +205,12 @@ export default function Overhead() {
                 />
 
                 <div className="grid gap-4 sm:grid-cols-3">
-                    <DataPanel title="Organization Cash on Hand">
+                    <DataPanel title="Administrative Cash on Hand">
                         <p className="text-2xl font-bold text-green-700">
                             {formatCurrency(organization_cash.cash_on_hand)}
                         </p>
                     </DataPanel>
-                    <DataPanel title="Org Funds Received">
+                    <DataPanel title="Administrative Funds Received">
                         <p className="text-2xl font-bold text-slate-900">
                             {formatCurrency(organization_cash.received)}
                         </p>
@@ -258,7 +258,7 @@ export default function Overhead() {
                         <p className="mt-1 text-2xl font-semibold text-emerald-700">
                             {formatCurrency(summary.cash_disbursed)}
                         </p>
-                        <p className="mt-1 text-sm text-slate-500">Drawn from organization float</p>
+                        <p className="mt-1 text-sm text-slate-500">Drawn from administrative float</p>
                     </div>
                 </div>
 
@@ -353,7 +353,7 @@ export default function Overhead() {
                                                 </td>
                                                 <td className="px-4 py-3">
                                                     <div className="font-medium text-slate-800">
-                                                        {exp.sub_type || 'General'}
+                                                        {exp.sub_type || 'Administrative'}
                                                     </div>
                                                     {exp.activity_ref && (
                                                         <div className="mt-1 text-xs text-slate-500">
@@ -443,15 +443,15 @@ export default function Overhead() {
                 title={editingExpense ? 'Edit Overhead Expense' : 'Record Overhead Expense'}
                 description={
                     editingExpense
-                        ? 'Adjust the overhead and its organization cash effect.'
-                        : 'Pay an indirect expense from organization cash on hand.'
+                        ? 'Adjust the overhead and its administrative cash effect.'
+                        : 'Pay an indirect expense from administrative cash on hand.'
                 }
             >
                 <form onSubmit={submit} className="space-y-4">
                     <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800/60">
                         <div className="flex items-center justify-between">
                             <span className="text-slate-600 dark:text-slate-300">
-                                Available organization cash
+                                Available administrative cash
                             </span>
                             <span className="font-semibold text-green-700">
                                 {formatCurrency(availableCash.toFixed(2))}
@@ -505,9 +505,9 @@ export default function Overhead() {
                         {errors.amount && <p className="text-sm text-red-600">{errors.amount}</p>}
                         {!errors.amount && exceedsAvailable && (
                             <p className="text-sm text-red-600">
-                                Exceeds available organization cash of{' '}
+                                Exceeds available administrative cash of{' '}
                                 {formatCurrency(availableCash.toFixed(2))}. Request more
-                                organization funds or reduce the amount.
+                                administrative funds or reduce the amount.
                             </p>
                         )}
                     </div>

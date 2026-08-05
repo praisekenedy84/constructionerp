@@ -6,11 +6,11 @@ use App\Http\Requests\ApproveCashRequest;
 use App\Http\Requests\CashReceiveRequest;
 use App\Http\Requests\CashRequestRequest;
 use App\Models\CashAllocation;
-use App\Models\CashDisbursement;
 use App\Models\Project;
 use App\Models\User;
 use App\Services\CashAllocationService;
 use App\Services\FundRequestExportService;
+use App\Services\MoneyAccountService;
 use App\Support\ListingQuery;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -22,6 +22,7 @@ class CashController extends Controller
     public function __construct(
         private CashAllocationService $cashService,
         private FundRequestExportService $fundRequestExport,
+        private MoneyAccountService $moneyAccountService,
     ) {}
 
     public function request(CashRequestRequest $request): RedirectResponse
@@ -31,13 +32,8 @@ class CashController extends Controller
         $validated = $request->validated();
 
         $allocation = $this->cashService->request(
-            isset($validated['project_id']) ? (int) $validated['project_id'] : null,
             (string) $validated['requested_amount'],
             $request->user(),
-            [
-                'method' => $validated['method'] ?? null,
-                'reference_no' => $validated['reference_no'] ?? null,
-            ],
         );
 
         $this->notifyManagers($allocation);
@@ -57,9 +53,7 @@ class CashController extends Controller
             return back()->with('error', $e->getMessage());
         }
 
-        return back()->with('success', $allocation->isOrganizationWide()
-            ? 'Organization fund approved — amount added to organization cash on hand.'
-            : 'Fund request approved — amount added to project cash on hand.');
+        return back()->with('success', 'Fund request approved — amount transferred to the Finance Wallet.');
     }
 
     public function reject(Request $request, int $id): RedirectResponse
@@ -130,61 +124,31 @@ class CashController extends Controller
         ]);
     }
 
-    public function organizationCash(Request $request): Response
+    public function organizationCash(Request $request): RedirectResponse
     {
         $this->authorizePermission($request->user(), 'budgets', 'read');
 
-        $overview = $this->cashService->organizationOverview();
-
-        $allocationListing = ListingQuery::for(
-            CashAllocation::query()
-                ->whereNull('project_id')
-                ->with([
-                    'requester:id,name',
-                    'approver:id,name',
-                    'disbursements' => fn ($q) => $q->orderBy('disbursed_at')->orderBy('id'),
-                    'disbursements.expense:id,category,sub_type,description,expense_date,activity_ref',
-                    'disbursements.disburser:id,name',
-                ]),
-            $request,
-        )->sort(['requested_at', 'status', 'requested_amount', 'received_amount'], 'requested_at');
-
-        $allocations = $allocationListing
-            ->paginate(ListingQuery::PER_PAGE, 'allocations_page')
-            ->through(fn (CashAllocation $allocation) => $this->cashService->formatOrganizationAllocation($allocation));
-
-        $usesListing = ListingQuery::for(
-            CashDisbursement::query()
-                ->whereHas('cashAllocation', fn ($q) => $q->whereNull('project_id'))
-                ->with([
-                    'expense:id,category,sub_type,description',
-                    'disburser:id,name',
-                ]),
-            $request,
-        )->sort(['disbursed_at', 'amount'], 'disbursed_at');
-
-        $recentUses = $usesListing
-            ->paginate(ListingQuery::PER_PAGE, 'uses_page')
-            ->through(fn (CashDisbursement $disbursement) => $this->cashService->formatOrganizationUse($disbursement));
-
-        return Inertia::render('Finance/OrganizationCash', [
-            ...$overview,
-            'allocations' => $allocations,
-            'recent_uses' => $recentUses,
-        ]);
+        return redirect()->route('finance.finance-transactions');
     }
 
     public function fundApprovals(Request $request): Response
     {
         $this->authorizePermission($request->user(), 'budgets', 'read');
 
-        $status = $request->string('status', 'all')->toString();
+        $this->moneyAccountService->ensureFinanceAccount($request->user());
+
         $paginator = $this->fundRequestExport->list($request);
+
+        $managerAccounts = collect($this->moneyAccountService->managerAccounts())
+            ->map(fn ($account) => $this->moneyAccountService->formatAccount($account))
+            ->values()
+            ->all();
 
         return Inertia::render('Finance/FundApprovals', [
             'allocations' => $paginator->through(fn (CashAllocation $allocation) => [
                 'id' => $allocation->id,
                 'project_id' => $allocation->project_id,
+                'source_account_id' => $allocation->source_account_id,
                 'requested_amount' => (string) $allocation->requested_amount,
                 'received_amount' => (string) $allocation->received_amount,
                 'utilized_amount' => (string) $allocation->utilized_amount,
@@ -196,6 +160,10 @@ class CashController extends Controller
                 'received_at' => $allocation->received_at?->toIso8601String(),
                 'decided_at' => $allocation->decided_at?->toIso8601String(),
                 'rejection_reason' => $allocation->rejection_reason,
+                'source_account' => $allocation->sourceAccount ? [
+                    'id' => $allocation->sourceAccount->id,
+                    'name' => $allocation->sourceAccount->name,
+                ] : null,
                 'project' => $allocation->project ? [
                     'id' => $allocation->project->id,
                     'code' => $allocation->project->code,
@@ -210,7 +178,8 @@ class CashController extends Controller
                     'name' => $allocation->approver->name,
                 ] : null,
             ]),
-            'projects' => Project::orderBy('name')->get(['id', 'code', 'name']),
+            'manager_accounts' => $managerAccounts,
+            'finance_balance' => $this->moneyAccountService->financeBalance(),
             'filters' => $request->only(['search', 'from', 'to', 'sort', 'direction', 'status']),
             'summary' => [
                 'total' => CashAllocation::count(),
@@ -243,7 +212,6 @@ class CashController extends Controller
                 'type' => 'cash_allocation_requested',
                 'data' => [
                     'allocation_id' => $allocation->id,
-                    'project_id' => $allocation->project_id,
                     'amount' => (string) $allocation->requested_amount,
                 ],
                 'created_at' => now(),

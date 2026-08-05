@@ -15,6 +15,7 @@ class CashAllocation extends Model
 
     protected $fillable = [
         'project_id',
+        'source_account_id',
         'requested_amount',
         'received_amount',
         'utilized_amount',
@@ -59,6 +60,11 @@ class CashAllocation extends Model
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class);
+    }
+
+    public function sourceAccount(): BelongsTo
+    {
+        return $this->belongsTo(MoneyAccount::class, 'source_account_id');
     }
 
     public function requester(): BelongsTo

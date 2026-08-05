@@ -223,6 +223,11 @@ class SeedDemoCommand extends Command
                     ],
                 );
 
+                $finance = app(\App\Services\MoneyAccountService::class)->ensureFinanceAccount($admin);
+                if (bccomp((string) $finance->balance, '0', 2) === 0) {
+                    $finance->update(['balance' => '37500000.00']);
+                }
+
                 $categoryIds = RequisitionCategory::query()
                     ->get(['id', 'name'])
                     ->mapWithKeys(fn (RequisitionCategory $category) => [

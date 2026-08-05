@@ -18,16 +18,27 @@ interface ValuationsCreateProps extends PageProps {
     other_ipcs_compliance_total: string;
     available_rules: AvailableComplianceRule[];
     phases: ProjectPhase[];
+    default_phase_id?: number | null;
 }
 
 export default function ValuationsCreate() {
-    const { project, next_certificate_no, other_ipcs_compliance_total, available_rules, phases } =
-        usePage<ValuationsCreateProps>().props;
+    const {
+        project,
+        next_certificate_no,
+        other_ipcs_compliance_total,
+        available_rules,
+        phases,
+        default_phase_id,
+    } = usePage<ValuationsCreateProps>().props;
     const { data, setData, post, processing, errors } = useForm<{
         phase_id: string;
         compliance_items: ComplianceItemForm[];
     }>({
-        phase_id: phases[0] ? String(phases[0].id) : '',
+        phase_id: default_phase_id
+            ? String(default_phase_id)
+            : phases[0]
+              ? String(phases[0].id)
+              : '',
         compliance_items: [emptyComplianceItem()],
     });
     const selectedPhase = phases.find((phase) => String(phase.id) === data.phase_id) ?? null;

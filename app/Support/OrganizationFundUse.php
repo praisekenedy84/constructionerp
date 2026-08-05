@@ -3,13 +3,13 @@
 namespace App\Support;
 
 /**
- * Allowed purposes for organization (general) cash. Spent only via indirect
+ * Allowed purposes for administrative cash. Spent only via indirect
  * expenses; payroll posts as Salaries. Office stock and event inventory are
  * tracked as overhead subtypes until dedicated inventory modules exist.
  */
 final class OrganizationFundUse
 {
-    public const GENERAL = 'General';
+    public const GENERAL = 'Administrative';
 
     public const RENT = 'Rent';
 
@@ -37,7 +37,7 @@ final class OrganizationFundUse
     }
 
     /**
-     * Bucket used on the organization cash lifecycle page.
+     * Bucket used on the administrative cash lifecycle page.
      */
     public static function bucket(?string $subType): string
     {
@@ -56,7 +56,7 @@ final class OrganizationFundUse
             'office_stock' => 'Office stock',
             'event_inventory' => 'Event inventory',
             'opening' => 'Opening utilization',
-            default => 'Overhead / general',
+            default => 'Overhead / administrative',
         };
     }
 }

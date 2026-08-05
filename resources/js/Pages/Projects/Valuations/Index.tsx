@@ -141,9 +141,16 @@ export default function ValuationsIndex() {
                                                 −{formatCurrency(val.total_deductions)}
                                             </td>
                                             <td className="px-6 py-4 text-slate-600">
-                                                {phaseMap.get(val.phase_id)
-                                                    ? `Phase ${phaseMap.get(val.phase_id)?.sequence_no}`
-                                                    : '—'}
+                                                {phaseMap.get(val.phase_id) ? (
+                                                    <Link
+                                                        href={`/projects/${project.id}/phases/${val.phase_id}`}
+                                                        className="hover:text-blue-700 hover:underline"
+                                                    >
+                                                        Phase {phaseMap.get(val.phase_id)?.sequence_no}
+                                                    </Link>
+                                                ) : (
+                                                    '—'
+                                                )}
                                             </td>
                                             <td className="px-6 py-4 text-slate-600">
                                                 {val.deductions?.length ?? 0} rule

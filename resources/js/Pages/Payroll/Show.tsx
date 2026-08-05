@@ -18,7 +18,7 @@ export default function PayrollShow() {
     const isDraft = run.status === 'draft';
 
     function postRun() {
-        if (!confirm('Post this payroll run? This pays salaries from organization cash on hand and cannot be undone.')) {
+        if (!confirm('Post this payroll run? This pays salaries from administrative cash on hand and cannot be undone.')) {
             return;
         }
         router.post(`/payroll/${run.id}/post`);

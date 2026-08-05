@@ -180,6 +180,6 @@ class PayrollController extends Controller
 
         return redirect()
             ->route('payroll.runs.show', $run->id)
-            ->with('success', 'Payroll posted. Salaries paid from organization cash on hand.');
+            ->with('success', 'Payroll posted. Salaries paid from administrative cash on hand.');
     }
 }

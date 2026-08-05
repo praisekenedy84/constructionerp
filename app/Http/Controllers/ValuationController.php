@@ -58,12 +58,17 @@ class ValuationController extends Controller
         $otherCompliance = bcadd((string) $project->valuations()->sum('total_deductions'), '0', 2);
         $nextNo = (int) $project->valuations()->max('certificate_no') + 1;
 
+        $preselectedPhaseId = (int) $request->query('phase_id', 0);
+        $defaultPhaseId = $phases->firstWhere('id', $preselectedPhaseId)?->id
+            ?? $phases->first()?->id;
+
         return Inertia::render('Valuations/Create', [
             'project' => $project,
             'next_certificate_no' => $nextNo,
             'other_ipcs_compliance_total' => $otherCompliance,
             'available_rules' => $this->availableRules(),
             'phases' => $phases,
+            'default_phase_id' => $defaultPhaseId,
         ]);
     }
 

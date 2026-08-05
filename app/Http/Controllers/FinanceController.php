@@ -14,6 +14,7 @@ use App\Models\Project;
 use App\Models\Requisition;
 use App\Services\CashAllocationService;
 use App\Services\ExpenseService;
+use App\Services\MoneyAccountService;
 use App\Services\ReportService;
 use App\Support\ListingQuery;
 use Illuminate\Http\Request;
@@ -26,16 +27,23 @@ class FinanceController extends Controller
         private CashAllocationService $cashService,
         private ReportService $reportService,
         private ExpenseService $expenseService,
+        private MoneyAccountService $moneyAccountService,
     ) {}
 
     public function overview(Request $request): Response
     {
         $this->authorizePermission($request->user(), 'budgets', 'read');
 
+        $this->moneyAccountService->ensureFinanceAccount($request->user());
         $projectCash = $this->reportService->cashPosition([]);
         $orgOverview = $this->cashService->organizationOverview();
         $stats = $this->reportService->dashboardStats();
         $charts = $this->reportService->dashboardCharts();
+
+        $managerBalance = '0.00';
+        foreach ($this->moneyAccountService->managerAccounts() as $account) {
+            $managerBalance = bcadd($managerBalance, (string) $account->balance, 2);
+        }
 
         $fundPipeline = [
             'pending' => CashAllocation::where('status', CashAllocationStatus::Pending)->count(),
@@ -114,7 +122,7 @@ class FinanceController extends Controller
                 'id' => $allocation->id,
                 'requested_amount' => (string) $allocation->requested_amount,
                 'requested_at' => $allocation->requested_at?->toIso8601String(),
-                'scope' => $allocation->project_id ? 'project' : 'organization',
+                'scope' => 'finance_wallet',
                 'project' => $allocation->project ? [
                     'id' => $allocation->project->id,
                     'code' => $allocation->project->code,
@@ -135,7 +143,7 @@ class FinanceController extends Controller
         return Inertia::render('Finance/Overview', [
             'summary' => [
                 'project_cash_on_hand' => $projectCash['cash_on_hand'],
-                'organization_cash_on_hand' => $orgOverview['summary']['cash_on_hand'],
+                'organization_cash_on_hand' => $managerBalance,
                 'committed' => $projectCash['committed'],
                 'outstanding' => $projectCash['outstanding'],
                 'disbursed' => $projectCash['disbursed'],

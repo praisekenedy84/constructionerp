@@ -45,11 +45,25 @@ class PurchaseOrderController extends Controller
     {
         $this->authorizePermission($request->user(), 'procurement', 'create');
 
-        $po = $this->procurementService->createPOFromRequisition(
-            $request->validated(),
-            $request->user(),
+        $validated = $request->validated();
+        $requisition = Requisition::findOrFail((int) $validated['requisition_id']);
+        $supplier = Supplier::findOrFail((int) $validated['supplier_id']);
+
+        $result = $this->procurementService->createPOFromRequisition(
+            $requisition,
+            $supplier,
+            [
+                'quantity' => $validated['quantity'],
+                'unit_cost' => $validated['unit_cost'],
+            ],
         );
 
-        return back()->with('success', "Purchase order #{$po->id} created.");
+        $po = $result['purchase_order'];
+        $message = "Purchase order #{$po->id} created.";
+        if ($result['variance'] !== null) {
+            $message .= ' Note: unit cost differs from BOQ rate.';
+        }
+
+        return back()->with('success', $message);
     }
 }

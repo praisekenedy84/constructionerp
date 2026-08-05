@@ -143,6 +143,54 @@ class RequisitionWorkflowTest extends TestCase
         });
     }
 
+    public function test_submit_organization_wide_requisition_creates_approval_step(): void
+    {
+        $this->seedTenantWithUsers();
+
+        $reqId = null;
+        Tenant::where('slug', 'workflow-co')->first()->run(function () use (&$reqId) {
+            $req = Requisition::create([
+                'requisition_no' => 'REQ-2026-ORG-01',
+                'project_id' => null,
+                'boq_item_id' => null,
+                'department' => 'Administration',
+                'resource_type' => 'other',
+                'requestor_id' => 2,
+                'status' => RequisitionStatus::Draft,
+                'fulfillment_type' => 'cash_disbursement',
+                'addressed_to' => 'finance',
+                'original_amount' => '25000.00',
+            ]);
+
+            RequisitionItem::create([
+                'requisition_id' => $req->id,
+                'description' => 'Office supplies',
+                'unit' => 'lump',
+                'quantity' => '1.000',
+                'unit_cost' => '25000.00',
+                'line_total' => '25000.00',
+            ]);
+
+            $reqId = $req->id;
+        });
+
+        $this->post('/login', [
+            'email' => 'engineer@workflow.local',
+            'password' => 'password',
+        ]);
+
+        $this->post("/requisitions/{$reqId}/transition", [
+            'to_status' => 'under_review',
+        ])->assertRedirect();
+
+        Tenant::where('slug', 'workflow-co')->first()->run(function () use ($reqId) {
+            $req = Requisition::findOrFail($reqId);
+            $this->assertNull($req->project_id);
+            $this->assertSame('under_review', $req->status->value);
+            $this->assertSame(1, ApprovalStep::where('requisition_id', $req->id)->where('status', 'pending')->count());
+        });
+    }
+
     public function test_system_administrator_can_publish_another_users_draft(): void
     {
         $this->seedTenantWithUsers();

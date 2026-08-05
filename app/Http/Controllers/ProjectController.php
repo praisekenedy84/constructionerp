@@ -119,6 +119,7 @@ class ProjectController extends Controller
             'project' => $this->withBudgetSummary($project),
             'phases' => $project->phases()
                 ->withCount('valuations')
+                ->withSum('valuations', 'total_deductions')
                 ->orderBy('sequence_no')
                 ->get(),
             'available_rules' => ComplianceRule::active()

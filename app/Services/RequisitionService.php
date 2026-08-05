@@ -37,6 +37,7 @@ class RequisitionService
         private readonly BudgetService $budgetService,
         private readonly FulfillmentService $fulfillmentService,
         private readonly ReportService $reportService,
+        private readonly MoneyAccountService $moneyAccountService,
     ) {}
 
     /**
@@ -288,8 +289,8 @@ class RequisitionService
                 $expense->delete();
             });
 
-        // Stock / non-cash project requisitions post budget on approve; reverse that after fulfill.
-        if (! $this->spendsCashFloat($req) && $req->project_id) {
+        // Project requisitions (cash or stock) post budget on approve; reverse on delete after fulfill.
+        if ($req->project_id) {
             $amount = (string) ($req->amended_amount ?? $req->original_amount);
             $this->budgetService->createTransaction($req->project_id, [
                 'type' => $req->amended_amount
@@ -497,10 +498,10 @@ class RequisitionService
             $boqItem->increment('approved_qty', $qty);
         }
 
-        // Cash / supplier payment spends finance cash float (already drawn from
-        // project or organization budget via fund approval). Only non-cash
-        // project fulfillments post a project budget commitment.
-        if (! $this->spendsCashFloat($req) && $req->project_id) {
+        // Cash / supplier payment spends the shared Finance Wallet. Project-scoped
+        // finance requisitions still commit against the project budget so
+        // profitability tracks expenses vs net budget (not cash on hand).
+        if ($req->project_id) {
             $this->budgetService->createTransaction($req->project_id, [
                 'type' => BudgetTransactionType::ApprovedRequisition,
                 'amount' => $amount,
@@ -636,7 +637,7 @@ class RequisitionService
 
         $req->update(['amended_amount' => $amendedTotal]);
 
-        if (! $this->spendsCashFloat($req) && $req->project_id) {
+        if ($req->project_id) {
             $this->budgetService->createTransaction($req->project_id, [
                 'type' => BudgetTransactionType::AmendedRequisition,
                 'amount' => $amendedTotal,
@@ -767,7 +768,7 @@ class RequisitionService
                 ->decrement('reserved_qty', $qty);
         }
 
-        if (! $this->spendsCashFloat($req) && $req->project_id) {
+        if ($req->project_id) {
             $this->budgetService->createTransaction($req->project_id, [
                 'type' => $type,
                 'amount' => bcsub('0', $amount, 2),
@@ -851,14 +852,9 @@ class RequisitionService
 
         $required = $amount ?? (string) ($req->amended_amount ?? $req->original_amount);
 
-        $position = $this->reportService->cashPosition(
-            $req->isOrganizationWide()
-                ? ['scope' => 'organization']
-                : ['project_id' => $req->project_id]
-        );
-        $cashOnHand = (string) $position['cash_on_hand'];
+        // Shared Finance Wallet — any approved finance requisition commits against it.
+        $cashOnHand = $this->moneyAccountService->financeBalance();
 
-        // Cash already promised to other approved/amended cash requests is not free to re-approve.
         $committedQuery = Requisition::query()
             ->where('id', '!=', $req->id)
             ->whereIn('status', [RequisitionStatus::Approved, RequisitionStatus::Amended])
@@ -873,12 +869,6 @@ class RequisitionService
                     });
             });
 
-        if ($req->isOrganizationWide()) {
-            $committedQuery->whereNull('project_id');
-        } else {
-            $committedQuery->where('project_id', $req->project_id);
-        }
-
         $committedElsewhere = '0';
         foreach ($committedQuery->get() as $other) {
             $committedElsewhere = bcadd(
@@ -892,7 +882,7 @@ class RequisitionService
 
         return [
             'spends_cash' => true,
-            'scope' => $req->isOrganizationWide() ? 'organization' : 'project',
+            'scope' => 'finance_wallet',
             'cash_on_hand' => $cashOnHand,
             'committed' => $committedElsewhere,
             'available' => $available,

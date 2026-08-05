@@ -230,7 +230,7 @@ class StoreRequisitionRequest extends FormRequest
             if (! $this->input('project_id') && $this->filled('boq_item_id')) {
                 $validator->errors()->add(
                     'boq_item_id',
-                    'Organization requests cannot be linked to a project BOQ line.'
+                    'Administrative requests cannot be linked to a project BOQ line.'
                 );
             }
 

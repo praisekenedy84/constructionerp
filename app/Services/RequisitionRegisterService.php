@@ -307,8 +307,8 @@ class RequisitionRegisterService
             'category' => $item->category?->name
                 ?? $requisition?->categoryLabel()
                 ?? '—',
-            'project_code' => $requisition?->project?->code ?? 'ORG',
-            'project_name' => $requisition?->project?->name ?? 'Organization',
+            'project_code' => $requisition?->project?->code ?? 'ADM',
+            'project_name' => $requisition?->project?->name ?? 'Administrative',
             'unit' => $item->unit ?? '—',
             'quantity' => (string) $item->quantity,
             'rate' => (string) $item->unit_cost,

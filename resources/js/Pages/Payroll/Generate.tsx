@@ -253,7 +253,7 @@ export default function Generate() {
                                     Posting is irreversible
                                 </p>
                                 <p className="mt-1 text-sm text-amber-700">
-                                    Posting pays salaries from organization cash on hand and marks
+                                    Posting pays salaries from administrative cash on hand and marks
                                     the run immutable. Review the preview carefully before posting.
                                 </p>
                             </div>

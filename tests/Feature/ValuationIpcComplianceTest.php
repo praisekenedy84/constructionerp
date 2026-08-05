@@ -491,4 +491,33 @@ class ValuationIpcComplianceTest extends TestCase
             'approved_amount' => '20000',
         ])->assertRedirect()->assertSessionHas('error');
     }
+
+    public function test_phase_show_includes_ipc_breakdown(): void
+    {
+        $this->loginAsTenantAdmin();
+        $projectId = $this->createProject('PHASE-SHOW');
+        $phaseId = $this->createPhase($projectId, '500000', 'Mobilisation');
+        $rules = $this->createRules();
+
+        $this->post("/projects/{$projectId}/valuations", [
+            'phase_id' => $phaseId,
+            'compliance_items' => [[
+                'compliance_rule_id' => $rules['retention'],
+                'calculation_type' => 'rate_percent',
+                'rate' => '10',
+            ]],
+        ])->assertRedirect();
+
+        $this->get("/projects/{$projectId}/phases/{$phaseId}")
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Projects/Phases/Show')
+                ->where('phase.id', $phaseId)
+                ->where('phase.name', 'Mobilisation')
+                ->where('phase.disbursed_amount', '500000.00')
+                ->where('summary.phase_compliance_total', '50000.00')
+                ->has('valuations', 1)
+                ->where('valuations.0.certificate_no', 1)
+            );
+    }
 }

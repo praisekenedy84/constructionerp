@@ -112,7 +112,7 @@ export default function FulfillQueue() {
                                                     {req.requisition_no}
                                                 </p>
                                                 <p className="text-xs text-slate-500">
-                                                    {req.project?.name ?? 'Organization'} ·{' '}
+                                                    {req.project?.name ?? 'Administrative'} ·{' '}
                                                     {String(req.fulfillment_type).replace(/_/g, ' ')}
                                                 </p>
                                                 <p className="text-xs text-slate-600">

@@ -100,7 +100,7 @@ class ExpenseListingFeaturesTest extends TestCase
             Expense::create([
                 'project_id' => 1,
                 'category' => ExpenseCategory::Direct,
-                'sub_type' => 'General',
+                'sub_type' => 'Administrative',
                 'amount' => '25000.00',
                 'description' => 'Manual site expense',
                 'expense_date' => now()->toDateString(),
@@ -178,7 +178,7 @@ class ExpenseListingFeaturesTest extends TestCase
             Expense::create([
                 'project_id' => 1,
                 'category' => ExpenseCategory::Direct,
-                'sub_type' => 'General',
+                'sub_type' => 'Administrative',
                 'amount' => '10000.00',
                 'description' => 'Export me',
                 'expense_date' => now()->toDateString(),

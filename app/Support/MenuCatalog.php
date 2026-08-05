@@ -65,8 +65,10 @@ class MenuCatalog
                 'group' => 'Finance',
                 'children' => [
                     ['key' => 'finance.overview', 'label' => 'Finance Overview', 'href' => '/finance/overview', 'permission' => null],
+                    ['key' => 'finance.accounts', 'label' => 'Accounts', 'href' => '/finance/accounts', 'permission' => null],
                     ['key' => 'finance.approvals', 'label' => 'Fund Approvals', 'href' => '/finance/approvals', 'permission' => null],
-                    ['key' => 'finance.organization_cash', 'label' => 'Organization Cash', 'href' => '/finance/organization-cash', 'permission' => null],
+                    ['key' => 'finance.manager_transactions', 'label' => 'Manager Transactions', 'href' => '/finance/manager-transactions', 'permission' => null],
+                    ['key' => 'finance.finance_transactions', 'label' => 'Finance Transactions', 'href' => '/finance/finance-transactions', 'permission' => null],
                     ['key' => 'finance.expenses', 'label' => 'Expenses', 'href' => '/finance/expenses', 'permission' => null],
                     ['key' => 'finance.overhead', 'label' => 'Overhead', 'href' => '/finance/overhead', 'permission' => null],
                 ],

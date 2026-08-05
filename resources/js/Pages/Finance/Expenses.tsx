@@ -365,7 +365,7 @@ export default function Expenses() {
                                                 </td>
                                                 <td className="px-4 py-3">
                                                     <div className="font-medium text-slate-800">
-                                                        {exp.sub_type || 'General'}
+                                                        {exp.sub_type || 'Administrative'}
                                                     </div>
                                                     {exp.activity_ref && (
                                                         <div className="mt-1 text-xs text-slate-500">

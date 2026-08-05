@@ -129,8 +129,8 @@
                 <tr>
                     <td>#{{ $allocation->id }}</td>
                     <td>
-                        <strong>{{ $allocation->project?->code ?? 'ORG' }}</strong><br>
-                        {{ $allocation->project?->name ?? 'Organization (general)' }}
+                        <strong>{{ $allocation->project?->code ?? 'ADM' }}</strong><br>
+                        {{ $allocation->project?->name ?? 'Administrative' }}
                     </td>
                     <td>{{ $allocation->requester?->name ?? '—' }}</td>
                     <td class="status">{{ $allocation->status->value }}</td>

@@ -2,10 +2,8 @@
 
 namespace App\Services;
 
-use App\Enums\CashAllocationStatus;
 use App\Enums\InventoryItemCategory;
 use App\Exceptions\InsufficientCashException;
-use App\Models\CashAllocation;
 use App\Models\CashDisbursement;
 use App\Models\InventoryItem;
 use App\Models\Requisition;
@@ -18,6 +16,7 @@ class FulfillmentService
 {
     public function __construct(
         private readonly InventoryService $inventoryService,
+        private readonly MoneyAccountService $moneyAccountService,
     ) {}
 
     public function fulfillCash(Requisition $req, User $actor, string $amount, array $opts = []): CashDisbursement
@@ -48,48 +47,26 @@ class FulfillmentService
                 ]);
             }
 
-            $allocation = isset($opts['cash_allocation_id'])
-                ? CashAllocation::lockForUpdate()->findOrFail($opts['cash_allocation_id'])
-                : CashAllocation::query()
-                    ->when(
-                        $req->isOrganizationWide(),
-                        fn ($q) => $q->whereNull('project_id'),
-                        fn ($q) => $q->where('project_id', $req->project_id),
-                    )
-                    ->where('status', CashAllocationStatus::Received)
-                    ->lockForUpdate()
-                    ->get()
-                    ->first(fn (CashAllocation $a) => bccomp($a->balance, $normalizedAmount, 2) >= 0);
+            $finance = $this->moneyAccountService->ensureFinanceAccount($actor);
+            $available = bcadd((string) $finance->balance, '0', 2);
 
-            if (! $allocation) {
-                throw new InsufficientCashException($normalizedAmount, '0');
+            if (bccomp($available, $normalizedAmount, 2) < 0) {
+                throw new InsufficientCashException($normalizedAmount, $available);
             }
 
-            if ($req->isOrganizationWide()) {
-                if (! $allocation->isOrganizationWide()) {
-                    throw ValidationException::withMessages([
-                        'cash_allocation_id' => 'Organization requisitions must be paid from organization cash on hand, not a project float.',
-                    ]);
-                }
-            } elseif ($allocation->isOrganizationWide() || (int) $allocation->project_id !== (int) $req->project_id) {
-                throw ValidationException::withMessages([
-                    'cash_allocation_id' => 'Project requisitions must be paid from that project’s cash float, not organization funds.',
-                ]);
-            }
-
-            if ($allocation->status !== CashAllocationStatus::Received) {
-                throw ValidationException::withMessages([
-                    'cash_allocation_id' => 'Only received cash floats can be disbursed.',
-                ]);
-            }
-
-            if (bccomp($allocation->balance, $normalizedAmount, 2) < 0) {
-                throw new InsufficientCashException($normalizedAmount, $allocation->balance);
-            }
+            $tx = $this->moneyAccountService->disburseFromFinance($normalizedAmount, $actor, [
+                'description' => "Requisition {$req->requisition_no}",
+                'reference_no' => $referenceNo,
+                'method' => $method,
+                'reference_entity_type' => 'requisition',
+                'reference_entity_id' => $req->id,
+            ]);
 
             return CashDisbursement::create([
                 'requisition_id' => $req->id,
-                'cash_allocation_id' => $allocation->id,
+                'cash_allocation_id' => null,
+                'money_account_id' => $finance->id,
+                'account_transaction_id' => $tx->id,
                 'amount' => $normalizedAmount,
                 'method' => $method,
                 'payee' => $payee !== '' ? $payee : $accountName,

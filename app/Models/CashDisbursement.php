@@ -14,13 +14,17 @@ class CashDisbursement extends Model
     protected static function booted(): void
     {
         static::created(function (CashDisbursement $disbursement): void {
-            CashAllocation::whereKey($disbursement->cash_allocation_id)
-                ->increment('utilized_amount', (string) $disbursement->amount);
+            if ($disbursement->cash_allocation_id) {
+                CashAllocation::whereKey($disbursement->cash_allocation_id)
+                    ->increment('utilized_amount', (string) $disbursement->amount);
+            }
         });
 
         static::deleted(function (CashDisbursement $disbursement): void {
-            CashAllocation::whereKey($disbursement->cash_allocation_id)
-                ->decrement('utilized_amount', (string) $disbursement->amount);
+            if ($disbursement->cash_allocation_id) {
+                CashAllocation::whereKey($disbursement->cash_allocation_id)
+                    ->decrement('utilized_amount', (string) $disbursement->amount);
+            }
         });
     }
 
@@ -28,6 +32,8 @@ class CashDisbursement extends Model
         'requisition_id',
         'expense_id',
         'cash_allocation_id',
+        'money_account_id',
+        'account_transaction_id',
         'amount',
         'method',
         'payee',
@@ -60,6 +66,16 @@ class CashDisbursement extends Model
     public function cashAllocation(): BelongsTo
     {
         return $this->belongsTo(CashAllocation::class);
+    }
+
+    public function moneyAccount(): BelongsTo
+    {
+        return $this->belongsTo(MoneyAccount::class);
+    }
+
+    public function accountTransaction(): BelongsTo
+    {
+        return $this->belongsTo(AccountTransaction::class);
     }
 
     public function disburser(): BelongsTo

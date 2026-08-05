@@ -22,7 +22,7 @@ class FundRequestExportService
     {
         return CashAllocation::query()
             ->when($status && $status !== 'all', fn ($q) => $q->where('status', $status))
-            ->with(['project', 'requester', 'approver']);
+            ->with(['project', 'requester', 'approver', 'sourceAccount']);
     }
 
     public function list(Request $request): LengthAwarePaginator
@@ -63,8 +63,8 @@ class FundRequestExportService
 
         $rows = $allocations->map(fn (CashAllocation $allocation) => [
             $allocation->id,
-            $allocation->project?->code ?? 'ORG',
-            $allocation->project?->name ?? 'Organization (general)',
+            $allocation->project?->code ?? 'ADM',
+            $allocation->project?->name ?? 'Administrative',
             $allocation->requester?->name ?? '—',
             ucfirst($allocation->status->value),
             $this->formatMoney($allocation->requested_amount),

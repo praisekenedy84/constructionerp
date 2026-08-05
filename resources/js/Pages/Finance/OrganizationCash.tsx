@@ -79,12 +79,12 @@ export default function OrganizationCash() {
     );
 
     return (
-        <AppShell title="Organization Cash">
-            <Head title="Organization Cash" />
+        <AppShell title="Administrative Cash">
+            <Head title="Administrative Cash" />
             <div className="space-y-6">
                 <PageHeader
-                    title="Organization Cash"
-                    description="General funds approved for company use — overhead, payroll, office stock, and event inventory. Separate from project floats."
+                    title="Administrative Cash"
+                    description="Administrative funds approved for company use — overhead, payroll, office stock, and event inventory. Separate from project floats."
                     actions={
                         <div className="flex flex-wrap gap-2">
                             {canRequest && (
@@ -103,17 +103,17 @@ export default function OrganizationCash() {
                 />
 
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                    <DataPanel title="Organization Cash on Hand">
+                    <DataPanel title="Administrative Cash on Hand">
                         <p className="text-2xl font-bold text-green-700">
                             {formatCurrency(summary.cash_on_hand)}
                         </p>
-                        <p className="mt-1 text-xs text-slate-500">Available for general purposes</p>
+                        <p className="mt-1 text-xs text-slate-500">Available for administrative purposes</p>
                     </DataPanel>
                     <DataPanel title="Received (Floated)">
                         <p className="text-2xl font-bold text-slate-900">
                             {formatCurrency(summary.received)}
                         </p>
-                        <p className="mt-1 text-xs text-slate-500">Approved organization funds</p>
+                        <p className="mt-1 text-xs text-slate-500">Approved administrative funds</p>
                     </DataPanel>
                     <DataPanel title="Utilized">
                         <p className="text-2xl font-bold text-slate-600">
@@ -134,10 +134,10 @@ export default function OrganizationCash() {
                 </div>
 
                 <div className="grid gap-4 lg:grid-cols-2">
-                    <DataPanel title="Where Organization Cash Was Used">
+                    <DataPanel title="Where Administrative Cash Was Used">
                         {use_breakdown.length === 0 ? (
                             <p className="text-sm text-slate-500">
-                                No organization disbursements yet. Record overhead, post payroll, or
+                                No administrative disbursements yet. Record overhead, post payroll, or
                                 pay office/event stock from this wallet.
                             </p>
                         ) : (
@@ -186,8 +186,8 @@ export default function OrganizationCash() {
                 <DataPanel title="Fund Lifecycle" noPadding>
                     {allocationRows.length === 0 ? (
                         <p className="px-6 py-12 text-center text-sm text-slate-500">
-                            No organization fund requests yet. Create one from Fund Approvals with
-                            project set to Organization (general).
+                            No administrative fund requests yet. Create one from Fund Approvals with
+                            project set to Administrative.
                         </p>
                     ) : (
                         <div className="divide-y divide-slate-100">

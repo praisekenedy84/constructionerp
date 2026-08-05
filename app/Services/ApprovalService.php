@@ -179,10 +179,16 @@ class ApprovalService
         }
     }
 
-    private function resolveWorkflowConfig(int $projectId, string $amount): ?WorkflowConfig
+    private function resolveWorkflowConfig(?int $projectId, string $amount): ?WorkflowConfig
     {
         return WorkflowConfig::query()
             ->where(function ($query) use ($projectId) {
+                if ($projectId === null) {
+                    $query->whereNull('project_id');
+
+                    return;
+                }
+
                 $query->where('project_id', $projectId)
                     ->orWhereNull('project_id');
             })

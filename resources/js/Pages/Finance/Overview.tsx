@@ -93,19 +93,19 @@ export default function FinanceOverview() {
 
     const cards = [
         {
-            label: 'Project Cash on Hand',
+            label: 'Finance Wallet',
             value: formatCurrency(summary.project_cash_on_hand),
             sub: `${formatCurrency(summary.outstanding)} outstanding to pay`,
             icon: Wallet,
-            href: '/finance/approvals',
+            href: '/finance/finance-transactions',
             color: 'text-green-700',
         },
         {
-            label: 'Organization Cash',
+            label: 'Manager Accounts',
             value: formatCurrency(summary.organization_cash_on_hand),
-            sub: 'Available for general use',
+            sub: 'Source funds & deposits',
             icon: Landmark,
-            href: '/finance/organization-cash',
+            href: '/finance/accounts',
             color: 'text-blue-700',
         },
         {
@@ -144,7 +144,7 @@ export default function FinanceOverview() {
         {
             label: 'Overhead',
             value: formatCurrency(summary.overhead_total),
-            sub: 'Indirect / organization spend',
+            sub: 'Indirect / administrative spend',
             icon: Building2,
             href: '/finance/overhead',
         },
@@ -159,7 +159,9 @@ export default function FinanceOverview() {
 
     const quickLinks = [
         { label: 'Fund Approvals', href: '/finance/approvals' },
-        { label: 'Organization Cash', href: '/finance/organization-cash' },
+        { label: 'Accounts', href: '/finance/accounts' },
+        { label: 'Fund Approvals', href: '/finance/approvals' },
+        { label: 'Finance Wallet', href: '/finance/finance-transactions' },
         { label: 'Expenses', href: '/finance/expenses' },
         { label: 'Overhead', href: '/finance/overhead' },
         ...(canFulfill
@@ -243,7 +245,7 @@ export default function FinanceOverview() {
 
                     <DataPanel
                         title="Fund Request Pipeline"
-                        description="All project and organization fund requests"
+                        description="All project and administrative fund requests"
                     >
                         {pipelineChart.length === 0 ? (
                             <p className="py-8 text-center text-sm text-slate-500">
@@ -257,12 +259,12 @@ export default function FinanceOverview() {
 
                 <div className="grid gap-6 lg:grid-cols-2">
                     <DataPanel
-                        title="Organization Fund Use"
-                        description="How organization cash has been spent"
+                        title="Administrative Fund Use"
+                        description="How administrative cash has been spent"
                     >
                         {org_use_breakdown.length === 0 ? (
                             <p className="py-8 text-center text-sm text-slate-500">
-                                No organization fund uses recorded.
+                                No administrative fund uses recorded.
                             </p>
                         ) : (
                             <SimplePieChart
@@ -340,7 +342,7 @@ export default function FinanceOverview() {
                                             <div className="min-w-0">
                                                 <p className="text-sm font-medium text-slate-900">
                                                     {row.scope === 'organization'
-                                                        ? 'Organization cash'
+                                                        ? 'Administrative cash'
                                                         : `${row.project?.code ?? 'Project'} — ${row.project?.name ?? '—'}`}
                                                 </p>
                                                 <p className="text-xs text-slate-500">

@@ -82,6 +82,7 @@ export interface ProjectPhase {
     phase_net_budget: string;
     retention_status: RetentionStatus;
     valuations_count?: number;
+    valuations_sum_total_deductions?: string | null;
 }
 
 export type BoqCategory =
@@ -330,9 +331,36 @@ export interface ApprovalStep {
 
 export type CashAllocationStatus = 'pending' | 'approved' | 'rejected' | 'received';
 
+export interface MoneyAccount {
+    id: number;
+    name: string;
+    type: 'manager' | 'finance';
+    balance: string;
+    is_active: boolean;
+    notes?: string | null;
+    created_at?: string | null;
+}
+
+export interface AccountTransaction {
+    id: number;
+    money_account_id: number;
+    type: string;
+    amount: string;
+    balance_after: string;
+    description: string | null;
+    reference_no: string | null;
+    method: string | null;
+    is_credit: boolean;
+    occurred_at: string | null;
+    account?: Pick<MoneyAccount, 'id' | 'name' | 'type'> | null;
+    related_account?: Pick<MoneyAccount, 'id' | 'name' | 'type'> | null;
+    recorder?: { id: number; name: string } | null;
+}
+
 export interface CashAllocation {
     id: number;
     project_id: number | null;
+    source_account_id?: number | null;
     requested_amount: string;
     received_amount: string;
     utilized_amount: string;
@@ -344,6 +372,7 @@ export interface CashAllocation {
     received_at: string | null;
     decided_at?: string | null;
     rejection_reason?: string | null;
+    source_account?: { id: number; name: string } | null;
     project?: Project | Pick<Project, 'id' | 'code' | 'name'> | null;
     requester?: { id: number; name: string };
     approver?: { id: number; name: string };

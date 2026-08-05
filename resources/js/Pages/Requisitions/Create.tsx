@@ -253,7 +253,7 @@ export default function RequisitionsCreate() {
                     description={
                         isEditing
                             ? 'Update this draft before submitting it for review.'
-                            : 'Choose a project (direct expense) or organization (overhead), then add request lines.'
+                            : 'Choose a project (direct expense) or administrative (overhead), then add request lines.'
                     }
                 />
 
@@ -293,12 +293,12 @@ export default function RequisitionsCreate() {
                                                 })
                                             }
                                         />
-                                        Organization (overhead on fulfill)
+                                        Administrative (overhead on fulfill)
                                     </label>
                                 </div>
                                 <p className="text-xs text-slate-500">
                                     {isOrganization
-                                        ? 'Paid from organization cash on hand and recorded as an indirect / overhead expense when fulfilled.'
+                                        ? 'Paid from administrative cash on hand and recorded as an indirect / overhead expense when fulfilled.'
                                         : 'Charged to a project cash float and recorded as a direct expense when fulfilled.'}
                                 </p>
                             </div>
@@ -373,7 +373,7 @@ export default function RequisitionsCreate() {
                                     {data.addressed_to === 'storekeeper'
                                         ? 'Fulfillment will reduce inventory stock and still record an expense.'
                                         : isOrganization
-                                          ? 'Fulfillment will reduce organization cash on hand and record overhead.'
+                                          ? 'Fulfillment will reduce administrative cash on hand and record overhead.'
                                           : 'Fulfillment will reduce project cash on hand and record a direct expense.'}
                                 </p>
                                 {errors.addressed_to && (

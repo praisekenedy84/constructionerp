@@ -47,7 +47,6 @@ class FundApprovalsTest extends TestCase
         ]);
 
         $allocation = app(CashAllocationService::class)->request(
-            $project->id,
             '50000',
             $admin,
         );
@@ -71,7 +70,7 @@ class FundApprovalsTest extends TestCase
             ->assertInertia(fn ($page) => $page
                 ->component('Finance/FundApprovals')
                 ->has('allocations.data', 1)
-                ->has('projects')
+                ->has('manager_accounts')
                 ->has('summary.total')
             );
     }
@@ -87,17 +86,15 @@ class FundApprovalsTest extends TestCase
 
         $this->post('/finance/cash-requests', [
             'requested_amount' => '75000',
-            'method' => 'bank',
-            'reference_no' => 'ORG-001',
         ])->assertRedirect();
 
         tenancy()->initialize(Tenant::where('slug', 'fund-co')->firstOrFail());
 
         $this->assertDatabaseHas('cash_allocations', [
-            'reference_no' => 'ORG-001',
+            'reference_no' => null,
             'project_id' => null,
             'requested_amount' => '75000.00',
-            'method' => 'bank',
+            'method' => null,
         ]);
 
         tenancy()->end();

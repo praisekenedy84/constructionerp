@@ -13,14 +13,21 @@ import { Label } from '@/Components/ui/label';
 import { PaymentMethodSelect } from '@/Components/ui/payment-method-select';
 import { formatCurrency } from '@/lib/formatters';
 import { hasPermission } from '@/lib/permissions';
-import { CashAllocation, ListingFilters, PageProps, Paginated, Project } from '@/types';
+import {
+    CashAllocation,
+    ListingFilters,
+    MoneyAccount,
+    PageProps,
+    Paginated,
+} from '@/types';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { Download, FileSpreadsheet, Plus } from 'lucide-react';
 import { FormEvent, useState } from 'react';
 
 interface FundApprovalsProps extends PageProps {
     allocations: Paginated<CashAllocation>;
-    projects: Pick<Project, 'id' | 'code' | 'name'>[];
+    manager_accounts: MoneyAccount[];
+    finance_balance: string;
     filters: ListingFilters & { status?: string };
     summary: {
         total: number;
@@ -40,25 +47,21 @@ const statusOptions = [
 ];
 
 export default function FundApprovals() {
-    const { allocations, auth, filters, projects, summary } = usePage<FundApprovalsProps>().props;
+    const { allocations, auth, filters, manager_accounts, finance_balance, summary } =
+        usePage<FundApprovalsProps>().props;
     const rows = allocations.data ?? [];
     const [requestOpen, setRequestOpen] = useState(false);
     const [rejectingId, setRejectingId] = useState<number | null>(null);
     const [rejectReason, setRejectReason] = useState('');
-    const [receivingId, setReceivingId] = useState<number | null>(null);
-    const [receiveAmount, setReceiveAmount] = useState('');
-    const [receiveMethod, setReceiveMethod] = useState('');
-    const [receiveReference, setReceiveReference] = useState('');
-
-    const canApprove = hasPermission(auth.user, 'budgets', 'approve');
-    const canReject = hasPermission(auth.user, 'budgets', 'reject');
-    const canReceive = hasPermission(auth.user, 'budgets', 'receive');
-    const canRequest = hasPermission(auth.user, 'budgets', 'create');
-
     const [approvingId, setApprovingId] = useState<number | null>(null);
     const [approveAmount, setApproveAmount] = useState('');
     const [approveMethod, setApproveMethod] = useState('');
     const [approveReference, setApproveReference] = useState('');
+    const [sourceAccountId, setSourceAccountId] = useState('');
+
+    const canApprove = hasPermission(auth.user, 'budgets', 'approve');
+    const canReject = hasPermission(auth.user, 'budgets', 'reject');
+    const canRequest = hasPermission(auth.user, 'budgets', 'create');
 
     const {
         data: requestData,
@@ -70,10 +73,7 @@ export default function FundApprovals() {
         clearErrors: clearRequestErrors,
         isDirty: requestDirty,
     } = useForm({
-        project_id: '',
         requested_amount: '',
-        method: '',
-        reference_no: '',
     });
 
     function openRequestDialog() {
@@ -111,18 +111,24 @@ export default function FundApprovals() {
     }
 
     function approve(id: number) {
-        router.post(`/finance/cash-requests/${id}/approve`, {
-            approved_amount: approveAmount || undefined,
-            method: approveMethod || undefined,
-            reference_no: approveReference || undefined,
-        }, {
-            onSuccess: () => {
-                setApprovingId(null);
-                setApproveAmount('');
-                setApproveMethod('');
-                setApproveReference('');
+        router.post(
+            `/finance/cash-requests/${id}/approve`,
+            {
+                source_account_id: sourceAccountId || undefined,
+                approved_amount: approveAmount || undefined,
+                method: approveMethod || undefined,
+                reference_no: approveReference || undefined,
             },
-        });
+            {
+                onSuccess: () => {
+                    setApprovingId(null);
+                    setApproveAmount('');
+                    setApproveMethod('');
+                    setApproveReference('');
+                    setSourceAccountId('');
+                },
+            },
+        );
     }
 
     function reject(id: number) {
@@ -138,57 +144,60 @@ export default function FundApprovals() {
         );
     }
 
-    function receive(id: number) {
-        router.post(
-            `/finance/cash-requests/${id}/receive`,
-            {
-                received_amount: receiveAmount,
-                method: receiveMethod || undefined,
-                reference_no: receiveReference || undefined,
-            },
-            {
-                onSuccess: () => {
-                    setReceivingId(null);
-                    setReceiveAmount('');
-                    setReceiveMethod('');
-                    setReceiveReference('');
-                },
-            },
-        );
-    }
-
     return (
         <AppShell title="Fund Approvals">
             <Head title="Fund Approvals" />
             <div className="space-y-6">
                 <PageHeader
                     title="Fund Approvals"
-                    description="Request project floats or organization (general) funds. Approval floats cash on hand in the matching wallet — project or organization."
+                    description="Finance requests cash into the shared Finance Wallet. Manager approval transfers funds from a manager account — spendable on project or company expenses."
                     actions={
-                        <div className="flex flex-wrap gap-2">
-                            <Link href="/finance/organization-cash">
-                                <Button variant="outline">Organization Cash</Button>
-                            </Link>
-                            {canRequest && (
-                                <Button onClick={openRequestDialog}>
-                                    <Plus className="mr-2 h-4 w-4" />
-                                    Create New Request
+                        <>
+                            <div className="flex items-center gap-3 text-sm">
+                                <Link
+                                    href="/finance/accounts"
+                                    className="font-medium text-blue-700 hover:underline"
+                                >
+                                    Accounts
+                                </Link>
+                                <Link
+                                    href="/finance/finance-transactions"
+                                    className="font-medium text-blue-700 hover:underline"
+                                >
+                                    Finance Wallet
+                                </Link>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => exportReport('xlsx')}
+                                >
+                                    <FileSpreadsheet className="h-4 w-4" />
+                                    Excel
                                 </Button>
-                            )}
-                            <Button variant="outline" onClick={() => exportReport('xlsx')}>
-                                <FileSpreadsheet className="mr-2 h-4 w-4" />
-                                Export Excel
-                            </Button>
-                            <Button variant="outline" onClick={() => exportReport('pdf')}>
-                                <Download className="mr-2 h-4 w-4" />
-                                Export PDF
-                            </Button>
-                        </div>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => exportReport('pdf')}
+                                >
+                                    <Download className="h-4 w-4" />
+                                    PDF
+                                </Button>
+                                {canRequest && (
+                                    <Button onClick={openRequestDialog}>
+                                        <Plus className="h-4 w-4" />
+                                        Request Funds
+                                    </Button>
+                                )}
+                            </div>
+                        </>
                     }
                 />
 
-                <div className="grid gap-4 sm:grid-cols-5">
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
                     {[
+                        { label: 'Finance Wallet', value: formatCurrency(finance_balance), tone: 'text-slate-900' },
                         { label: 'Total', value: summary.total, tone: 'text-slate-900' },
                         { label: 'Pending', value: summary.pending, tone: 'text-amber-700' },
                         { label: 'Approved', value: summary.approved, tone: 'text-blue-700' },
@@ -208,7 +217,7 @@ export default function FundApprovals() {
                 <ListToolbar
                     baseUrl="/finance/approvals"
                     filters={filters}
-                    searchPlaceholder="Search reference, project, requester…"
+                    searchPlaceholder="Search reference, requester…"
                     sortOptions={[
                         { value: 'requested_at', label: 'Requested date' },
                         { value: 'status', label: 'Status' },
@@ -234,16 +243,15 @@ export default function FundApprovals() {
                     ) : (
                         <>
                             <div className="overflow-x-auto">
-                                <table className="w-full min-w-[1100px] text-sm">
+                                <table className="w-full min-w-[1000px] text-sm">
                                     <thead>
                                         <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs text-slate-500">
                                             <th className="px-4 py-3 font-medium">ID</th>
-                                            <th className="px-4 py-3 font-medium">Project</th>
                                             <th className="px-4 py-3 font-medium">Requester</th>
                                             <th className="px-4 py-3 font-medium">Status</th>
                                             <th className="px-4 py-3 text-right font-medium">Requested</th>
                                             <th className="px-4 py-3 text-right font-medium">Received</th>
-                                            <th className="px-4 py-3 text-right font-medium">Balance</th>
+                                            <th className="px-4 py-3 font-medium">Source account</th>
                                             <th className="px-4 py-3 font-medium">Dates</th>
                                             <th className="px-4 py-3 font-medium">Approver</th>
                                             <th className="px-4 py-3 text-right font-medium">Actions</th>
@@ -254,15 +262,6 @@ export default function FundApprovals() {
                                             <tr key={allocation.id}>
                                                 <td className="px-4 py-4 font-mono text-slate-900">
                                                     #{allocation.id}
-                                                </td>
-                                                <td className="px-4 py-4 text-slate-600">
-                                                    <p className="font-medium text-slate-900">
-                                                        {allocation.project?.code ?? 'ORG'}
-                                                    </p>
-                                                    <p className="text-xs">
-                                                        {allocation.project?.name ??
-                                                            'Organization (general)'}
-                                                    </p>
                                                 </td>
                                                 <td className="px-4 py-4 text-slate-600">
                                                     {allocation.requester?.name ?? '—'}
@@ -276,10 +275,8 @@ export default function FundApprovals() {
                                                 <td className="px-4 py-4 text-right text-slate-600">
                                                     {formatCurrency(allocation.received_amount)}
                                                 </td>
-                                                <td className="px-4 py-4 text-right text-slate-600">
-                                                    {allocation.status === 'received'
-                                                        ? formatCurrency(allocation.balance ?? '0')
-                                                        : '—'}
+                                                <td className="px-4 py-4 text-slate-600">
+                                                    {allocation.source_account?.name ?? '—'}
                                                 </td>
                                                 <td className="px-4 py-4 text-xs text-slate-500">
                                                     <p>
@@ -290,12 +287,6 @@ export default function FundApprovals() {
                                                         <p>
                                                             Decided:{' '}
                                                             {new Date(allocation.decided_at).toLocaleString()}
-                                                        </p>
-                                                    )}
-                                                    {allocation.received_at && (
-                                                        <p>
-                                                            Received:{' '}
-                                                            {new Date(allocation.received_at).toLocaleString()}
                                                         </p>
                                                     )}
                                                 </td>
@@ -323,6 +314,11 @@ export default function FundApprovals() {
                                                                         setApproveAmount(
                                                                             allocation.requested_amount,
                                                                         );
+                                                                        setSourceAccountId(
+                                                                            manager_accounts[0]
+                                                                                ? String(manager_accounts[0].id)
+                                                                                : '',
+                                                                        );
                                                                         setRejectingId(null);
                                                                     }}
                                                                 >
@@ -348,43 +344,32 @@ export default function FundApprovals() {
                                                             </div>
                                                         )}
 
-                                                        {allocation.status === 'approved' && canReceive && (
-                                                            <Button
-                                                                size="sm"
-                                                                variant="outline"
-                                                                onClick={() => {
-                                                                    setReceivingId(
-                                                                        receivingId === allocation.id
-                                                                            ? null
-                                                                            : allocation.id,
-                                                                    );
-                                                                    setReceiveAmount(allocation.requested_amount);
-                                                                }}
-                                                            >
-                                                                Record receipt
-                                                            </Button>
-                                                        )}
-
                                                         {allocation.status === 'received' && (
                                                             <span className="text-xs text-green-700">
-                                                                {allocation.project_id == null
-                                                                    ? 'Floated to organization cash'
-                                                                    : 'Floated to project cash'}
-                                                            </span>
-                                                        )}
-
-                                                        {allocation.status === 'rejected' && (
-                                                            <span className="text-xs text-slate-400">
-                                                                Rejected
+                                                                In Finance Wallet
                                                             </span>
                                                         )}
 
                                                         {approvingId === allocation.id && (
                                                             <div className="flex w-full max-w-xs flex-col gap-2">
                                                                 <p className="text-xs text-slate-500">
-                                                                    Leave amount as-is or amend before funding cash
-                                                                    on hand.
+                                                                    Choose the manager account to transfer from.
                                                                 </p>
+                                                                <select
+                                                                    className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
+                                                                    value={sourceAccountId}
+                                                                    onChange={(e) =>
+                                                                        setSourceAccountId(e.target.value)
+                                                                    }
+                                                                >
+                                                                    <option value="">Select account…</option>
+                                                                    {manager_accounts.map((account) => (
+                                                                        <option key={account.id} value={account.id}>
+                                                                            {account.name} (
+                                                                            {formatCurrency(account.balance)})
+                                                                        </option>
+                                                                    ))}
+                                                                </select>
                                                                 <AmountInput
                                                                     placeholder="Approved amount"
                                                                     value={approveAmount}
@@ -408,8 +393,9 @@ export default function FundApprovals() {
                                                                     size="sm"
                                                                     className="bg-green-700 hover:bg-green-800"
                                                                     onClick={() => approve(allocation.id)}
+                                                                    disabled={!sourceAccountId}
                                                                 >
-                                                                    Confirm &amp; float cash
+                                                                    Confirm &amp; transfer
                                                                 </Button>
                                                             </div>
                                                         )}
@@ -429,36 +415,6 @@ export default function FundApprovals() {
                                                                     onClick={() => reject(allocation.id)}
                                                                 >
                                                                     Confirm reject
-                                                                </Button>
-                                                            </div>
-                                                        )}
-
-                                                        {receivingId === allocation.id && (
-                                                            <div className="flex w-full max-w-xs flex-col gap-2">
-                                                                <AmountInput
-                                                                    placeholder="Received amount"
-                                                                    value={receiveAmount}
-                                                                    onValueChange={setReceiveAmount}
-                                                                />
-                                                                <PaymentMethodSelect
-                                                                    value={receiveMethod}
-                                                                    onChange={(e) =>
-                                                                        setReceiveMethod(e.target.value)
-                                                                    }
-                                                                    optional
-                                                                />
-                                                                <Input
-                                                                    placeholder="Reference (optional)"
-                                                                    value={receiveReference}
-                                                                    onChange={(e) =>
-                                                                        setReceiveReference(e.target.value)
-                                                                    }
-                                                                />
-                                                                <Button
-                                                                    size="sm"
-                                                                    onClick={() => receive(allocation.id)}
-                                                                >
-                                                                    Confirm receipt
                                                                 </Button>
                                                             </div>
                                                         )}
@@ -485,29 +441,10 @@ export default function FundApprovals() {
                             closeRequestDialog();
                         }
                     }}
-                    title="Create New Fund Request"
-                    description="Select a project or Organization (general). A manager will review the request."
+                    title="Request Funds"
+                    description="Request funds into the Finance Wallet. A manager will approve and transfer from one of their accounts."
                 >
                     <form onSubmit={submitRequest} className="space-y-4">
-                        <div className="space-y-2">
-                            <Label htmlFor="request-project">Allocate funds to</Label>
-                            <select
-                                id="request-project"
-                                className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-800"
-                                value={requestData.project_id}
-                                onChange={(e) => setRequestData('project_id', e.target.value)}
-                            >
-                                <option value="">Organization (general)</option>
-                                {(projects ?? []).map((p) => (
-                                    <option key={p.id} value={p.id}>
-                                        {p.code} — {p.name}
-                                    </option>
-                                ))}
-                            </select>
-                            {requestErrors.project_id && (
-                                <p className="text-sm text-red-600">{requestErrors.project_id}</p>
-                            )}
-                        </div>
                         <div className="space-y-2">
                             <Label htmlFor="request-amount">Amount (TZS)</Label>
                             <AmountInput
@@ -518,29 +455,6 @@ export default function FundApprovals() {
                             />
                             {requestErrors.requested_amount && (
                                 <p className="text-sm text-red-600">{requestErrors.requested_amount}</p>
-                            )}
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="request-method">Payment method</Label>
-                            <PaymentMethodSelect
-                                id="request-method"
-                                value={requestData.method}
-                                onChange={(e) => setRequestData('method', e.target.value)}
-                                optional
-                            />
-                            {requestErrors.method && (
-                                <p className="text-sm text-red-600">{requestErrors.method}</p>
-                            )}
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="request-reference">Reference No</Label>
-                            <Input
-                                id="request-reference"
-                                value={requestData.reference_no}
-                                onChange={(e) => setRequestData('reference_no', e.target.value)}
-                            />
-                            {requestErrors.reference_no && (
-                                <p className="text-sm text-red-600">{requestErrors.reference_no}</p>
                             )}
                         </div>
                         <DialogFormActions

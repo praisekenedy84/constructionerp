@@ -32,7 +32,7 @@ export default function CashShortfallApproveDialog({
 }: CashShortfallApproveDialogProps) {
     const poolLabel =
         availability.scope === 'organization'
-            ? 'organization cash on hand'
+            ? 'administrative cash on hand'
             : 'project cash on hand';
     const shortfall = Math.max(
         0,

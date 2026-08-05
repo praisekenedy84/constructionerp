@@ -17,6 +17,7 @@ use App\Http\Controllers\PositionController;
 use App\Http\Controllers\EquipmentController;
 use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\FinanceController;
+use App\Http\Controllers\MoneyAccountController;
 use App\Http\Controllers\GoodsReceiptController;
 use App\Http\Controllers\HubController;
 use App\Http\Controllers\InventoryController;
@@ -85,6 +86,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/projects/{id}/valuations/{valuationId}/edit', [ValuationController::class, 'edit'])->name('projects.valuations.edit');
         Route::put('/projects/{id}/valuations/{valuationId}', [ValuationController::class, 'update'])->name('projects.valuations.update');
         Route::delete('/projects/{id}/valuations/{valuationId}', [ValuationController::class, 'destroy'])->name('projects.valuations.destroy');
+        Route::get('/projects/{id}/phases/{phaseId}', [ProjectPhaseController::class, 'show'])->name('projects.phases.show');
         Route::post('/projects/{id}/phases', [ProjectPhaseController::class, 'store'])->name('projects.phases.store');
         Route::post('/projects/{id}/phases/{phaseId}/retention/release', [ProjectPhaseController::class, 'releaseRetention'])->name('projects.phases.retention.release');
         Route::post('/projects/{id}/phases/{phaseId}/retention/forfeit', [ProjectPhaseController::class, 'forfeitRetention'])->name('projects.phases.retention.forfeit');
@@ -129,6 +131,11 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/finance', [HubController::class, 'finance'])->name('finance.hub');
     Route::get('/finance/overview', [FinanceController::class, 'overview'])->name('finance.overview');
+    Route::get('/finance/accounts', [MoneyAccountController::class, 'index'])->name('finance.accounts');
+    Route::post('/finance/accounts', [MoneyAccountController::class, 'store'])->name('finance.accounts.store');
+    Route::post('/finance/accounts/{id}/deposit', [MoneyAccountController::class, 'deposit'])->name('finance.accounts.deposit');
+    Route::get('/finance/manager-transactions', [MoneyAccountController::class, 'managerTransactions'])->name('finance.manager-transactions');
+    Route::get('/finance/finance-transactions', [MoneyAccountController::class, 'financeTransactions'])->name('finance.finance-transactions');
     Route::get('/finance/approvals', [CashController::class, 'fundApprovals'])->name('finance.approvals');
     Route::get('/finance/approvals/export', [CashController::class, 'exportFundApprovals'])->name('finance.approvals.export');
     Route::get('/finance/organization-cash', [CashController::class, 'organizationCash'])->name('finance.organization-cash');

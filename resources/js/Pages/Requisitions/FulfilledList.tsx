@@ -132,9 +132,9 @@ export default function FulfilledList() {
                                                     </td>
                                                     <td className="px-4 py-3 text-slate-600">
                                                         <div className="font-mono text-xs text-slate-500">
-                                                            {req.project?.code ?? 'ORG'}
+                                                            {req.project?.code ?? 'ADM'}
                                                         </div>
-                                                        <div>{req.project?.name ?? 'Organization'}</div>
+                                                        <div>{req.project?.name ?? 'Administrative'}</div>
                                                     </td>
                                                     <td className="px-4 py-3 text-slate-600">
                                                         {(req.categories?.length ?? 0) > 0

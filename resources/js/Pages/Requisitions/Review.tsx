@@ -328,7 +328,7 @@ export default function RequisitionsReview() {
                                         >
                                             <p className="font-medium">
                                                 {cashAvailability.scope === 'organization'
-                                                    ? 'Organization'
+                                                    ? 'Administrative'
                                                     : 'Project'}{' '}
                                                 cash on hand:{' '}
                                                 {formatCurrency(cashAvailability.cash_on_hand)}

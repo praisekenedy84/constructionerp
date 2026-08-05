@@ -196,7 +196,7 @@ export default function RequisitionsShow() {
                                         }`
                               }`
                             : ''
-                    } · ${requisition.department} · ${requisition.project?.name ?? 'Organization'}`}
+                    } · ${requisition.department} · ${requisition.project?.name ?? 'Administrative'}`}
                     actions={
                         <div className="flex items-center gap-2">
                             {canDecide && (
@@ -304,7 +304,7 @@ export default function RequisitionsShow() {
                             </p>
                         )}
                         <p className="mt-1 text-xs capitalize text-slate-500">
-                            {requisition.project_id ? 'Project float' : 'Organization float'} · To{' '}
+                            {requisition.project_id ? 'Project float' : 'Administrative float'} · To{' '}
                             {String(
                                 requisition.addressed_to ??
                                     (isStockFulfillment ? 'storekeeper' : 'finance'),
@@ -884,7 +884,7 @@ export default function RequisitionsShow() {
                                         Amount is deducted from{' '}
                                         {requisition.project_id
                                             ? 'project cash on hand and recorded as a direct expense'
-                                            : 'organization cash on hand and recorded as overhead'}
+                                            : 'administrative cash on hand and recorded as overhead'}
                                         .
                                     </p>
                                     <div className="grid gap-3 sm:grid-cols-2">

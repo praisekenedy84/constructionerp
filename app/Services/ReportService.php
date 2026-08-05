@@ -32,6 +32,7 @@ class ReportService
 {
     public function __construct(
         private readonly BudgetService $budgetService,
+        private readonly MoneyAccountService $moneyAccountService,
     ) {}
 
     public function build(string $slug, array $filters = []): array
@@ -245,19 +246,21 @@ class ReportService
         $scope = $filters['scope'] ?? null;
         $projectId = $filters['project_id'] ?? null;
 
-        // Explicit organization scope (do not treat missing project_id as "org only").
         $organizationOnly = $scope === 'organization'
             || ($filters['organization'] ?? false) === true;
 
-        $allocations = CashAllocation::query()
-            ->when($organizationOnly, fn ($q) => $q->whereNull('project_id'))
-            ->when(! $organizationOnly && $projectId, fn ($q) => $q->where('project_id', $projectId))
+        // Liquidity is the shared Finance Wallet; project/org filters only affect
+        // committed / disbursed breakdowns for reporting.
+        $cashOnHand = $this->moneyAccountService->financeBalance();
+
+        $receivedAllocations = CashAllocation::query()
             ->where('status', CashAllocationStatus::Received)
             ->get();
-
-        $received = $this->sumDecimal($allocations->pluck('received_amount')->map(fn ($v) => (string) $v)->all());
-        $utilized = $this->sumDecimal($allocations->pluck('utilized_amount')->map(fn ($v) => (string) $v)->all());
-        $balance = bcsub($received, $utilized, 2);
+        $received = $this->sumDecimal($receivedAllocations->pluck('received_amount')->map(fn ($v) => (string) $v)->all());
+        $utilized = bcsub($received, $cashOnHand, 2);
+        if (bccomp($utilized, '0', 2) < 0) {
+            $utilized = '0.00';
+        }
 
         $committedReqs = Requisition::query()
             ->when($organizationOnly, fn ($q) => $q->whereNull('project_id'))
@@ -283,20 +286,23 @@ class ReportService
             $committed = bcadd($committed, (string) ($requisition->amended_amount ?? $requisition->original_amount), 2);
         }
 
+        $finance = $this->moneyAccountService->ensureFinanceAccount();
+
         $disbursed = (string) CashDisbursement::query()
-            ->when($organizationOnly, function ($q) {
-                $q->whereHas('cashAllocation', fn ($aq) => $aq->whereNull('project_id'));
-            })
+            ->when(
+                $organizationOnly,
+                fn ($q) => $q->whereHas('expense', fn ($eq) => $eq->whereNull('project_id'))
+                    ->orWhereHas('requisition', fn ($rq) => $rq->whereNull('project_id')),
+            )
             ->when(! $organizationOnly && $projectId, function ($q) use ($projectId) {
                 $q->where(function ($inner) use ($projectId) {
                     $inner->whereHas('requisition', fn ($rq) => $rq->where('project_id', $projectId))
                         ->orWhereHas('expense', fn ($eq) => $eq->where('project_id', $projectId));
                 });
             })
+            ->when(! $organizationOnly && ! $projectId, fn ($q) => $q->where('money_account_id', $finance->id))
             ->sum('amount');
 
-        // Outstanding compares like with like: only payments already made against
-        // requisitions that are still committed. Fulfilled ones leave both sides.
         $paidAgainstCommitted = '0.00';
         if ($committedReqs->isNotEmpty()) {
             $paidAgainstCommitted = (string) CashDisbursement::query()
@@ -312,11 +318,11 @@ class ReportService
             'project_id' => $organizationOnly ? null : $projectId,
             'received' => $received,
             'utilized' => $utilized,
-            'cash_on_hand' => $balance,
+            'cash_on_hand' => $cashOnHand,
             'committed' => bcadd((string) $committed, '0', 2),
             'disbursed' => bcadd($disbursed, '0', 2),
             'outstanding' => $outstanding,
-            'allocations' => $allocations->map(fn (CashAllocation $a) => [
+            'allocations' => $receivedAllocations->map(fn (CashAllocation $a) => [
                 'id' => $a->id,
                 'project_id' => $a->project_id,
                 'received_amount' => (string) $a->received_amount,
@@ -695,18 +701,8 @@ class ReportService
 
     private function sumCashBalances(?int $projectId): string
     {
-        $allocations = CashAllocation::query()
-            ->when($projectId, fn ($q) => $q->where('project_id', $projectId))
-            ->where('status', CashAllocationStatus::Received)
-            ->get();
-
-        $total = '0';
-
-        foreach ($allocations as $allocation) {
-            $total = bcadd($total, $allocation->balance, 2);
-        }
-
-        return $total;
+        // Shared wallet — project filter no longer silos liquidity.
+        return $this->moneyAccountService->financeBalance();
     }
 
     /**

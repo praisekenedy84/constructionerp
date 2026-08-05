@@ -46,6 +46,13 @@ const statusMap: Record<string, StatusVariant> = {
     direct: 'info',
     indirect: 'neutral',
     suspended: 'danger',
+    in_progress: 'info',
+    succeeded: 'success',
+    unsatisfactory: 'danger',
+    held: 'warning',
+    released: 'success',
+    forfeited: 'danger',
+    none: 'neutral',
 };
 
 interface StatusBadgeProps {

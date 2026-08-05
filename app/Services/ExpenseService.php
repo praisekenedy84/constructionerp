@@ -3,12 +3,10 @@
 namespace App\Services;
 
 use App\Enums\BudgetTransactionType;
-use App\Enums\CashAllocationStatus;
 use App\Enums\ExpenseCategory;
 use App\Enums\PaymentMethod;
 use App\Exceptions\InsufficientCashException;
 use App\Exports\ExpenseExport;
-use App\Models\CashAllocation;
 use App\Models\CashDisbursement;
 use App\Models\BudgetTransaction;
 use App\Models\Expense;
@@ -26,6 +24,7 @@ class ExpenseService
 {
     public function __construct(
         private readonly BudgetService $budgetService,
+        private readonly MoneyAccountService $moneyAccountService,
     ) {}
 
     /**
@@ -67,7 +66,7 @@ class ExpenseService
                 'requisition_id' => $data['requisition_id'] ?? null,
                 'valuation_id' => $data['valuation_id'] ?? null,
                 'category' => $category,
-                'sub_type' => $data['sub_type'] ?? 'General',
+                'sub_type' => $data['sub_type'] ?? OrganizationFundUse::GENERAL,
                 'activity_ref' => $data['activity_ref'] ?? null,
                 'asset_reg_no' => $data['asset_reg_no'] ?? null,
                 'amount' => $amount,
@@ -76,11 +75,10 @@ class ExpenseService
                 'recorded_by' => $data['recorded_by'],
             ]);
 
-            // When method is present (UI expenses and funded payroll), cash is taken
-            // from the matching pool: project float for direct, organization float for indirect.
+            // When method is present, cash is taken from the shared finance wallet.
             // Legacy payroll / IPC compliance omit method and stay accounting-only.
             if (array_key_exists('method', $data)) {
-                $this->disburseFromScopedCash(
+                $this->disburseFromFinanceWallet(
                     $expense,
                     $amount,
                     $data,
@@ -88,88 +86,80 @@ class ExpenseService
                 );
             }
 
+            if ($category === ExpenseCategory::Direct && $expense->project_id) {
+                $this->postDirectExpenseBudget($expense, (int) $data['recorded_by']);
+            }
+
             return $expense;
         });
     }
 
     /**
-     * Split an expense across received allocations in its pool, oldest first.
-     *
-     * - Direct expenses spend only that project's received floats (already budgeted
-     *   when the float was approved, so no extra DIRECT_EXPENSE ledger row).
-     * - Indirect / organization expenses spend only organization (projectless) floats.
+     * Spend from the shared Finance Wallet (project and company expenses share one balance).
+     * Project costs hit the budget ledger via DIRECT_EXPENSE; cash availability is wallet-level.
      *
      * @param  array<string, mixed>  $data
      */
-    private function disburseFromScopedCash(
+    private function disburseFromFinanceWallet(
         Expense $expense,
         string $amount,
         array $data,
         int $actorId,
-    ): void
-    {
-        $query = CashAllocation::query()
-            ->where('status', CashAllocationStatus::Received)
-            ->orderBy('received_at')
-            ->orderBy('id')
-            ->lockForUpdate();
-
-        if ($expense->category === ExpenseCategory::Indirect) {
-            $query->whereNull('project_id');
-            $poolLabel = 'organization cash on hand';
-            $remedy = 'Overhead cannot exceed the organization funds finance received from the manager. Reduce the amount, or request more organization (general) funds.';
-        } else {
-            $query->where('project_id', $expense->project_id);
-            $poolLabel = 'project cash on hand';
-            $remedy = 'Reduce the expense to the project cash balance, or request additional project funds.';
-        }
-
-        $allocations = $query->get();
-
-        $available = '0.00';
-        foreach ($allocations as $allocation) {
-            if (bccomp($allocation->balance, '0', 2) === 1) {
-                $available = bcadd($available, $allocation->balance, 2);
-            }
-        }
+    ): void {
+        $actor = User::findOrFail($actorId);
+        $finance = $this->moneyAccountService->ensureFinanceAccount($actor);
+        $available = bcadd((string) $finance->balance, '0', 2);
 
         if (bccomp($available, $amount, 2) < 0) {
             throw new InsufficientCashException(
                 $amount,
                 $available,
-                $remedy,
-                $poolLabel,
+                'Reduce the amount, or request more funds into the Finance Wallet.',
+                'Finance Wallet',
             );
         }
 
-        $remaining = $amount;
+        $tx = $this->moneyAccountService->disburseFromFinance($amount, $actor, [
+            'description' => $expense->description
+                ? "Expense: {$expense->description}"
+                : "Expense #{$expense->id}",
+            'reference_no' => $data['reference_no'] ?? null,
+            'method' => $data['method'] ?? PaymentMethod::Cash->value,
+            'reference_entity_type' => 'expense',
+            'reference_entity_id' => $expense->id,
+            'occurred_at' => $data['expense_date'],
+        ]);
 
-        foreach ($allocations as $allocation) {
-            if (bccomp($remaining, '0', 2) <= 0) {
-                break;
-            }
+        CashDisbursement::create([
+            'expense_id' => $expense->id,
+            'cash_allocation_id' => null,
+            'money_account_id' => $finance->id,
+            'account_transaction_id' => $tx->id,
+            'amount' => $amount,
+            'method' => $data['method'] ?? PaymentMethod::Cash->value,
+            'payee' => $data['payee'] ?? null,
+            'reference_no' => $data['reference_no'] ?? null,
+            'disbursed_by' => $actorId,
+            'disbursed_at' => $data['expense_date'],
+            'created_at' => now(),
+        ]);
+    }
 
-            $balance = $allocation->balance;
-            if (bccomp($balance, '0', 2) <= 0) {
-                continue;
-            }
-
-            $portion = bccomp($remaining, $balance, 2) <= 0 ? $remaining : $balance;
-
-            CashDisbursement::create([
-                'expense_id' => $expense->id,
-                'cash_allocation_id' => $allocation->id,
-                'amount' => $portion,
-                'method' => $data['method'] ?? PaymentMethod::Cash->value,
-                'payee' => $data['payee'] ?? null,
-                'reference_no' => $data['reference_no'] ?? null,
-                'disbursed_by' => $actorId,
-                'disbursed_at' => $data['expense_date'],
-                'created_at' => now(),
-            ]);
-
-            $remaining = bcsub($remaining, $portion, 2);
+    private function postDirectExpenseBudget(Expense $expense, int $actorId): void
+    {
+        if (! $expense->project_id) {
+            return;
         }
+
+        $this->budgetService->createTransaction((int) $expense->project_id, [
+            'type' => BudgetTransactionType::DirectExpense,
+            'amount' => bcadd((string) $expense->amount, '0', 2),
+            'boq_item_id' => $expense->boq_item_id,
+            'reference_entity_type' => 'expense',
+            'reference_entity_id' => $expense->id,
+            'reason' => 'Direct expense charged to project budget',
+            'created_by' => $actorId,
+        ]);
     }
 
     public function update(Expense $expense, array $data, User $user): Expense
@@ -183,11 +173,18 @@ class ExpenseService
                 ->lockForUpdate()
                 ->get();
 
-            if ($oldDisbursements->isNotEmpty()) {
-                CashAllocation::whereKey($oldDisbursements->pluck('cash_allocation_id'))
-                    ->lockForUpdate()
-                    ->get();
-                $oldDisbursements->each->delete();
+            foreach ($oldDisbursements as $disbursement) {
+                if ($disbursement->account_transaction_id) {
+                    $tx = \App\Models\AccountTransaction::find($disbursement->account_transaction_id);
+                    if ($tx) {
+                        $this->moneyAccountService->reverseFinanceDisbursement(
+                            $tx,
+                            $user,
+                            "Expense #{$expense->id} edited — reversing prior disbursement",
+                        );
+                    }
+                }
+                $disbursement->delete();
             }
 
             $this->reverseDirectExpenseBudget($expense, $user);
@@ -203,7 +200,7 @@ class ExpenseService
                 'project_id' => $projectId,
                 'boq_item_id' => $data['boq_item_id'] ?? null,
                 'category' => $category,
-                'sub_type' => $data['sub_type'] ?? $expense->sub_type ?? 'General',
+                'sub_type' => $data['sub_type'] ?? $expense->sub_type ?? OrganizationFundUse::GENERAL,
                 'activity_ref' => $data['activity_ref'] ?? null,
                 'asset_reg_no' => $data['asset_reg_no'] ?? null,
                 'amount' => $amount,
@@ -211,7 +208,11 @@ class ExpenseService
                 'expense_date' => $data['expense_date'],
             ]);
 
-            $this->disburseFromScopedCash($expense, $amount, $data, $user->id);
+            $this->disburseFromFinanceWallet($expense, $amount, $data, $user->id);
+
+            if ($category === ExpenseCategory::Direct && $expense->project_id) {
+                $this->postDirectExpenseBudget($expense->refresh(), $user->id);
+            }
 
             return $expense->refresh();
         });
@@ -228,14 +229,20 @@ class ExpenseService
                 ->lockForUpdate()
                 ->get();
 
-            if ($disbursements->isNotEmpty()) {
-                CashAllocation::whereKey($disbursements->pluck('cash_allocation_id'))
-                    ->lockForUpdate()
-                    ->get();
-                $disbursements->each->delete();
+            foreach ($disbursements as $disbursement) {
+                if ($disbursement->account_transaction_id) {
+                    $tx = \App\Models\AccountTransaction::find($disbursement->account_transaction_id);
+                    if ($tx) {
+                        $this->moneyAccountService->reverseFinanceDisbursement(
+                            $tx,
+                            $user,
+                            "Expense #{$expense->id} deleted — reversing disbursement",
+                        );
+                    }
+                }
+                $disbursement->delete();
             }
 
-            // Reverse any legacy DIRECT_EXPENSE rows from the pre-scoped-pool era.
             $this->reverseDirectExpenseBudget($expense, $user);
             $expense->delete();
         });

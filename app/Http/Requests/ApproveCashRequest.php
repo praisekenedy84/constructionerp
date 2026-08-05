@@ -16,6 +16,7 @@ class ApproveCashRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'source_account_id' => ['required', 'integer', 'exists:money_accounts,id'],
             'approved_amount' => ['nullable', 'numeric', 'gt:0'],
             'method' => ['nullable', Rule::enum(PaymentMethod::class)],
             'reference_no' => ['nullable', 'string', 'max:100'],

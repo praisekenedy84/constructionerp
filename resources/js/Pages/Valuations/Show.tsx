@@ -118,7 +118,16 @@ export default function ValuationsShow() {
                         <div>
                             <dt className="text-slate-500">Phase</dt>
                             <dd className="mt-1 font-medium">
-                                {phase ? `Phase ${phase.sequence_no}: ${phase.name}` : '—'}
+                                {phase ? (
+                                    <Link
+                                        href={`/projects/${project.id}/phases/${phase.id}`}
+                                        className="text-blue-700 hover:underline"
+                                    >
+                                        Phase {phase.sequence_no}: {phase.name}
+                                    </Link>
+                                ) : (
+                                    '—'
+                                )}
                             </dd>
                         </div>
                         <div>

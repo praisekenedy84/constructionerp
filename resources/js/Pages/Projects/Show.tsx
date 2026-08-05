@@ -264,7 +264,7 @@ export default function ProjectsShow() {
                             <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs text-slate-500">
                                 <th className="px-6 py-3 font-medium">Phase</th>
                                 <th className="px-6 py-3 text-right font-medium">Disbursed</th>
-                                <th className="px-6 py-3 text-right font-medium">IPCs</th>
+                                <th className="px-6 py-3 text-right font-medium">IPC total</th>
                                 <th className="px-6 py-3 text-right font-medium">Held</th>
                                 <th className="px-6 py-3 text-right font-medium">Released</th>
                                 <th className="px-6 py-3 text-right font-medium">Forfeited</th>
@@ -286,9 +286,12 @@ export default function ProjectsShow() {
                                 phases.map((phase) => (
                                     <tr key={phase.id}>
                                         <td className="px-6 py-3">
-                                            <div className="font-medium">
+                                            <Link
+                                                href={`/projects/${project.id}/phases/${phase.id}`}
+                                                className="font-medium text-blue-700 hover:underline"
+                                            >
                                                 Phase {phase.sequence_no}: {phase.name}
-                                            </div>
+                                            </Link>
                                             <div className="text-xs text-slate-500 capitalize">
                                                 {phase.status}
                                             </div>
@@ -296,8 +299,17 @@ export default function ProjectsShow() {
                                         <td className="px-6 py-3 text-right">
                                             {formatCurrency(phase.disbursed_amount)}
                                         </td>
-                                        <td className="px-6 py-3 text-right text-slate-700">
-                                            {phase.valuations_count ?? 0}
+                                        <td className="px-6 py-3 text-right">
+                                            <div className="font-medium text-red-700">
+                                                −
+                                                {formatCurrency(
+                                                    phase.valuations_sum_total_deductions ?? '0',
+                                                )}
+                                            </div>
+                                            <div className="text-xs text-slate-500">
+                                                {phase.valuations_count ?? 0} IPC
+                                                {(phase.valuations_count ?? 0) === 1 ? '' : 's'}
+                                            </div>
                                         </td>
                                         <td className="px-6 py-3 text-right text-amber-700">
                                             {formatCurrency(phase.retention_held_amount)}
@@ -313,6 +325,13 @@ export default function ProjectsShow() {
                                         </td>
                                         <td className="px-6 py-3 text-right">
                                             <div className="flex justify-end gap-2">
+                                                <Link
+                                                    href={`/projects/${project.id}/phases/${phase.id}`}
+                                                >
+                                                    <Button variant="outline" size="sm">
+                                                        View
+                                                    </Button>
+                                                </Link>
                                                 <Button
                                                     variant="outline"
                                                     size="sm"

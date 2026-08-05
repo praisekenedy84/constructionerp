@@ -4,16 +4,19 @@ namespace Tests\Feature;
 
 use App\Enums\BudgetTransactionType;
 use App\Enums\CashAllocationStatus;
+use App\Enums\MoneyAccountType;
 use App\Enums\RequisitionStatus;
 use App\Models\BudgetTransaction;
 use App\Models\CashAllocation;
 use App\Models\CashDisbursement;
+use App\Models\MoneyAccount;
 use App\Models\Project;
 use App\Models\Requisition;
 use App\Models\RequisitionItem;
 use App\Models\Tenant;
 use App\Models\WorkflowConfig;
 use App\Services\AuthService;
+use App\Services\MoneyAccountService;
 use App\Services\PermissionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -87,9 +90,34 @@ class CashFloatFlowTest extends TestCase
         return $tenant;
     }
 
-    public function test_manager_approve_funds_cash_and_deducts_budget(): void
+    private function managerAccountId(): int
+    {
+        return (int) MoneyAccount::query()
+            ->where('type', MoneyAccountType::Manager)
+            ->orderBy('id')
+            ->value('id');
+    }
+
+    public function test_manager_approve_transfers_to_finance_without_budget_hit(): void
     {
         $this->seedTenant();
+
+        $this->post('/login', [
+            'email' => 'manager@cashfloat.local',
+            'password' => 'password',
+        ]);
+
+        $accountId = null;
+        Tenant::where('slug', 'cash-float-co')->first()->run(function () use (&$accountId) {
+            $accountId = $this->managerAccountId();
+            app(MoneyAccountService::class)->deposit(
+                MoneyAccount::findOrFail($accountId),
+                '500000',
+                \App\Models\User::where('email', 'manager@cashfloat.local')->first(),
+            );
+        });
+
+        auth()->logout();
 
         $this->post('/login', [
             'email' => 'finance@cashfloat.local',
@@ -97,7 +125,6 @@ class CashFloatFlowTest extends TestCase
         ]);
 
         $this->post('/finance/cash-requests', [
-            'project_id' => 1,
             'requested_amount' => '500000',
         ])->assertRedirect();
 
@@ -109,38 +136,33 @@ class CashFloatFlowTest extends TestCase
         ]);
 
         $this->post('/finance/cash-requests/1/approve', [
+            'source_account_id' => $accountId,
             'approved_amount' => '400000',
         ])->assertRedirect();
 
-        Tenant::where('slug', 'cash-float-co')->first()->run(function () {
+        Tenant::where('slug', 'cash-float-co')->first()->run(function () use ($accountId) {
             $allocation = CashAllocation::first();
             $this->assertSame(CashAllocationStatus::Received, $allocation->status);
             $this->assertSame('400000.00', (string) $allocation->received_amount);
-            $this->assertSame('400000.00', (string) $allocation->requested_amount);
+            $this->assertSame($accountId, (int) $allocation->source_account_id);
 
-            $txn = BudgetTransaction::where('type', BudgetTransactionType::CashAllocation)->first();
-            $this->assertNotNull($txn);
-            $this->assertSame('400000.00', (string) $txn->amount);
+            $this->assertNull(
+                BudgetTransaction::where('type', BudgetTransactionType::CashAllocation)->first(),
+                'Fund approval must not charge project budget'
+            );
+
+            $this->assertSame('100000.00', (string) MoneyAccount::find($accountId)->balance);
+            $this->assertSame('400000.00', app(MoneyAccountService::class)->financeBalance());
         });
     }
 
-    public function test_cash_fulfillment_requires_receipt_and_deducts_cash_on_hand(): void
+    public function test_cash_fulfillment_requires_receipt_and_deducts_finance_wallet(): void
     {
         $this->seedTenant();
 
         Tenant::where('slug', 'cash-float-co')->first()->run(function () {
-            CashAllocation::create([
-                'project_id' => 1,
-                'requested_amount' => '200000.00',
-                'received_amount' => '200000.00',
-                'utilized_amount' => '0.00',
-                'status' => CashAllocationStatus::Received,
-                'requested_by' => 2,
-                'approved_by' => 3,
-                'requested_at' => now(),
-                'received_at' => now(),
-                'decided_at' => now(),
-            ]);
+            $finance = app(MoneyAccountService::class)->ensureFinanceAccount();
+            $finance->update(['balance' => '200000.00']);
 
             $req = Requisition::create([
                 'requisition_no' => 'REQ-2026-00099',
@@ -181,14 +203,14 @@ class CashFloatFlowTest extends TestCase
         ])->assertRedirect();
 
         Tenant::where('slug', 'cash-float-co')->first()->run(function () {
-            $allocation = CashAllocation::first();
-            $this->assertSame('50000.00', (string) $allocation->utilized_amount);
-            $this->assertSame('150000.00', (string) $allocation->balance);
+            $this->assertSame('150000.00', app(MoneyAccountService::class)->financeBalance());
 
             $disbursement = CashDisbursement::first();
             $this->assertSame('Site Foreman Account', $disbursement->payee);
             $this->assertSame('RCP-001', $disbursement->reference_no);
             $this->assertSame('mobile', $disbursement->method);
+            $this->assertNotNull($disbursement->money_account_id);
+            $this->assertNotNull($disbursement->account_transaction_id);
         });
     }
 
@@ -227,20 +249,9 @@ class CashFloatFlowTest extends TestCase
         $this->seedTenant();
 
         Tenant::where('slug', 'cash-float-co')->first()->run(function () {
-            CashAllocation::create([
-                'project_id' => 1,
-                'requested_amount' => '100000.00',
-                'received_amount' => '100000.00',
-                'utilized_amount' => '0.00',
-                'status' => CashAllocationStatus::Received,
-                'requested_by' => 2,
-                'approved_by' => 3,
-                'requested_at' => now(),
-                'received_at' => now(),
-                'decided_at' => now(),
-            ]);
+            $finance = app(MoneyAccountService::class)->ensureFinanceAccount();
+            $finance->update(['balance' => '100000.00']);
 
-            // Already approved — commits 80k of the 100k float.
             Requisition::create([
                 'requisition_no' => 'REQ-2026-00101',
                 'project_id' => 1,
@@ -250,84 +261,42 @@ class CashFloatFlowTest extends TestCase
                 'status' => RequisitionStatus::Approved,
                 'fulfillment_type' => 'cash_disbursement',
                 'original_amount' => '80000.00',
+                'addressed_to' => 'finance',
             ]);
+        });
 
+        $this->post('/login', [
+            'email' => 'admin@cashfloat.local',
+            'password' => 'password',
+        ]);
+
+        Tenant::where('slug', 'cash-float-co')->first()->run(function () {
             $req = Requisition::create([
                 'requisition_no' => 'REQ-2026-00102',
                 'project_id' => 1,
                 'department' => 'Site',
                 'resource_type' => 'cash',
                 'requestor_id' => 4,
-                'status' => RequisitionStatus::UnderReview,
+                'status' => RequisitionStatus::Submitted,
                 'fulfillment_type' => 'cash_disbursement',
-                'original_amount' => '50000.00',
+                'original_amount' => '30000.00',
+                'addressed_to' => 'finance',
             ]);
 
             RequisitionItem::create([
                 'requisition_id' => $req->id,
-                'description' => 'More cash',
+                'description' => 'Extra',
                 'unit' => 'lump',
                 'quantity' => '1.000',
-                'unit_cost' => '50000.00',
-                'line_total' => '50000.00',
+                'unit_cost' => '30000.00',
+                'line_total' => '30000.00',
             ]);
 
-            \App\Models\ApprovalStep::create([
-                'requisition_id' => $req->id,
-                'level' => 1,
-                'required_role' => 'Finance Manager',
-                'status' => 'pending',
-                'assigned_at' => now(),
-            ]);
+            $availability = app(\App\Services\RequisitionService::class)
+                ->cashAvailability($req, '30000.00');
+
+            $this->assertTrue($availability['exceeds']);
+            $this->assertSame('20000.00', $availability['available']);
         });
-
-        $this->post('/login', [
-            'email' => 'finance@cashfloat.local',
-            'password' => 'password',
-        ]);
-
-        $stepId = null;
-        Tenant::where('slug', 'cash-float-co')->first()->run(function () use (&$stepId) {
-            $stepId = \App\Models\ApprovalStep::where('status', 'pending')->value('id');
-        });
-
-        $this->post("/approvals/steps/{$stepId}/resolve", [
-            'action' => 'approved',
-        ])->assertRedirect();
-
-        // Flash error expected — only 20k uncommitted cash remains.
-        $this->assertTrue(
-            session()->has('error') || session()->has('errors'),
-            'Approving beyond uncommitted cash should fail'
-        );
-        $this->assertStringContainsString(
-            'Amend the requisition down to available cash, or reject it',
-            (string) session('error'),
-        );
-
-        Tenant::where('slug', 'cash-float-co')->first()->run(function () {
-            $this->assertSame(
-                RequisitionStatus::UnderReview,
-                Requisition::where('requisition_no', 'REQ-2026-00102')->first()->status
-            );
-        });
-
-        $this->get('/requisitions/review-queue')
-            ->assertOk()
-            ->assertInertia(fn ($page) => $page
-                ->component('Requisitions/Review')
-                ->where('cashByRequisitionId', function ($cash) {
-                    $rows = collect($cash);
-                    if ($rows->isEmpty()) {
-                        return false;
-                    }
-
-                    $entry = $rows->first(fn ($row) => ($row['exceeds'] ?? false) === true);
-
-                    return $entry
-                        && (float) $entry['available'] === 20000.0
-                        && (float) $entry['required'] === 50000.0;
-                })
-            );
     }
 }

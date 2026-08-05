@@ -33,9 +33,11 @@ class Requisition extends Model
         'position_id',
         'status',
         'fulfillment_type',
+        'fulfillment_scope',
         'addressed_to',
         'original_amount',
         'amended_amount',
+        'fulfilled_amount',
     ];
 
     protected function casts(): array
@@ -47,6 +49,7 @@ class Requisition extends Model
             'addressed_to' => RequisitionAddressedTo::class,
             'original_amount' => 'decimal:2',
             'amended_amount' => 'decimal:2',
+            'fulfilled_amount' => 'decimal:2',
         ];
     }
 
@@ -245,6 +248,11 @@ class Requisition extends Model
     public function expense(): HasOne
     {
         return $this->hasOne(Expense::class);
+    }
+
+    public function expenses(): HasMany
+    {
+        return $this->hasMany(Expense::class);
     }
 
     public function inventoryIssues(): HasMany

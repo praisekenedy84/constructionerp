@@ -10,6 +10,7 @@ enum RequisitionStatus: string
     case Approved = 'approved';
     case Amended = 'amended';
     case Rejected = 'rejected';
+    case PartiallyFulfilled = 'partially_fulfilled';
     case Fulfilled = 'fulfilled';
     case Closed = 'closed';
     case Cancelled = 'cancelled';

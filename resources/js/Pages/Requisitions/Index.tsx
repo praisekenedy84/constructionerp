@@ -70,6 +70,7 @@ const statusOptions: RequisitionStatus[] = [
     'approved',
     'amended',
     'rejected',
+    'partially_fulfilled',
     'fulfilled',
     'closed',
     'cancelled',

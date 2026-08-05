@@ -3,6 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Enums\InventoryItemCategory;
+use App\Enums\RequisitionStatus;
+use App\Exceptions\BOQLimitExceededException;
+use App\Exceptions\InvalidTransitionException;
 use App\Http\Requests\AddRequisitionAttachmentRequest;
 use App\Http\Requests\StoreRequisitionRequest;
 use App\Http\Requests\TransitionRequisitionRequest;
@@ -15,11 +18,14 @@ use App\Models\Project;
 use App\Models\Requisition;
 use App\Models\RequisitionCategory;
 use App\Models\StockLocation;
+use App\Services\ReportService;
 use App\Services\RequisitionRegisterService;
 use App\Services\RequisitionService;
 use App\Support\ListingQuery;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -194,7 +200,7 @@ class RequisitionController extends Controller
                 'value' => $c->value,
                 'label' => str_replace('_', ' ', ucfirst($c->value)),
             ])->values()->all(),
-            'cashOnHand' => app(\App\Services\ReportService::class)
+            'cashOnHand' => app(ReportService::class)
                 ->cashPosition(
                     $requisition->project_id
                         ? ['project_id' => $requisition->project_id]
@@ -215,13 +221,13 @@ class RequisitionController extends Controller
                 $request->user(),
                 $request->safe()->except('to_status'),
             );
-        } catch (\App\Exceptions\InvalidTransitionException $e) {
+        } catch (InvalidTransitionException $e) {
             return back()->withErrors(['to_status' => $e->getMessage()]);
-        } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+        } catch (AuthorizationException $e) {
             return back()->with('error', $e->getMessage());
-        } catch (\App\Exceptions\BOQLimitExceededException|\App\Exceptions\InsufficientCashException|\App\Exceptions\InsufficientStockException|\InvalidArgumentException $e) {
+        } catch (BOQLimitExceededException|\App\Exceptions\InsufficientCashException|\App\Exceptions\InsufficientStockException|\InvalidArgumentException $e) {
             return back()->with('error', $e->getMessage());
-        } catch (\Illuminate\Validation\ValidationException $e) {
+        } catch (ValidationException $e) {
             throw $e;
         }
 
@@ -232,7 +238,7 @@ class RequisitionController extends Controller
     {
         $requisition = Requisition::findOrFail($id);
         $user = $request->user();
-        $status = $requisition->status instanceof \App\Enums\RequisitionStatus
+        $status = $requisition->status instanceof RequisitionStatus
             ? $requisition->status->value
             : (string) $requisition->status;
 
@@ -308,7 +314,7 @@ class RequisitionController extends Controller
         $this->authorizePermission($request->user(), 'requisitions', 'fulfill');
 
         $query = Requisition::query()
-            ->whereIn('status', ['approved', 'amended'])
+            ->whereIn('status', ['approved', 'amended', 'partially_fulfilled'])
             ->with(['project', 'requestor', 'category', 'categories', 'recipients', 'boqItem', 'items']);
 
         if ($request->filled('fulfillment_type')) {

@@ -10,6 +10,7 @@ use App\Models\InventoryTransaction;
 use App\Models\Notification;
 use App\Models\StockBalance;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 
 class InventoryService
@@ -54,6 +55,7 @@ class InventoryService
 
             return InventoryIssue::create([
                 'requisition_id' => $opts['requisition_id'] ?? null,
+                'requisition_item_id' => $opts['requisition_item_id'] ?? null,
                 'inventory_item_id' => $inventoryItemId,
                 'stock_location_id' => $stockLocationId,
                 'quantity' => $qty,
@@ -298,7 +300,7 @@ class InventoryService
                 'created_by' => $actor->id,
                 'created_at' => now(),
             ]);
-        }        );
+        });
     }
 
     public function checkLowStock(): void
@@ -332,18 +334,18 @@ class InventoryService
     }
 
     /**
-     * @return \Illuminate\Database\Eloquent\Collection<int, \App\Models\InventoryItem>
+     * @return Collection<int, InventoryItem>
      */
-    public function items(array $filters = []): \Illuminate\Database\Eloquent\Collection
+    public function items(array $filters = []): Collection
     {
-        return \App\Models\InventoryItem::query()
+        return InventoryItem::query()
             ->orderBy('name')
             ->get();
     }
 
     /**
      * @return array{
-     *     balances: \Illuminate\Database\Eloquent\Collection<int, StockBalance>,
+     *     balances: Collection<int, StockBalance>,
      *     low_stock_count: int,
      * }
      */
@@ -357,11 +359,11 @@ class InventoryService
             ->orderBy('inventory_item_id')
             ->get();
 
-        $lowStockCount = \App\Models\InventoryItem::query()
+        $lowStockCount = InventoryItem::query()
             ->whereNotNull('reorder_point')
             ->with('stockBalances')
             ->get()
-            ->filter(function (\App\Models\InventoryItem $item) {
+            ->filter(function (InventoryItem $item) {
                 $onHand = $item->stockBalances->sum(fn ($b) => (float) $b->quantity_on_hand);
 
                 return $onHand <= (float) $item->reorder_point;

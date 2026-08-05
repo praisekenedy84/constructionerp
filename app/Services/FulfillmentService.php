@@ -82,7 +82,7 @@ class FulfillmentService
     public function fulfillStock(Requisition $req, User $actor, array $opts = []): array
     {
         return DB::transaction(function () use ($req, $actor, $opts) {
-            $issues = $opts['issues'] ?? [];
+            $issues = $opts['items'] ?? $opts['issues'] ?? [];
             $results = [];
 
             if (($opts['inventory_source'] ?? 'existing') === 'new') {
@@ -112,6 +112,7 @@ class FulfillmentService
                         $actor,
                         [
                             'requisition_id' => $req->id,
+                            'requisition_item_id' => $item->id,
                             'recipient_id' => $opts['recipient_id'] ?? $req->requestor_id,
                             'work_section' => $opts['work_section'] ?? null,
                             'unit_cost' => (string) $item->unit_cost,
@@ -120,18 +121,51 @@ class FulfillmentService
                 }
             } else {
                 foreach ($issues as $issue) {
+                    $requisitionItem = $req->items->firstWhere(
+                        'id',
+                        (int) ($issue['requisition_item_id'] ?? 0)
+                    );
+                    if (! $requisitionItem) {
+                        throw ValidationException::withMessages([
+                            'items' => 'Every stock issue must reference an item on this requisition.',
+                        ]);
+                    }
+
+                    $inventoryItemId = (int) (
+                        $issue['inventory_item_id']
+                        ?? $opts['inventory_item_id']
+                        ?? $requisitionItem->inventory_item_id
+                        ?? 0
+                    );
+                    $stockLocationId = (int) (
+                        $issue['stock_location_id']
+                        ?? $opts['stock_location_id']
+                        ?? 0
+                    );
+
+                    if ($inventoryItemId < 1 || $stockLocationId < 1) {
+                        throw ValidationException::withMessages([
+                            'items' => 'Each stock item needs an inventory item and stock location.',
+                        ]);
+                    }
+
+                    if (! $requisitionItem->inventory_item_id) {
+                        $requisitionItem->update(['inventory_item_id' => $inventoryItemId]);
+                    }
+
                     $results[] = $this->inventoryService->issue(
-                        (int) $issue['inventory_item_id'],
-                        (int) $issue['stock_location_id'],
+                        $inventoryItemId,
+                        $stockLocationId,
                         bcadd((string) $issue['quantity'], '0', 3),
                         $actor,
                         [
                             'requisition_id' => $req->id,
+                            'requisition_item_id' => $requisitionItem->id,
                             'recipient_id' => $issue['recipient_id'] ?? $req->requestor_id,
                             'work_section' => $issue['work_section'] ?? null,
                             'unit_cost' => isset($issue['unit_cost'])
                                 ? bcadd((string) $issue['unit_cost'], '0', 2)
-                                : null,
+                                : (string) $requisitionItem->unit_cost,
                         ]
                     );
                 }
@@ -219,9 +253,10 @@ class FulfillmentService
      */
     private function sumIssueQuantity(Requisition $req, array $opts): string
     {
-        if (! empty($opts['issues']) && is_array($opts['issues'])) {
+        $issues = $opts['items'] ?? $opts['issues'] ?? null;
+        if (! empty($issues) && is_array($issues)) {
             $total = '0';
-            foreach ($opts['issues'] as $issue) {
+            foreach ($issues as $issue) {
                 $total = bcadd($total, (string) ($issue['quantity'] ?? '0'), 3);
             }
 

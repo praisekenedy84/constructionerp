@@ -18,6 +18,7 @@ class RequisitionItem extends Model
         'description',
         'unit',
         'quantity',
+        'fulfilled_quantity',
         'unit_cost',
         'line_total',
         'original_quantity',
@@ -34,6 +35,7 @@ class RequisitionItem extends Model
     {
         return [
             'quantity' => 'decimal:3',
+            'fulfilled_quantity' => 'decimal:3',
             'unit_cost' => 'decimal:2',
             'line_total' => 'decimal:2',
             'original_quantity' => 'decimal:3',

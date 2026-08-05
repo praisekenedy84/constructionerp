@@ -9,15 +9,18 @@ use App\Enums\RequisitionStatus;
 use App\Models\BudgetTransaction;
 use App\Models\CashAllocation;
 use App\Models\CashDisbursement;
+use App\Models\Expense;
 use App\Models\MoneyAccount;
 use App\Models\Project;
 use App\Models\Requisition;
 use App\Models\RequisitionItem;
 use App\Models\Tenant;
+use App\Models\User;
 use App\Models\WorkflowConfig;
 use App\Services\AuthService;
 use App\Services\MoneyAccountService;
 use App\Services\PermissionService;
+use App\Services\RequisitionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -113,7 +116,7 @@ class CashFloatFlowTest extends TestCase
             app(MoneyAccountService::class)->deposit(
                 MoneyAccount::findOrFail($accountId),
                 '500000',
-                \App\Models\User::where('email', 'manager@cashfloat.local')->first(),
+                User::where('email', 'manager@cashfloat.local')->first(),
             );
         });
 
@@ -214,6 +217,75 @@ class CashFloatFlowTest extends TestCase
         });
     }
 
+    public function test_cash_requisition_can_be_fulfilled_in_multiple_installments(): void
+    {
+        $this->seedTenant();
+
+        Tenant::where('slug', 'cash-float-co')->first()->run(function () {
+            app(MoneyAccountService::class)->ensureFinanceAccount()->update(['balance' => '100000.00']);
+
+            $req = Requisition::create([
+                'requisition_no' => 'REQ-2026-PARTIAL-CASH',
+                'project_id' => 1,
+                'department' => 'Site',
+                'resource_type' => 'cash',
+                'requestor_id' => 4,
+                'status' => RequisitionStatus::Approved,
+                'fulfillment_type' => 'cash_disbursement',
+                'original_amount' => '50000.00',
+            ]);
+
+            RequisitionItem::create([
+                'requisition_id' => $req->id,
+                'description' => 'Site operations',
+                'unit' => 'lump',
+                'quantity' => '1.000',
+                'unit_cost' => '50000.00',
+                'line_total' => '50000.00',
+            ]);
+        });
+
+        $this->post('/login', [
+            'email' => 'admin@cashfloat.local',
+            'password' => 'password',
+        ]);
+
+        $this->post('/requisitions/1/transition', [
+            'to_status' => 'fulfilled',
+            'fulfillment_scope' => 'whole',
+            'amount' => '20000',
+            'payee' => 'Site Foreman',
+            'reference_no' => 'PART-001',
+            'method' => 'cash',
+        ])->assertRedirect();
+
+        Tenant::where('slug', 'cash-float-co')->first()->run(function () {
+            $req = Requisition::first();
+            $this->assertSame(RequisitionStatus::PartiallyFulfilled, $req->status);
+            $this->assertSame('20000.00', (string) $req->fulfilled_amount);
+            $this->assertSame('80000.00', app(MoneyAccountService::class)->financeBalance());
+        });
+
+        $this->post('/requisitions/1/transition', [
+            'to_status' => 'fulfilled',
+            'fulfillment_scope' => 'whole',
+            'amount' => '30000',
+            'payee' => 'Site Foreman',
+            'reference_no' => 'PART-002',
+            'method' => 'bank',
+        ])->assertRedirect();
+
+        Tenant::where('slug', 'cash-float-co')->first()->run(function () {
+            $req = Requisition::with('items')->first();
+            $this->assertSame(RequisitionStatus::Fulfilled, $req->status);
+            $this->assertSame('50000.00', (string) $req->fulfilled_amount);
+            $this->assertSame('1.000', (string) $req->items->first()->fulfilled_quantity);
+            $this->assertSame(2, CashDisbursement::count());
+            $this->assertSame(2, Expense::where('requisition_id', $req->id)->count());
+            $this->assertSame('50000.00', app(MoneyAccountService::class)->financeBalance());
+        });
+    }
+
     public function test_approved_requisition_can_be_deleted(): void
     {
         $this->seedTenant();
@@ -292,7 +364,7 @@ class CashFloatFlowTest extends TestCase
                 'line_total' => '30000.00',
             ]);
 
-            $availability = app(\App\Services\RequisitionService::class)
+            $availability = app(RequisitionService::class)
                 ->cashAvailability($req, '30000.00');
 
             $this->assertTrue($availability['exceeds']);

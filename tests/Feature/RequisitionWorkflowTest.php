@@ -6,9 +6,14 @@ use App\Enums\RequisitionStatus;
 use App\Models\ApprovalStep;
 use App\Models\BoqItem;
 use App\Models\BoqSection;
+use App\Models\Expense;
+use App\Models\InventoryIssue;
+use App\Models\InventoryItem;
 use App\Models\Project;
 use App\Models\Requisition;
 use App\Models\RequisitionItem;
+use App\Models\StockBalance;
+use App\Models\StockLocation;
 use App\Models\Tenant;
 use App\Models\WorkflowConfig;
 use App\Services\AuthService;
@@ -312,7 +317,7 @@ class RequisitionWorkflowTest extends TestCase
             $req = Requisition::first();
             $req->update(['status' => RequisitionStatus::Approved]);
 
-            $location = \App\Models\StockLocation::create([
+            $location = StockLocation::create([
                 'name' => 'Site Store',
                 'project_id' => $req->project_id,
             ]);
@@ -338,14 +343,14 @@ class RequisitionWorkflowTest extends TestCase
 
         Tenant::where('slug', 'workflow-co')->first()->run(function () {
             $req = Requisition::with('items')->first();
-            $item = \App\Models\InventoryItem::where('name', 'Site Aggregate')->first();
+            $item = InventoryItem::where('name', 'Site Aggregate')->first();
 
             $this->assertSame('fulfilled', $req->status->value);
             $this->assertNotNull($item);
             $this->assertSame($item->id, $req->items->first()->inventory_item_id);
             $this->assertSame(
                 '0.000',
-                (string) \App\Models\StockBalance::where('inventory_item_id', $item->id)->value('quantity_on_hand')
+                (string) StockBalance::where('inventory_item_id', $item->id)->value('quantity_on_hand')
             );
             $this->assertDatabaseHas('inventory_issues', [
                 'requisition_id' => $req->id,
@@ -356,6 +361,71 @@ class RequisitionWorkflowTest extends TestCase
                 'category' => 'direct',
                 'project_id' => $req->project_id,
             ]);
+        });
+    }
+
+    public function test_stock_requisition_can_be_fulfilled_by_item_over_multiple_issues(): void
+    {
+        $this->seedTenantWithUsers();
+
+        $locationId = null;
+        Tenant::where('slug', 'workflow-co')->first()->run(function () use (&$locationId) {
+            $req = Requisition::first();
+            $req->update(['status' => RequisitionStatus::Approved]);
+            $locationId = StockLocation::create([
+                'name' => 'Partial Issue Store',
+                'project_id' => $req->project_id,
+            ])->id;
+        });
+
+        $this->post('/login', [
+            'email' => 'admin@workflow.local',
+            'password' => 'password',
+        ]);
+
+        $this->post('/requisitions/1/transition', [
+            'to_status' => 'fulfilled',
+            'fulfillment_scope' => 'items',
+            'inventory_source' => 'new',
+            'stock_location_id' => $locationId,
+            'items' => [
+                ['requisition_item_id' => 1, 'quantity' => '4'],
+            ],
+            'new_inventory_item' => [
+                'name' => 'Partial Aggregate',
+                'unit' => 'm3',
+                'category' => 'materials',
+                'unit_cost' => '5000',
+                'receive_quantity' => '10',
+            ],
+        ])->assertRedirect();
+
+        Tenant::where('slug', 'workflow-co')->first()->run(function () {
+            $req = Requisition::with('items')->first();
+            $this->assertSame(RequisitionStatus::PartiallyFulfilled, $req->status);
+            $this->assertSame('4.000', (string) $req->items->first()->fulfilled_quantity);
+            $this->assertSame('20000.00', (string) $req->fulfilled_amount);
+            $this->assertSame('6.000', (string) StockBalance::first()->quantity_on_hand);
+        });
+
+        $this->post('/requisitions/1/transition', [
+            'to_status' => 'fulfilled',
+            'fulfillment_scope' => 'items',
+            'inventory_source' => 'existing',
+            'inventory_item_id' => 1,
+            'stock_location_id' => $locationId,
+            'items' => [
+                ['requisition_item_id' => 1, 'quantity' => '6'],
+            ],
+        ])->assertRedirect();
+
+        Tenant::where('slug', 'workflow-co')->first()->run(function () {
+            $req = Requisition::with('items')->first();
+            $this->assertSame(RequisitionStatus::Fulfilled, $req->status);
+            $this->assertSame('10.000', (string) $req->items->first()->fulfilled_quantity);
+            $this->assertSame('50000.00', (string) $req->fulfilled_amount);
+            $this->assertSame(2, InventoryIssue::where('requisition_id', $req->id)->count());
+            $this->assertSame(2, Expense::where('requisition_id', $req->id)->count());
         });
     }
 

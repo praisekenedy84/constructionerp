@@ -22,6 +22,7 @@ const statusMap: Record<string, StatusVariant> = {
     approved: 'success',
     amended: 'warning',
     rejected: 'danger',
+    partially_fulfilled: 'warning',
     fulfilled: 'success',
     cancelled: 'danger',
     pending: 'warning',

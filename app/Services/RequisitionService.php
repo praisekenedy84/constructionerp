@@ -30,6 +30,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 
 class RequisitionService
 {
@@ -234,6 +235,9 @@ class RequisitionService
         if ($status === RequisitionStatus::Closed) {
             throw new \InvalidArgumentException('Closed requisitions cannot be deleted. Re-open is not supported.');
         }
+        if ($status === RequisitionStatus::PartiallyFulfilled) {
+            throw new \InvalidArgumentException('Partially fulfilled requisitions cannot be deleted.');
+        }
 
         DB::transaction(function () use ($req, $actor, $status) {
             $req = Requisition::with(['items', 'cashDisbursements'])->lockForUpdate()->findOrFail($req->id);
@@ -419,6 +423,7 @@ class RequisitionService
             'under_review' => [],
             'approved' => ['fulfilled', 'cancelled'],
             'amended' => ['fulfilled', 'cancelled'],
+            'partially_fulfilled' => ['fulfilled'],
             'fulfilled' => ['closed'],
             'rejected' => [],
             'cancelled' => [],
@@ -431,7 +436,9 @@ class RequisitionService
 
         $this->assertCanTransition($actor, $req, $toStatus);
 
-        DB::transaction(function () use ($req, $toStatus, $actor, $opts, $currentStatus) {
+        $finalStatus = $toStatus;
+
+        DB::transaction(function () use ($req, $toStatus, $actor, $opts, $currentStatus, &$finalStatus) {
             $req->load('items');
 
             if ($toStatus === 'under_review' && $currentStatus === 'draft') {
@@ -443,10 +450,22 @@ class RequisitionService
                 ]);
             }
 
+            if ($toStatus === 'fulfilled') {
+                $finalStatus = $this->onFulfilled($req, $actor, $opts);
+            } else {
+                match ($toStatus) {
+                    'approved' => $this->onApproved($req, $actor, $opts),
+                    'amended' => $this->onAmended($req, $actor, $opts),
+                    'cancelled' => $this->onCancelled($req, $actor),
+                    'closed' => $this->onClosed($req),
+                    default => null,
+                };
+            }
+
             RequisitionStatusHistory::create([
                 'requisition_id' => $req->id,
                 'from_status' => $currentStatus,
-                'to_status' => $toStatus,
+                'to_status' => $finalStatus,
                 'actor_id' => $actor->id,
                 'comment' => $opts['comment'] ?? null,
                 'amendment_reason' => $opts['amendment_reason'] ?? null,
@@ -458,18 +477,9 @@ class RequisitionService
                 'created_at' => now(),
             ]);
 
-            match ($toStatus) {
-                'approved' => $this->onApproved($req, $actor, $opts),
-                'amended' => $this->onAmended($req, $actor, $opts),
-                'fulfilled' => $this->onFulfilled($req, $actor, $opts),
-                'cancelled' => $this->onCancelled($req, $actor),
-                'closed' => $this->onClosed($req),
-                default => null,
-            };
+            $req->update(['status' => RequisitionStatus::from($finalStatus)]);
 
-            $req->update(['status' => RequisitionStatus::from($toStatus)]);
-
-            $this->notifyRequestor($req, $toStatus, $actor);
+            $this->notifyRequestor($req, $finalStatus, $actor);
         });
 
         return $req->fresh(['items', 'statusHistories', 'approvalSteps']);
@@ -679,26 +689,156 @@ class RequisitionService
             ]);
     }
 
-    private function onFulfilled(Requisition $req, User $actor, array $opts): void
+    private function onFulfilled(Requisition $req, User $actor, array $opts): string
     {
-        $qty = $this->sumItemQuantities($req);
-        $amount = (string) ($req->amended_amount ?? $req->original_amount);
+        $req = Requisition::with('items')->lockForUpdate()->findOrFail($req->id);
+        $scope = (string) ($opts['fulfillment_scope'] ?? $req->fulfillment_scope ?? 'whole');
+
+        if (! in_array($scope, ['whole', 'items'], true)) {
+            throw ValidationException::withMessages([
+                'fulfillment_scope' => 'Choose whole-request or item-by-item fulfillment.',
+            ]);
+        }
+
+        if ($req->fulfillment_scope && $req->fulfillment_scope !== $scope) {
+            throw ValidationException::withMessages([
+                'fulfillment_scope' => 'The fulfillment method cannot be changed after the first installment.',
+            ]);
+        }
+
+        $targetAmount = bcadd((string) ($req->amended_amount ?? $req->original_amount), '0', 2);
+        $fulfilledAmount = bcadd((string) $req->fulfilled_amount, '0', 2);
+        $remainingAmount = bcsub($targetAmount, $fulfilledAmount, 2);
+        $fulfillmentItems = [];
+        $qty = '0';
+
+        if ($scope === 'items' || $req->isAddressedToStorekeeper()) {
+            $requestedItems = $scope === 'whole'
+                ? $req->items->map(fn (RequisitionItem $item) => [
+                    'requisition_item_id' => $item->id,
+                    'quantity' => bcsub((string) $item->quantity, (string) $item->fulfilled_quantity, 3),
+                ])->all()
+                : ($opts['items'] ?? []);
+
+            if (! is_array($requestedItems) || $requestedItems === []) {
+                throw ValidationException::withMessages([
+                    'items' => 'Enter a quantity for at least one requisition item.',
+                ]);
+            }
+
+            $amount = '0';
+            $seen = [];
+            foreach ($requestedItems as $input) {
+                $itemId = (int) ($input['requisition_item_id'] ?? 0);
+                $item = $req->items->firstWhere('id', $itemId);
+                if (! $item || isset($seen[$itemId])) {
+                    throw ValidationException::withMessages([
+                        'items' => 'Each selected line must be unique and belong to this requisition.',
+                    ]);
+                }
+                $seen[$itemId] = true;
+
+                $itemQty = bcadd((string) ($input['quantity'] ?? '0'), '0', 3);
+                $itemRemaining = bcsub(
+                    (string) $item->quantity,
+                    (string) $item->fulfilled_quantity,
+                    3
+                );
+                if (bccomp($itemQty, '0', 3) !== 1 || bccomp($itemQty, $itemRemaining, 3) === 1) {
+                    throw ValidationException::withMessages([
+                        'items' => "Quantity for {$item->description} must be greater than zero and no more than {$itemRemaining}.",
+                    ]);
+                }
+
+                $lineAmount = bcmul($itemQty, (string) $item->unit_cost, 2);
+                $fulfillmentItems[] = array_merge($input, [
+                    'requisition_item_id' => $item->id,
+                    'quantity' => $itemQty,
+                    'unit_cost' => (string) $item->unit_cost,
+                ]);
+                $qty = bcadd($qty, $itemQty, 3);
+                $amount = bcadd($amount, $lineAmount, 2);
+            }
+        } else {
+            $amount = bcadd((string) ($opts['amount'] ?? $remainingAmount), '0', 2);
+            if (bccomp($amount, '0', 2) !== 1 || bccomp($amount, $remainingAmount, 2) === 1) {
+                throw ValidationException::withMessages([
+                    'amount' => "Amount must be greater than zero and no more than {$remainingAmount}.",
+                ]);
+            }
+
+            $totalQty = $this->sumItemQuantities($req);
+            if (bccomp($targetAmount, '0', 2) === 1) {
+                $previousConsumedQty = bcmul(
+                    $totalQty,
+                    bcdiv($fulfilledAmount, $targetAmount, 6),
+                    3
+                );
+                $newCumulativeAmount = bcadd($fulfilledAmount, $amount, 2);
+                $newConsumedQty = bccomp($newCumulativeAmount, $targetAmount, 2) === 0
+                    ? $totalQty
+                    : bcmul(
+                        $totalQty,
+                        bcdiv($newCumulativeAmount, $targetAmount, 6),
+                        3
+                    );
+                $qty = bcsub($newConsumedQty, $previousConsumedQty, 3);
+            }
+        }
+
+        if (bccomp($amount, $remainingAmount, 2) === 1) {
+            throw ValidationException::withMessages([
+                'amount' => "This fulfillment exceeds the remaining amount of {$remainingAmount}.",
+            ]);
+        }
 
         if ($req->boq_item_id) {
             $boqItem = BoqItem::lockForUpdate()->findOrFail($req->boq_item_id);
-            $boqItem->decrement('reserved_qty', $qty);
-            $boqItem->increment('consumed_qty', $qty);
+            if (bccomp($qty, '0', 3) === 1) {
+                $boqItem->decrement('reserved_qty', $qty);
+                $boqItem->increment('consumed_qty', $qty);
+            }
         }
 
         $disbursement = null;
+        $fulfillmentOpts = array_merge($opts, ['items' => $fulfillmentItems]);
 
         if ($req->isAddressedToStorekeeper()) {
-            $this->fulfillmentService->fulfillStock($req, $actor, $opts);
+            $this->fulfillmentService->fulfillStock($req, $actor, $fulfillmentOpts);
         } else {
             $disbursement = $this->fulfillmentService->fulfillCash($req, $actor, $amount, $opts);
         }
 
-        $this->recordExpenseFromRequisition($req, $actor, $disbursement);
+        foreach ($fulfillmentItems as $fulfilledItem) {
+            $req->items->firstWhere('id', $fulfilledItem['requisition_item_id'])
+                ?->increment('fulfilled_quantity', $fulfilledItem['quantity']);
+        }
+
+        $newFulfilledAmount = bcadd($fulfilledAmount, $amount, 2);
+        $req->update([
+            'fulfillment_scope' => $scope,
+            'fulfilled_amount' => $newFulfilledAmount,
+        ]);
+
+        $this->recordExpenseFromRequisition(
+            $req,
+            $actor,
+            $amount,
+            $disbursement,
+            collect($fulfillmentItems)->pluck('requisition_item_id')->all(),
+        );
+
+        $fullyFulfilled = $scope === 'whole' && ! $req->isAddressedToStorekeeper()
+            ? bccomp($newFulfilledAmount, $targetAmount, 2) === 0
+            : $req->items()->whereColumn('fulfilled_quantity', '<', 'quantity')->doesntExist();
+
+        if ($fullyFulfilled && $scope === 'whole') {
+            $req->items()->update(['fulfilled_quantity' => DB::raw('quantity')]);
+        }
+
+        return $fullyFulfilled
+            ? RequisitionStatus::Fulfilled->value
+            : RequisitionStatus::PartiallyFulfilled->value;
     }
 
     /**
@@ -708,16 +848,20 @@ class RequisitionService
     private function recordExpenseFromRequisition(
         Requisition $req,
         User $actor,
+        string $amount,
         ?CashDisbursement $disbursement = null,
+        array $itemIds = [],
     ): Expense {
         $req->loadMissing(['category', 'items']);
 
-        $amount = (string) ($req->amended_amount ?? $req->original_amount);
         $category = $req->isOrganizationWide()
             ? ExpenseCategory::Indirect
             : ExpenseCategory::Direct;
 
-        $lineDescriptions = $req->items
+        $expenseItems = $itemIds === []
+            ? $req->items
+            : $req->items->whereIn('id', $itemIds);
+        $lineDescriptions = $expenseItems
             ->pluck('description')
             ->filter()
             ->take(3)
@@ -850,14 +994,22 @@ class RequisitionService
             return null;
         }
 
-        $required = $amount ?? (string) ($req->amended_amount ?? $req->original_amount);
+        $required = $amount ?? bcsub(
+            (string) ($req->amended_amount ?? $req->original_amount),
+            (string) $req->fulfilled_amount,
+            2
+        );
 
         // Shared Finance Wallet — any approved finance requisition commits against it.
         $cashOnHand = $this->moneyAccountService->financeBalance();
 
         $committedQuery = Requisition::query()
             ->where('id', '!=', $req->id)
-            ->whereIn('status', [RequisitionStatus::Approved, RequisitionStatus::Amended])
+            ->whereIn('status', [
+                RequisitionStatus::Approved,
+                RequisitionStatus::Amended,
+                RequisitionStatus::PartiallyFulfilled,
+            ])
             ->where(function ($query) {
                 $query->where('addressed_to', RequisitionAddressedTo::Finance->value)
                     ->orWhere(function ($inner) {
@@ -873,7 +1025,11 @@ class RequisitionService
         foreach ($committedQuery->get() as $other) {
             $committedElsewhere = bcadd(
                 $committedElsewhere,
-                (string) ($other->amended_amount ?? $other->original_amount),
+                bcsub(
+                    (string) ($other->amended_amount ?? $other->original_amount),
+                    (string) $other->fulfilled_amount,
+                    2
+                ),
                 2
             );
         }

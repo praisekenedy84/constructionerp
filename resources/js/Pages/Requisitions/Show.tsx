@@ -59,6 +59,18 @@ export default function RequisitionsShow() {
     const transitionForm = useForm({
         to_status: '',
         comment: '',
+        fulfillment_scope: (requisition.fulfillment_scope ?? 'whole') as 'whole' | 'items',
+        amount: String(
+            Math.max(
+                0,
+                Number(requisition.amended_amount ?? requisition.original_amount) -
+                    Number(requisition.fulfilled_amount ?? 0),
+            ),
+        ),
+        items: (requisition.items ?? []).map((item) => ({
+            requisition_item_id: item.id,
+            quantity: '',
+        })),
         inventory_source: 'existing' as 'existing' | 'new',
         inventory_item_id: String(
             requisition.items?.find((item) => item.inventory_item_id)?.inventory_item_id ?? '',
@@ -92,8 +104,17 @@ export default function RequisitionsShow() {
 
     function transition(e: FormEvent, toStatus: string) {
         e.preventDefault();
-        transitionForm.setData('to_status', toStatus);
-        transitionForm.post(`/requisitions/${requisition.id}/transition`);
+        transitionForm.transform((data) => ({
+            ...data,
+            to_status: toStatus,
+            items:
+                toStatus === 'fulfilled' && data.fulfillment_scope === 'items'
+                    ? data.items.filter((item) => Number(item.quantity) > 0)
+                    : [],
+        }));
+        transitionForm.post(`/requisitions/${requisition.id}/transition`, {
+            onFinish: () => transitionForm.transform((data) => data),
+        });
     }
 
     function uploadAttachment(e: FormEvent) {
@@ -149,6 +170,12 @@ export default function RequisitionsShow() {
     }
 
     const amount = requisition.amended_amount ?? requisition.original_amount;
+    const fulfilledAmount = Number(requisition.fulfilled_amount ?? 0);
+    const remainingAmount = Math.max(0, Number(amount) - fulfilledAmount);
+    const itemFulfillmentAmount = (requisition.items ?? []).reduce((total, item, index) => {
+        const quantity = Number(transitionForm.data.items[index]?.quantity ?? 0);
+        return total + quantity * Number(item.unit_cost);
+    }, 0);
     const variance =
         requisition.amended_amount != null
             ? (parseFloat(String(requisition.original_amount)) || 0) -
@@ -329,6 +356,8 @@ export default function RequisitionsShow() {
                                     <th className="pb-2 font-medium">Recipient</th>
                                     <th className="pb-2 font-medium">Unit</th>
                                     <th className="pb-2 text-right font-medium">Qty</th>
+                                    <th className="pb-2 text-right font-medium">Fulfilled</th>
+                                    <th className="pb-2 text-right font-medium">Remaining</th>
                                     <th className="pb-2 text-right font-medium">Unit Cost</th>
                                     <th className="pb-2 text-right font-medium">Total</th>
                                 </tr>
@@ -380,6 +409,18 @@ export default function RequisitionsShow() {
                                                 )}
                                         </td>
                                         <td className="py-2 text-right text-slate-600">
+                                            {formatQuantity(item.fulfilled_quantity ?? 0)}
+                                        </td>
+                                        <td className="py-2 text-right font-medium text-slate-800">
+                                            {formatQuantity(
+                                                Math.max(
+                                                    0,
+                                                    Number(item.quantity) -
+                                                        Number(item.fulfilled_quantity ?? 0),
+                                                ),
+                                            )}
+                                        </td>
+                                        <td className="py-2 text-right text-slate-600">
                                             <div>{formatCurrency(item.unit_cost)}</div>
                                             {item.original_unit_cost != null &&
                                                 String(item.original_unit_cost) !==
@@ -407,7 +448,7 @@ export default function RequisitionsShow() {
                             </tbody>
                             <tfoot>
                                 <tr>
-                                    <td colSpan={4} className="pt-3 text-right font-medium">
+                                    <td colSpan={8} className="pt-3 text-right font-medium">
                                         {hasLineAmendments ? 'Amended total' : 'Total'}
                                     </td>
                                     <td className="pt-3 text-right font-bold text-slate-900">
@@ -417,7 +458,7 @@ export default function RequisitionsShow() {
                                 {hasLineAmendments && (
                                     <tr>
                                         <td
-                                            colSpan={4}
+                                            colSpan={8}
                                             className="pt-1 text-right text-xs text-slate-500"
                                         >
                                             Original total
@@ -637,9 +678,140 @@ export default function RequisitionsShow() {
                     </div>
                 )}
 
-                {(status === 'approved' || status === 'amended') && canFulfill && (
+                {(status === 'approved' ||
+                    status === 'amended' ||
+                    status === 'partially_fulfilled') &&
+                    canFulfill && (
                     <DataPanel title="Fulfill">
                         <form onSubmit={(e) => transition(e, 'fulfilled')} className="space-y-4">
+                            <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                                <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                                    <span>
+                                        Fulfilled {formatCurrency(fulfilledAmount)} of{' '}
+                                        {formatCurrency(amount)}
+                                    </span>
+                                    <span className="font-medium text-slate-900">
+                                        Remaining {formatCurrency(remainingAmount)}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label>Fulfillment method</Label>
+                                <div className="flex flex-wrap gap-4 text-sm">
+                                    <label className="flex items-center gap-2">
+                                        <input
+                                            type="radio"
+                                            name="fulfillment_scope"
+                                            checked={
+                                                transitionForm.data.fulfillment_scope === 'whole'
+                                            }
+                                            disabled={Boolean(requisition.fulfillment_scope)}
+                                            onChange={() =>
+                                                transitionForm.setData(
+                                                    'fulfillment_scope',
+                                                    'whole',
+                                                )
+                                            }
+                                        />
+                                        {isStockFulfillment
+                                            ? 'Fulfill all remaining items'
+                                            : 'By request amount'}
+                                    </label>
+                                    <label className="flex items-center gap-2">
+                                        <input
+                                            type="radio"
+                                            name="fulfillment_scope"
+                                            checked={
+                                                transitionForm.data.fulfillment_scope === 'items'
+                                            }
+                                            disabled={Boolean(requisition.fulfillment_scope)}
+                                            onChange={() =>
+                                                transitionForm.setData(
+                                                    'fulfillment_scope',
+                                                    'items',
+                                                )
+                                            }
+                                        />
+                                        By selected line items
+                                    </label>
+                                </div>
+                                {requisition.fulfillment_scope && (
+                                    <p className="text-xs text-slate-500">
+                                        The method is locked after the first fulfillment.
+                                    </p>
+                                )}
+                            </div>
+
+                            {transitionForm.data.fulfillment_scope === 'items' && (
+                                <div className="overflow-hidden rounded-md border border-slate-200">
+                                    <table className="w-full text-sm">
+                                        <thead className="bg-slate-50 text-left text-xs text-slate-500">
+                                            <tr>
+                                                <th className="px-3 py-2 font-medium">Item</th>
+                                                <th className="px-3 py-2 text-right font-medium">
+                                                    Remaining
+                                                </th>
+                                                <th className="px-3 py-2 font-medium">
+                                                    Fulfill now
+                                                </th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                            {(requisition.items ?? []).map((item, index) => {
+                                                const remaining = Math.max(
+                                                    0,
+                                                    Number(item.quantity) -
+                                                        Number(item.fulfilled_quantity ?? 0),
+                                                );
+                                                return (
+                                                    <tr key={item.id}>
+                                                        <td className="px-3 py-2 text-slate-800">
+                                                            {item.description}
+                                                        </td>
+                                                        <td className="px-3 py-2 text-right text-slate-600">
+                                                            {formatQuantity(remaining)}{' '}
+                                                            {item.unit ?? ''}
+                                                        </td>
+                                                        <td className="px-3 py-2">
+                                                            <AmountInput
+                                                                value={
+                                                                    transitionForm.data.items[index]
+                                                                        ?.quantity ?? ''
+                                                                }
+                                                                onValueChange={(value) => {
+                                                                    const items = [
+                                                                        ...transitionForm.data.items,
+                                                                    ];
+                                                                    items[index] = {
+                                                                        ...items[index],
+                                                                        quantity: value,
+                                                                    };
+                                                                    transitionForm.setData(
+                                                                        'items',
+                                                                        items,
+                                                                    );
+                                                                }}
+                                                                max={remaining}
+                                                                disabled={remaining <= 0}
+                                                            />
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                    <p className="border-t border-slate-200 px-3 py-2 text-right text-sm font-medium">
+                                        This fulfillment: {formatCurrency(itemFulfillmentAmount)}
+                                    </p>
+                                    {transitionForm.errors.items && (
+                                        <p className="px-3 pb-2 text-sm text-red-600">
+                                            {transitionForm.errors.items}
+                                        </p>
+                                    )}
+                                </div>
+                            )}
+
                             {isStockFulfillment ? (
                                 <div className="space-y-4">
                                     <div className="flex flex-wrap gap-4 text-sm">
@@ -938,10 +1110,30 @@ export default function RequisitionsShow() {
                                             )}
                                         </div>
                                         <div className="space-y-2">
-                                            <Label>Amount to disburse</Label>
-                                            <p className="flex h-10 items-center text-sm font-medium text-slate-900">
-                                                {formatCurrency(amount)}
-                                            </p>
+                                            <Label>
+                                                {transitionForm.data.fulfillment_scope === 'whole'
+                                                    ? 'Amount to disburse'
+                                                    : 'Calculated amount'}
+                                            </Label>
+                                            {transitionForm.data.fulfillment_scope === 'whole' ? (
+                                                <AmountInput
+                                                    value={transitionForm.data.amount}
+                                                    onValueChange={(value) =>
+                                                        transitionForm.setData('amount', value)
+                                                    }
+                                                    max={remainingAmount}
+                                                    required
+                                                />
+                                            ) : (
+                                                <p className="flex h-10 items-center text-sm font-medium text-slate-900">
+                                                    {formatCurrency(itemFulfillmentAmount)}
+                                                </p>
+                                            )}
+                                            {transitionForm.errors.amount && (
+                                                <p className="text-sm text-red-600">
+                                                    {transitionForm.errors.amount}
+                                                </p>
+                                            )}
                                             <p className="text-xs text-slate-500">
                                                 Cash on hand: {formatCurrency(cashOnHand)}
                                             </p>
@@ -950,7 +1142,7 @@ export default function RequisitionsShow() {
                                 </div>
                             )}
                             <Button type="submit" disabled={transitionForm.processing}>
-                                Mark Fulfilled
+                                Record Fulfillment
                             </Button>
                         </form>
                     </DataPanel>

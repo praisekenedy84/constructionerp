@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\FulfillmentType;
 use App\Enums\RequisitionStatus;
 use App\Models\Requisition;
 use Illuminate\Foundation\Http\FormRequest;
@@ -32,6 +33,13 @@ class TransitionRequisitionRequest extends FormRequest
             'account_name' => ['nullable', 'string', 'max:255'],
             'reference_no' => ['nullable', 'string', 'max:100'],
             'cash_allocation_id' => ['nullable', 'integer', 'exists:cash_allocations,id'],
+            'fulfillment_scope' => ['nullable', 'string', Rule::in(['whole', 'items'])],
+            'amount' => ['nullable', 'numeric', 'gt:0'],
+            'items' => ['nullable', 'array'],
+            'items.*.requisition_item_id' => ['required_with:items', 'integer', 'exists:requisition_items,id'],
+            'items.*.quantity' => ['required_with:items', 'numeric', 'gt:0'],
+            'items.*.inventory_item_id' => ['nullable', 'integer', 'exists:inventory_items,id'],
+            'items.*.stock_location_id' => ['nullable', 'integer', 'exists:stock_locations,id'],
             'inventory_source' => ['nullable', 'string', 'in:existing,new'],
             'new_inventory_item' => ['nullable', 'array'],
             'new_inventory_item.name' => ['required_if:inventory_source,new', 'nullable', 'string', 'max:255'],
@@ -55,7 +63,7 @@ class TransitionRequisitionRequest extends FormRequest
                 return;
             }
 
-            $type = $requisition->fulfillment_type instanceof \App\Enums\FulfillmentType
+            $type = $requisition->fulfillment_type instanceof FulfillmentType
                 ? $requisition->fulfillment_type->value
                 : (string) $requisition->fulfillment_type;
 

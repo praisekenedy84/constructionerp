@@ -123,6 +123,23 @@ export default function FulfillQueue() {
                                                         req.amended_amount ?? req.original_amount,
                                                     )}
                                                 </p>
+                                                {Number(req.fulfilled_amount ?? 0) > 0 && (
+                                                    <p className="text-xs font-medium text-amber-700">
+                                                        Remaining:{' '}
+                                                        {formatCurrency(
+                                                            Math.max(
+                                                                0,
+                                                                Number(
+                                                                    req.amended_amount ??
+                                                                        req.original_amount,
+                                                                ) -
+                                                                    Number(
+                                                                        req.fulfilled_amount ?? 0,
+                                                                    ),
+                                                            ),
+                                                        )}
+                                                    </p>
+                                                )}
                                             </button>
                                         </li>
                                     ))}

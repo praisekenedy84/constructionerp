@@ -152,6 +152,7 @@ export type RequisitionStatus =
     | 'approved'
     | 'amended'
     | 'rejected'
+    | 'partially_fulfilled'
     | 'fulfilled'
     | 'closed'
     | 'cancelled';
@@ -182,6 +183,7 @@ export interface RequisitionItem {
     description: string;
     unit?: string | null;
     quantity: string;
+    fulfilled_quantity?: string;
     unit_cost: string;
     line_total: string;
     recipient_name?: string | null;
@@ -300,9 +302,11 @@ export interface Requisition {
     position_id?: number | null;
     status: RequisitionStatus;
     fulfillment_type: FulfillmentType;
+    fulfillment_scope?: 'whole' | 'items' | null;
     addressed_to?: RequisitionAddressedTo;
     original_amount: string;
     amended_amount: string | null;
+    fulfilled_amount?: string;
     created_at: string;
     updated_at: string;
     project?: Project | null;

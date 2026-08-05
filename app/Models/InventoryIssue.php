@@ -13,6 +13,7 @@ class InventoryIssue extends Model
 
     protected $fillable = [
         'requisition_id',
+        'requisition_item_id',
         'inventory_item_id',
         'stock_location_id',
         'quantity',
@@ -36,6 +37,11 @@ class InventoryIssue extends Model
     public function requisition(): BelongsTo
     {
         return $this->belongsTo(Requisition::class);
+    }
+
+    public function requisitionItem(): BelongsTo
+    {
+        return $this->belongsTo(RequisitionItem::class);
     }
 
     public function inventoryItem(): BelongsTo

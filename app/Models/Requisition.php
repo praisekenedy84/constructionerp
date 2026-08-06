@@ -29,6 +29,7 @@ class Requisition extends Model
         'requisition_category_id',
         'resource_type',
         'requestor_id',
+        'recipient_id',
         'recipient_name',
         'recipient_position',
         'position_id',
@@ -152,6 +153,11 @@ class Requisition extends Model
     public function position(): BelongsTo
     {
         return $this->belongsTo(Position::class, 'position_id');
+    }
+
+    public function recipient(): BelongsTo
+    {
+        return $this->belongsTo(Recipient::class);
     }
 
     public function recipients(): HasMany

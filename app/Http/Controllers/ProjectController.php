@@ -3,12 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreProjectRequest;
+use App\Http\Requests\SyncProjectRecipientsRequest;
 use App\Http\Requests\UpdateProjectProgressRequest;
 use App\Http\Requests\UpdateProjectRequest;
 use App\Models\ComplianceRule;
 use App\Models\Customer;
 use App\Models\Project;
 use App\Models\ProjectComplianceItem;
+use App\Models\Recipient;
 use App\Services\BudgetService;
 use App\Services\PhaseService;
 use App\Services\ProjectComplianceService;
@@ -53,7 +55,12 @@ class ProjectController extends Controller
     {
         $this->authorizePermission($request->user(), 'projects', 'create');
 
-        return Inertia::render('Projects/Create');
+        return Inertia::render('Projects/Create', [
+            'recipients' => Recipient::query()
+                ->active()
+                ->orderBy('name')
+                ->get(['id', 'name', 'phone', 'email', 'status']),
+        ]);
     }
 
     public function store(StoreProjectRequest $request): RedirectResponse
@@ -115,7 +122,7 @@ class ProjectController extends Controller
 
     public function show(Request $request, int $id): Response
     {
-        $project = Project::with(['withholdingTaxRates', 'sale', 'customer'])->findOrFail($id);
+        $project = Project::with(['withholdingTaxRates', 'sale', 'customer', 'recipients'])->findOrFail($id);
         $sale = $this->saleService->ensureForProject($project);
         $budget = $this->budgetService->summary($project);
 
@@ -177,14 +184,34 @@ class ProjectController extends Controller
                 ])
                 ->values()
                 ->all(),
+            'project_staff' => $project->recipients->map(fn (Recipient $recipient) => [
+                'id' => $recipient->id,
+                'name' => $recipient->name,
+                'phone' => $recipient->phone,
+                'email' => $recipient->email,
+                'status' => $recipient->status,
+            ])->values()->all(),
+            'available_recipients' => Recipient::query()
+                ->orderBy('name')
+                ->get(['id', 'name', 'phone', 'email', 'status']),
         ]);
+    }
+
+    public function syncRecipients(SyncProjectRecipientsRequest $request, int $id): RedirectResponse
+    {
+        $this->authorizePermission($request->user(), 'projects', 'update');
+
+        $project = Project::findOrFail($id);
+        $project->recipients()->sync($request->validated('recipient_ids') ?? []);
+
+        return back()->with('success', 'Project staff list updated.');
     }
 
     public function edit(Request $request, int $id): Response
     {
         $this->authorizePermission($request->user(), 'projects', 'update');
 
-        $project = Project::with('customer')->findOrFail($id);
+        $project = Project::with(['customer', 'recipients'])->findOrFail($id);
 
         return Inertia::render('Projects/Edit', [
             'project' => [
@@ -193,6 +220,7 @@ class ProjectController extends Controller
                 'name' => $project->name,
                 'client' => $project->client,
                 'client_phone' => $project->customer?->contact ?? '',
+                'client_email' => $project->customer?->email ?? '',
                 'client_tin' => $project->customer?->tax_information ?? '',
                 'location' => $project->location,
                 'contract_amount' => (string) $project->contract_amount,
@@ -200,7 +228,11 @@ class ProjectController extends Controller
                 'start_date' => $project->start_date?->format('Y-m-d') ?? '',
                 'end_date' => $project->end_date?->format('Y-m-d') ?? '',
                 'status' => $project->status?->value ?? 'planning',
+                'recipient_ids' => $project->recipients->pluck('id')->all(),
             ],
+            'recipients' => Recipient::query()
+                ->orderBy('name')
+                ->get(['id', 'name', 'phone', 'email', 'status']),
         ]);
     }
 
@@ -280,8 +312,21 @@ class ProjectController extends Controller
     private function persistProject(Project $project, array $attributes): Project
     {
         $clientPhone = trim((string) ($attributes['client_phone'] ?? ''));
+        $clientEmail = trim((string) ($attributes['client_email'] ?? ''));
         $clientTin = trim((string) ($attributes['client_tin'] ?? ''));
-        unset($attributes['client_phone'], $attributes['client_tin']);
+        $hasRecipientIds = array_key_exists('recipient_ids', $attributes);
+        $recipientIds = collect($attributes['recipient_ids'] ?? [])
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+        unset(
+            $attributes['client_phone'],
+            $attributes['client_email'],
+            $attributes['client_tin'],
+            $attributes['recipient_ids'],
+        );
 
         if (! empty($attributes['client'])) {
             $customer = Customer::firstOrCreate([
@@ -290,6 +335,7 @@ class ProjectController extends Controller
 
             $customer->fill([
                 'contact' => $clientPhone !== '' ? $clientPhone : null,
+                'email' => $clientEmail !== '' ? $clientEmail : null,
                 'tax_information' => $clientTin !== '' ? $clientTin : null,
                 'address' => ! empty($attributes['location'])
                     ? trim((string) $attributes['location'])
@@ -306,6 +352,10 @@ class ProjectController extends Controller
         }
 
         $project->fill($attributes)->save();
+
+        if ($hasRecipientIds) {
+            $project->recipients()->sync($recipientIds);
+        }
 
         return $project->refresh();
     }

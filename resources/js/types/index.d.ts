@@ -77,6 +77,7 @@ export interface Customer {
     id: number;
     name: string;
     contact: string | null;
+    email?: string | null;
     address: string | null;
     tax_information: string | null;
     projects?: Project[];
@@ -295,6 +296,7 @@ export interface RequisitionItem {
     fulfilled_quantity?: string;
     unit_cost: string;
     line_total: string;
+    recipient_id?: number | null;
     recipient_name?: string | null;
     position_id?: number | null;
     recipient_position?: string | null;
@@ -312,11 +314,13 @@ export interface RequisitionItem {
         rate?: string;
         trips?: string;
         cost_per_trip?: string;
+        employee_id?: number | string;
     } | null;
     boq_item?: BoqItem;
     inventory_item?: InventoryItem;
     category?: RequisitionCategory | null;
     position?: Position | null;
+    recipient?: Recipient | null;
 }
 
 export interface RequisitionStatusHistory {
@@ -390,10 +394,36 @@ export interface Position {
 
 export interface RequisitionRecipient {
     id?: number;
+    recipient_id?: number | null;
     name: string;
+    phone?: string | null;
     position_id?: number | null;
     position_name?: string | null;
     sort_order?: number;
+    recipient?: Recipient | null;
+}
+
+export interface Recipient {
+    id: number;
+    name: string;
+    phone: string;
+    email?: string | null;
+    address?: string | null;
+    national_id?: string | null;
+    status: 'active' | 'inactive';
+}
+
+export interface RecipientAttendance {
+    id: number;
+    recipient_id: number;
+    project_id: number;
+    date: string;
+    check_in?: string | null;
+    check_out?: string | null;
+    status: 'present' | 'absent';
+    notes?: string | null;
+    recipient?: Pick<Recipient, 'id' | 'name' | 'phone' | 'status'> | null;
+    project?: Pick<Project, 'id' | 'code' | 'name'> | null;
 }
 
 export interface Requisition {
@@ -406,6 +436,7 @@ export interface Requisition {
     requisition_category_id?: number | null;
     resource_type: RequisitionResourceType;
     requestor_id: number;
+    recipient_id?: number | null;
     recipient_name?: string | null;
     recipient_position?: string | null;
     position_id?: number | null;
@@ -422,6 +453,7 @@ export interface Requisition {
     boq_item?: BoqItem;
     category?: RequisitionCategory | null;
     categories?: RequisitionCategory[];
+    recipient?: Recipient | null;
     recipients?: RequisitionRecipient[];
     requestor?: { id: number; name: string; email?: string };
     items?: RequisitionItem[];

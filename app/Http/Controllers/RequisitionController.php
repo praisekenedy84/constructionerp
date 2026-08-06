@@ -16,6 +16,7 @@ use App\Models\Employee;
 use App\Models\InventoryItem;
 use App\Models\Position;
 use App\Models\Project;
+use App\Models\Recipient;
 use App\Models\Requisition;
 use App\Models\RequisitionCategory;
 use App\Models\StockLocation;
@@ -48,6 +49,9 @@ class RequisitionController extends Controller
             'project_id' => $request->input('project_id'),
             'category_id' => $request->input('category_id'),
             'requestor_id' => $request->input('requestor_id'),
+            'recipient_id' => $request->input('recipient_id'),
+            'client' => $request->input('client'),
+            'approval_status' => $request->input('approval_status'),
             'search' => $request->input('search'),
             'from' => $request->input('from'),
             'to' => $request->input('to'),
@@ -504,6 +508,10 @@ class RequisitionController extends Controller
                     'monthly_salary',
                     'project_id',
                 ]),
+            'recipients' => Recipient::query()
+                ->active()
+                ->orderBy('name')
+                ->get(['id', 'name', 'phone', 'email', 'address', 'national_id', 'status']),
         ];
     }
 }

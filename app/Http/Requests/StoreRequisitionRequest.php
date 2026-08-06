@@ -7,6 +7,7 @@ use App\Enums\RequisitionAddressedTo;
 use App\Enums\RequisitionResourceType;
 use App\Models\Department;
 use App\Models\Position;
+use App\Models\Recipient;
 use App\Models\Requisition;
 use App\Models\RequisitionCategory;
 use Illuminate\Foundation\Http\FormRequest;
@@ -76,9 +77,12 @@ class StoreRequisitionRequest extends FormRequest
         }
         $legacyCategoryId = $legacyCategoryIds[0] ?? ($fallbackCategoryId ? (int) $fallbackCategoryId : null);
 
-        $legacyRecipientName = $this->filled('recipient_name')
-            ? trim((string) $this->input('recipient_name'))
+        $legacyRecipientId = $this->input('recipient_id') ?: null;
+        $legacyRecipient = $legacyRecipientId
+            ? Recipient::query()->find((int) $legacyRecipientId)
             : null;
+        $legacyRecipientName = $legacyRecipient?->name
+            ?? ($this->filled('recipient_name') ? trim((string) $this->input('recipient_name')) : null);
         $legacyPositionId = $this->input('position_id') ?: null;
         if (! $legacyPositionId && $this->filled('recipient_position')) {
             $legacyPositionId = $this->resolvePositionId(trim((string) $this->input('recipient_position')));
@@ -89,6 +93,7 @@ class StoreRequisitionRequest extends FormRequest
 
         $items = collect($this->input('items', []))->map(function (array $item) use (
             $legacyCategoryId,
+            $legacyRecipientId,
             $legacyRecipientName,
             $legacyPositionId,
             $legacyPositionName,
@@ -105,14 +110,19 @@ class StoreRequisitionRequest extends FormRequest
                 ? Position::query()->whereKey($positionId)->value('name')
                 : null;
 
-            $recipientName = array_key_exists('recipient_name', $item)
-                ? trim((string) ($item['recipient_name'] ?? ''))
-                : ($legacyRecipientName ?? '');
-            $recipientName = $recipientName !== '' ? $recipientName : null;
+            $recipientId = array_key_exists('recipient_id', $item)
+                ? ($item['recipient_id'] ?: null)
+                : $legacyRecipientId;
+            $recipientId = $recipientId ? (int) $recipientId : null;
+            $recipient = $recipientId ? Recipient::query()->find($recipientId) : null;
 
-            // If only a position is chosen with no name, keep a placeholder name for display.
-            if ($recipientName === null && $positionId) {
-                $recipientName = '—';
+            $recipientName = $recipient?->name;
+            if ($recipientName === null && array_key_exists('recipient_name', $item)) {
+                $recipientName = trim((string) ($item['recipient_name'] ?? ''));
+                $recipientName = $recipientName !== '' ? $recipientName : null;
+            }
+            if ($recipientName === null) {
+                $recipientName = $legacyRecipientName;
             }
 
             $days = array_key_exists('days', $item) && $item['days'] !== '' && $item['days'] !== null
@@ -126,6 +136,7 @@ class StoreRequisitionRequest extends FormRequest
                 'unit' => ! empty($item['unit']) ? $item['unit'] : null,
                 'days' => $days,
                 'requisition_category_id' => $categoryId,
+                'recipient_id' => $recipientId,
                 'recipient_name' => $recipientName,
                 'position_id' => $positionId,
                 'recipient_position' => $positionName ?? $legacyPositionName,
@@ -145,13 +156,20 @@ class StoreRequisitionRequest extends FormRequest
         }
 
         $recipients = collect($items)
-            ->filter(fn (array $item) => ($item['recipient_name'] ?? null) || ($item['position_id'] ?? null))
-            ->map(fn (array $item) => [
-                'name' => $item['recipient_name'] ?? '—',
-                'position_id' => $item['position_id'] ?? null,
-                'position_name' => $item['recipient_position'] ?? null,
-            ])
-            ->unique(fn (array $row) => mb_strtolower(($row['name'] ?? '').'|'.($row['position_id'] ?? '')))
+            ->filter(fn (array $item) => ($item['recipient_id'] ?? null) || ($item['recipient_name'] ?? null) || ($item['position_id'] ?? null))
+            ->map(function (array $item) {
+                $recipientId = ! empty($item['recipient_id']) ? (int) $item['recipient_id'] : null;
+                $recipient = $recipientId ? Recipient::query()->find($recipientId) : null;
+
+                return [
+                    'recipient_id' => $recipientId,
+                    'name' => $recipient?->name ?? ($item['recipient_name'] ?? '—'),
+                    'phone' => $recipient?->phone,
+                    'position_id' => $item['position_id'] ?? null,
+                    'position_name' => $item['recipient_position'] ?? null,
+                ];
+            })
+            ->unique(fn (array $row) => ($row['recipient_id'] ?? '').'|'.mb_strtolower(($row['name'] ?? '').'|'.($row['position_id'] ?? '')))
             ->values()
             ->all();
 
@@ -188,6 +206,7 @@ class StoreRequisitionRequest extends FormRequest
             'addressed_to' => $addressedTo,
             'fulfillment_type' => $fulfillmentType,
             'recipients' => $recipients,
+            'recipient_id' => $primaryRecipient['recipient_id'] ?? null,
             'recipient_name' => $primaryRecipient['name'] ?? null,
             'position_id' => $primaryRecipient['position_id'] ?? null,
             'recipient_position' => $primaryRecipient['position_name'] ?? null,
@@ -208,10 +227,13 @@ class StoreRequisitionRequest extends FormRequest
             'resource_type' => ['required', Rule::enum(RequisitionResourceType::class)],
             'addressed_to' => ['required', Rule::enum(RequisitionAddressedTo::class)],
             'fulfillment_type' => ['required', Rule::enum(FulfillmentType::class)],
-            'recipients' => ['nullable', 'array'],
+            'recipients' => ['required', 'array', 'min:1'],
+            'recipients.*.recipient_id' => ['nullable', 'integer', 'exists:recipients,id'],
             'recipients.*.name' => ['required', 'string', 'max:255'],
+            'recipients.*.phone' => ['nullable', 'string', 'max:50'],
             'recipients.*.position_id' => ['nullable', 'integer', 'exists:positions,id'],
             'recipients.*.position_name' => ['nullable', 'string', 'max:255'],
+            'recipient_id' => ['nullable', 'integer', 'exists:recipients,id'],
             'recipient_name' => ['nullable', 'string', 'max:255'],
             'position_id' => ['nullable', 'integer', 'exists:positions,id'],
             'recipient_position' => ['nullable', 'string', 'max:255'],
@@ -219,6 +241,7 @@ class StoreRequisitionRequest extends FormRequest
             'items.*.boq_item_id' => ['nullable', 'integer', 'exists:boq_items,id'],
             'items.*.inventory_item_id' => ['nullable', 'integer', 'exists:inventory_items,id'],
             'items.*.requisition_category_id' => ['required', 'integer', 'exists:requisition_categories,id'],
+            'items.*.recipient_id' => ['required', 'integer', 'exists:recipients,id'],
             'items.*.recipient_name' => ['nullable', 'string', 'max:255'],
             'items.*.position_id' => ['nullable', 'integer', 'exists:positions,id'],
             'items.*.recipient_position' => ['nullable', 'string', 'max:255'],
@@ -282,6 +305,13 @@ class StoreRequisitionRequest extends FormRequest
                     ->unique()
                     ->all()
                 : [];
+            $existingRecipientIds = $existing
+                ? $existing->items->pluck('recipient_id')
+                    ->filter()
+                    ->map(fn ($id) => (int) $id)
+                    ->unique()
+                    ->all()
+                : [];
 
             foreach ($this->input('items', []) as $index => $item) {
                 $categoryId = (int) ($item['requisition_category_id'] ?? 0);
@@ -302,6 +332,17 @@ class StoreRequisitionRequest extends FormRequest
                         $validator->errors()->add(
                             "items.{$index}.position_id",
                             'Select an active position.'
+                        );
+                    }
+                }
+
+                $recipientId = (int) ($item['recipient_id'] ?? 0);
+                if ($recipientId > 0) {
+                    $recipient = Recipient::query()->find($recipientId);
+                    if ($recipient && ! $recipient->isActive() && ! in_array($recipientId, $existingRecipientIds, true)) {
+                        $validator->errors()->add(
+                            "items.{$index}.recipient_id",
+                            'Select an active recipient. Register inactive recipients again before use.'
                         );
                     }
                 }
@@ -339,7 +380,7 @@ class StoreRequisitionRequest extends FormRequest
 
     /**
      * @param  mixed  $raw
-     * @return list<array{name: string, position_id: int|null, position_name: string|null}>
+     * @return list<array{recipient_id: int|null, name: string, phone: string|null, position_id: int|null, position_name: string|null}>
      */
     private function normalizeRecipients(mixed $raw): array
     {
@@ -354,10 +395,12 @@ class StoreRequisitionRequest extends FormRequest
                 continue;
             }
 
-            $name = trim((string) ($recipient['name'] ?? ''));
+            $recipientId = ! empty($recipient['recipient_id']) ? (int) $recipient['recipient_id'] : null;
+            $master = $recipientId ? Recipient::query()->find($recipientId) : null;
+            $name = $master?->name ?? trim((string) ($recipient['name'] ?? ''));
             $positionId = ! empty($recipient['position_id']) ? (int) $recipient['position_id'] : null;
 
-            if ($name === '' && ! $positionId) {
+            if ($name === '' && ! $positionId && ! $recipientId) {
                 continue;
             }
 
@@ -367,7 +410,9 @@ class StoreRequisitionRequest extends FormRequest
             }
 
             $normalized[] = [
+                'recipient_id' => $recipientId,
                 'name' => $name !== '' ? $name : '—',
+                'phone' => $master?->phone,
                 'position_id' => $positionId,
                 'position_name' => $positionName,
             ];

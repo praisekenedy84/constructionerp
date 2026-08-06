@@ -38,6 +38,7 @@ class CashDisbursement extends Model
         'method',
         'payee',
         'account_name',
+        'account_number',
         'reference_no',
         'disbursed_by',
         'disbursed_at',

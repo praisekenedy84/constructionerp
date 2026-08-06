@@ -13,6 +13,7 @@ export interface ProjectFormValues {
     name: string;
     client: string;
     client_phone: string;
+    client_email: string;
     client_tin: string;
     location: string;
     contract_amount: string;
@@ -20,12 +21,20 @@ export interface ProjectFormValues {
     start_date: string;
     end_date: string;
     status: ProjectStatus;
+    recipient_ids: number[];
 }
 
 interface ProjectFormProps {
     mode: 'create' | 'edit';
     projectId?: number;
     initial: ProjectFormValues;
+    recipients?: Array<{
+        id: number;
+        name: string;
+        phone: string;
+        email?: string | null;
+        status: string;
+    }>;
 }
 
 const statusOptions: { value: ProjectStatus; label: string }[] = [
@@ -35,7 +44,12 @@ const statusOptions: { value: ProjectStatus; label: string }[] = [
     { value: 'closed', label: 'Closed' },
 ];
 
-export default function ProjectForm({ mode, projectId, initial }: ProjectFormProps) {
+export default function ProjectForm({
+    mode,
+    projectId,
+    initial,
+    recipients = [],
+}: ProjectFormProps) {
     const { data, setData, post, put, processing, errors } = useForm(initial);
 
     const title = mode === 'create' ? 'Create Project' : 'Edit Project';
@@ -170,6 +184,19 @@ export default function ProjectForm({ mode, projectId, initial }: ProjectFormPro
                                 )}
                             </div>
                             <div className="space-y-2">
+                                <Label htmlFor="client_email">Project Email</Label>
+                                <Input
+                                    id="client_email"
+                                    type="email"
+                                    value={data.client_email}
+                                    onChange={(e) => setData('client_email', e.target.value)}
+                                    placeholder="project@client.com"
+                                />
+                                {errors.client_email && (
+                                    <p className="text-sm text-red-600">{errors.client_email}</p>
+                                )}
+                            </div>
+                            <div className="space-y-2">
                                 <Label htmlFor="client_tin">TIN</Label>
                                 <Input
                                     id="client_tin"
@@ -195,6 +222,59 @@ export default function ProjectForm({ mode, projectId, initial }: ProjectFormPro
                                 )}
                             </div>
                         </div>
+                    </div>
+
+                    <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+                        <h3 className="mb-1 text-sm font-semibold text-slate-900">
+                            Project Staff / Recipients
+                        </h3>
+                        <p className="mb-4 text-sm text-slate-500">
+                            Reference list of recipients used on this project. Does not change
+                            project operations. Recipients can belong to multiple projects.
+                        </p>
+                        {recipients.length === 0 ? (
+                            <p className="text-sm text-slate-500">
+                                No recipients registered yet. Add them under Recipients first.
+                            </p>
+                        ) : (
+                            <div className="max-h-56 space-y-2 overflow-y-auto rounded-md border border-slate-200 p-3">
+                                {recipients.map((recipient) => {
+                                    const checked = data.recipient_ids.includes(recipient.id);
+                                    return (
+                                        <label
+                                            key={recipient.id}
+                                            className="flex items-start gap-3 text-sm"
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                className="mt-1"
+                                                checked={checked}
+                                                onChange={(e) => {
+                                                    const next = e.target.checked
+                                                        ? [...data.recipient_ids, recipient.id]
+                                                        : data.recipient_ids.filter(
+                                                              (id) => id !== recipient.id,
+                                                          );
+                                                    setData('recipient_ids', next);
+                                                }}
+                                            />
+                                            <span>
+                                                <span className="font-medium">{recipient.name}</span>
+                                                <span className="block text-xs text-slate-500">
+                                                    {recipient.phone}
+                                                    {recipient.status !== 'active'
+                                                        ? ' · inactive'
+                                                        : ''}
+                                                </span>
+                                            </span>
+                                        </label>
+                                    );
+                                })}
+                            </div>
+                        )}
+                        {errors.recipient_ids && (
+                            <p className="mt-2 text-sm text-red-600">{errors.recipient_ids}</p>
+                        )}
                     </div>
 
                     <div className="flex justify-end gap-3">

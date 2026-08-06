@@ -6,6 +6,7 @@ use App\Enums\ProjectStatus;
 use App\Traits\LogsActivity;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -175,6 +176,19 @@ class Project extends Model
     public function employees(): HasMany
     {
         return $this->hasMany(Employee::class);
+    }
+
+    /** Reference-only staff/recipients used on this project (many-to-many). */
+    public function recipients(): BelongsToMany
+    {
+        return $this->belongsToMany(Recipient::class, 'project_recipient')
+            ->withTimestamps()
+            ->orderBy('recipients.name');
+    }
+
+    public function recipientAttendances(): HasMany
+    {
+        return $this->hasMany(RecipientAttendance::class);
     }
 
     public function payrollRuns(): HasMany

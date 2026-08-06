@@ -79,6 +79,8 @@ export default function RequisitionsShow() {
         method: 'cash',
         payee: '',
         account_name: '',
+        account_number: '',
+        payment_date: new Date().toISOString().slice(0, 10),
         reference_no: '',
         new_inventory_item: {
             name: '',
@@ -1070,18 +1072,60 @@ export default function RequisitionsShow() {
                                     </p>
                                     <div className="grid gap-3 sm:grid-cols-2">
                                         <div className="space-y-2">
-                                            <Label>Account / party received</Label>
+                                            <Label>Account name</Label>
                                             <Input
-                                                value={transitionForm.data.payee}
-                                                onChange={(e) =>
-                                                    transitionForm.setData('payee', e.target.value)
-                                                }
-                                                placeholder="Name or account"
+                                                value={transitionForm.data.account_name}
+                                                onChange={(e) => {
+                                                    transitionForm.setData(
+                                                        'account_name',
+                                                        e.target.value,
+                                                    );
+                                                    transitionForm.setData('payee', e.target.value);
+                                                }}
+                                                placeholder="Account / recipient name"
                                                 required
                                             />
-                                            {transitionForm.errors.payee && (
+                                            {transitionForm.errors.account_name && (
                                                 <p className="text-sm text-red-600">
-                                                    {transitionForm.errors.payee}
+                                                    {transitionForm.errors.account_name}
+                                                </p>
+                                            )}
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label>Account number</Label>
+                                            <Input
+                                                value={transitionForm.data.account_number}
+                                                onChange={(e) =>
+                                                    transitionForm.setData(
+                                                        'account_number',
+                                                        e.target.value,
+                                                    )
+                                                }
+                                                placeholder="Bank / mobile account number"
+                                                required
+                                            />
+                                            {transitionForm.errors.account_number && (
+                                                <p className="text-sm text-red-600">
+                                                    {transitionForm.errors.account_number}
+                                                </p>
+                                            )}
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label>Date received</Label>
+                                            <Input
+                                                type="date"
+                                                value={transitionForm.data.payment_date}
+                                                onChange={(e) =>
+                                                    transitionForm.setData(
+                                                        'payment_date',
+                                                        e.target.value,
+                                                    )
+                                                }
+                                                required
+                                            />
+                                            {transitionForm.errors.payment_date && (
+                                                <p className="text-sm text-red-600">
+                                                    {transitionForm.errors.payment_date}
                                                 </p>
                                             )}
                                         </div>

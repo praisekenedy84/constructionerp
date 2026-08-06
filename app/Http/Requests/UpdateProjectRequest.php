@@ -20,6 +20,7 @@ class UpdateProjectRequest extends FormRequest
             'location' => $this->input('location') ?: '',
             'client' => $this->input('client') ?: '',
             'client_phone' => $this->input('client_phone') ?: '',
+            'client_email' => $this->input('client_email') ?: null,
             'client_tin' => $this->input('client_tin') ?: '',
         ]);
     }
@@ -38,6 +39,7 @@ class UpdateProjectRequest extends FormRequest
             'name' => ['required', 'string', 'max:255'],
             'client' => ['required', 'string', 'max:255'],
             'client_phone' => ['required', 'string', 'max:50'],
+            'client_email' => ['nullable', 'email', 'max:255'],
             'client_tin' => ['required', 'string', 'max:100'],
             'location' => ['required', 'string', 'max:255'],
             'contract_amount' => ['required', 'numeric', 'min:0'],
@@ -45,6 +47,8 @@ class UpdateProjectRequest extends FormRequest
             'start_date' => ['nullable', 'date'],
             'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
             'status' => ['nullable', Rule::enum(ProjectStatus::class)],
+            'recipient_ids' => ['nullable', 'array'],
+            'recipient_ids.*' => ['integer', 'exists:recipients,id'],
         ];
     }
 

@@ -2,18 +2,18 @@
 
 namespace Tests\Feature;
 
-use App\Enums\CashAllocationStatus;
 use App\Enums\ExpenseCategory;
 use App\Enums\RequisitionStatus;
-use App\Models\CashAllocation;
 use App\Models\CashDisbursement;
 use App\Models\Expense;
 use App\Models\Project;
+use App\Models\Recipient;
 use App\Models\Requisition;
 use App\Models\RequisitionItem;
 use App\Models\Tenant;
 use App\Models\WorkflowConfig;
 use App\Services\AuthService;
+use App\Services\MoneyAccountService;
 use App\Services\PermissionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -68,6 +68,12 @@ class RequisitionExpenseRecordingTest extends TestCase
                 'threshold_min' => '0.00',
                 'threshold_max' => null,
             ]);
+
+            Recipient::create([
+                'name' => 'Alice Worker',
+                'phone' => '+255700000001',
+                'status' => 'active',
+            ]);
         });
 
         tenancy()->end();
@@ -96,6 +102,7 @@ class RequisitionExpenseRecordingTest extends TestCase
                     'unit' => 'lump',
                     'quantity' => '1',
                     'unit_cost' => '75000',
+                    'recipient_id' => 1,
                 ],
             ],
         ])->assertRedirect();
@@ -114,18 +121,7 @@ class RequisitionExpenseRecordingTest extends TestCase
         $this->seedTenant();
 
         Tenant::where('slug', 'req-expense-co')->first()->run(function () {
-            CashAllocation::create([
-                'project_id' => 1,
-                'requested_amount' => '200000.00',
-                'received_amount' => '200000.00',
-                'utilized_amount' => '0.00',
-                'status' => CashAllocationStatus::Received,
-                'requested_by' => 1,
-                'approved_by' => 1,
-                'requested_at' => now(),
-                'received_at' => now(),
-                'decided_at' => now(),
-            ]);
+            app(MoneyAccountService::class)->ensureFinanceAccount()->update(['balance' => '200000.00']);
 
             $req = Requisition::create([
                 'requisition_no' => 'REQ-2026-01001',
@@ -157,6 +153,9 @@ class RequisitionExpenseRecordingTest extends TestCase
         $this->post('/requisitions/1/transition', [
             'to_status' => 'fulfilled',
             'payee' => 'Supplier A',
+            'account_name' => 'Supplier A',
+            'account_number' => '255700000001',
+            'payment_date' => now()->toDateString(),
             'reference_no' => 'RCP-DIR-1',
             'method' => 'cash',
         ])->assertRedirect();
@@ -172,6 +171,9 @@ class RequisitionExpenseRecordingTest extends TestCase
             $disbursement = CashDisbursement::first();
             $this->assertSame($expense->id, $disbursement->expense_id);
             $this->assertSame(1, (int) $disbursement->requisition_id);
+            $this->assertNull($disbursement->cash_allocation_id);
+            $this->assertNotNull($disbursement->money_account_id);
+            $this->assertSame('160000.00', app(MoneyAccountService::class)->financeBalance());
         });
     }
 
@@ -180,18 +182,7 @@ class RequisitionExpenseRecordingTest extends TestCase
         $this->seedTenant();
 
         Tenant::where('slug', 'req-expense-co')->first()->run(function () {
-            CashAllocation::create([
-                'project_id' => null,
-                'requested_amount' => '300000.00',
-                'received_amount' => '300000.00',
-                'utilized_amount' => '0.00',
-                'status' => CashAllocationStatus::Received,
-                'requested_by' => 1,
-                'approved_by' => 1,
-                'requested_at' => now(),
-                'received_at' => now(),
-                'decided_at' => now(),
-            ]);
+            app(MoneyAccountService::class)->ensureFinanceAccount()->update(['balance' => '300000.00']);
 
             $req = Requisition::create([
                 'requisition_no' => 'REQ-2026-01002',
@@ -223,6 +214,9 @@ class RequisitionExpenseRecordingTest extends TestCase
         $this->post('/requisitions/1/transition', [
             'to_status' => 'fulfilled',
             'payee' => 'Utility Co',
+            'account_name' => 'Utility Co',
+            'account_number' => '255700000002',
+            'payment_date' => now()->toDateString(),
             'reference_no' => 'RCP-OH-1',
             'method' => 'bank',
         ])->assertRedirect();
@@ -235,12 +229,11 @@ class RequisitionExpenseRecordingTest extends TestCase
             $this->assertSame(1, (int) $expense->requisition_id);
             $this->assertSame('55000.00', (string) $expense->amount);
 
-            $allocation = CashAllocation::first();
-            $this->assertSame('55000.00', (string) $allocation->utilized_amount);
-
             $disbursement = CashDisbursement::first();
             $this->assertSame($expense->id, $disbursement->expense_id);
-            $this->assertTrue($disbursement->cashAllocation->isOrganizationWide());
+            $this->assertNull($disbursement->cash_allocation_id);
+            $this->assertNotNull($disbursement->money_account_id);
+            $this->assertSame('245000.00', app(MoneyAccountService::class)->financeBalance());
         });
     }
 }

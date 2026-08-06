@@ -31,6 +31,8 @@ class TransitionRequisitionRequest extends FormRequest
             'method' => ['nullable', 'string', Rule::in(['cash', 'mobile', 'bank'])],
             'payee' => ['nullable', 'string', 'max:255'],
             'account_name' => ['nullable', 'string', 'max:255'],
+            'account_number' => ['nullable', 'string', 'max:100'],
+            'payment_date' => ['nullable', 'date'],
             'reference_no' => ['nullable', 'string', 'max:100'],
             'cash_allocation_id' => ['nullable', 'integer', 'exists:cash_allocations,id'],
             'fulfillment_scope' => ['nullable', 'string', Rule::in(['whole', 'items'])],
@@ -78,7 +80,15 @@ class TransitionRequisitionRequest extends FormRequest
             }
 
             if (! filled($this->input('payee')) && ! filled($this->input('account_name'))) {
-                $validator->errors()->add('payee', 'Enter the account or party that received the cash.');
+                $validator->errors()->add('account_name', 'Enter the account name that received the cash.');
+            }
+
+            if (! filled($this->input('account_number'))) {
+                $validator->errors()->add('account_number', 'Enter the account number that received the cash.');
+            }
+
+            if (! filled($this->input('payment_date'))) {
+                $validator->errors()->add('payment_date', 'Enter the date the cash was received.');
             }
 
             if (! filled($this->input('reference_no'))) {

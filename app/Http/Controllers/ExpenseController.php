@@ -82,6 +82,10 @@ class ExpenseController extends Controller
                 'sub_type' => $request->input('sub_type') ?: $request->input('category'),
                 'source' => $request->input('source'),
                 'recorded_by' => $request->input('recorded_by'),
+                'recipient_id' => $request->input('recipient_id'),
+                'requisition_id' => $request->input('requisition_id'),
+                'client' => $request->input('client'),
+                'payment_status' => $request->input('payment_status'),
             ]),
         ]);
     }
@@ -116,6 +120,9 @@ class ExpenseController extends Controller
                 'sub_type' => $request->input('sub_type'),
                 'source' => $request->input('source'),
                 'recorded_by' => $request->input('recorded_by'),
+                'recipient_id' => $request->input('recipient_id'),
+                'requisition_id' => $request->input('requisition_id'),
+                'payment_status' => $request->input('payment_status'),
             ]),
         ]);
     }

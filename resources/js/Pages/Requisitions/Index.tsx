@@ -48,6 +48,8 @@ interface FilterOptions {
     projects: Pick<Project, 'id' | 'code' | 'name'>[];
     categories: Array<{ id: number; name: string; is_active?: boolean }>;
     requestors: Array<{ id: number; name: string }>;
+    recipients?: Array<{ id: number; name: string; phone?: string; status?: string }>;
+    clients?: string[];
 }
 
 interface RequisitionsIndexProps extends PageProps {
@@ -60,6 +62,9 @@ interface RequisitionsIndexProps extends PageProps {
         project_id?: string;
         category_id?: string;
         requestor_id?: string;
+        recipient_id?: string;
+        client?: string;
+        approval_status?: string;
     };
 }
 
@@ -162,7 +167,7 @@ export default function RequisitionsIndex() {
                 <ListToolbar
                     baseUrl="/requisitions"
                     filters={filters}
-                    searchPlaceholder="Search req no, description, requestor, recipient, project…"
+                    searchPlaceholder="Search req no, recipient name, description, project…"
                     sortOptions={[
                         { value: 'date', label: 'Date' },
                         { value: 'requisition_no', label: 'Requisition no' },
@@ -180,12 +185,40 @@ export default function RequisitionsIndex() {
                             })),
                         },
                         {
+                            key: 'approval_status',
+                            label: 'Approval',
+                            emptyLabel: 'All approval states',
+                            options: [
+                                { value: 'pending', label: 'Pending approval' },
+                                { value: 'approved', label: 'Approved / in fulfillment' },
+                                { value: 'rejected', label: 'Rejected' },
+                            ],
+                        },
+                        {
                             key: 'project_id',
                             label: 'Project',
                             emptyLabel: 'All projects',
                             options: filterOptions.projects.map((project) => ({
                                 value: String(project.id),
                                 label: `${project.code} — ${project.name}`,
+                            })),
+                        },
+                        {
+                            key: 'client',
+                            label: 'Client',
+                            emptyLabel: 'All clients',
+                            options: (filterOptions.clients ?? []).map((client) => ({
+                                value: client,
+                                label: client,
+                            })),
+                        },
+                        {
+                            key: 'recipient_id',
+                            label: 'Recipient',
+                            emptyLabel: 'All recipients',
+                            options: (filterOptions.recipients ?? []).map((recipient) => ({
+                                value: String(recipient.id),
+                                label: recipient.name,
                             })),
                         },
                         {

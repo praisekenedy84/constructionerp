@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\RequisitionStatus;
 use App\Exports\RequisitionRegisterExport;
 use App\Models\Project;
+use App\Models\Recipient;
 use App\Models\Requisition;
 use App\Models\RequisitionCategory;
 use App\Models\RequisitionItem;
@@ -67,6 +68,55 @@ class RequisitionRegisterService
             $query->whereHas('requisition', fn (Builder $q) => $q->where('project_id', $request->integer('project_id')));
         }
 
+        if ($request->filled('recipient_id')) {
+            $recipientId = $request->integer('recipient_id');
+            $query->where(function (Builder $builder) use ($recipientId) {
+                $builder->where('recipient_id', $recipientId)
+                    ->orWhereHas(
+                        'requisition',
+                        fn (Builder $q) => $q->where('recipient_id', $recipientId)
+                            ->orWhereHas(
+                                'recipients',
+                                fn (Builder $r) => $r->where('recipient_id', $recipientId),
+                            ),
+                    );
+            });
+        }
+
+        if ($request->filled('client')) {
+            $client = trim($request->string('client')->toString());
+            $query->whereHas(
+                'requisition.project',
+                fn (Builder $q) => $q->where('client', 'like', "%{$client}%"),
+            );
+        }
+
+        if ($request->filled('customer_id')) {
+            $query->whereHas(
+                'requisition.project',
+                fn (Builder $q) => $q->where('customer_id', $request->integer('customer_id')),
+            );
+        }
+
+        if ($request->filled('approval_status')) {
+            $approval = $request->string('approval_status')->toString();
+            if ($approval === 'pending') {
+                $query->whereHas('requisition', fn (Builder $q) => $q->where('status', 'under_review'));
+            } elseif ($approval === 'approved') {
+                $query->whereHas(
+                    'requisition',
+                    fn (Builder $q) => $q->whereIn('status', [
+                        'approved',
+                        'partially_fulfilled',
+                        'fulfilled',
+                        'closed',
+                    ]),
+                );
+            } elseif ($approval === 'rejected') {
+                $query->whereHas('requisition', fn (Builder $q) => $q->where('status', 'rejected'));
+            }
+        }
+
         if ($request->filled('category_id')) {
             $categoryId = $request->integer('category_id');
             $query->whereHas('requisition', function (Builder $q) use ($categoryId) {
@@ -104,6 +154,7 @@ class RequisitionRegisterService
         if ($search !== '') {
             $query->where(function (Builder $builder) use ($search) {
                 $builder->where('requisition_items.description', 'like', "%{$search}%")
+                    ->orWhere('requisition_items.recipient_name', 'like', "%{$search}%")
                     ->orWhereHas('requisition', function (Builder $q) use ($search) {
                         $q->where('requisition_no', 'like', "%{$search}%")
                             ->orWhere('department', 'like', "%{$search}%")
@@ -112,12 +163,19 @@ class RequisitionRegisterService
                             ->orWhereHas(
                                 'recipients',
                                 fn (Builder $r) => $r->where('name', 'like', "%{$search}%")
+                                    ->orWhere('phone', 'like', "%{$search}%")
                                     ->orWhere('position_name', 'like', "%{$search}%"),
+                            )
+                            ->orWhereHas(
+                                'recipient',
+                                fn (Builder $r) => $r->where('name', 'like', "%{$search}%")
+                                    ->orWhere('phone', 'like', "%{$search}%"),
                             )
                             ->orWhereHas(
                                 'project',
                                 fn (Builder $p) => $p->where('name', 'like', "%{$search}%")
-                                    ->orWhere('code', 'like', "%{$search}%"),
+                                    ->orWhere('code', 'like', "%{$search}%")
+                                    ->orWhere('client', 'like', "%{$search}%"),
                             )
                             ->orWhereHas('requestor', fn (Builder $u) => $u->where('name', 'like', "%{$search}%"))
                             ->orWhereHas('category', fn (Builder $c) => $c->where('name', 'like', "%{$search}%"))
@@ -272,9 +330,18 @@ class RequisitionRegisterService
     public function filterOptions(): array
     {
         return [
-            'projects' => Project::query()->orderBy('name')->get(['id', 'code', 'name']),
+            'projects' => Project::query()->orderBy('name')->get(['id', 'code', 'name', 'client', 'customer_id']),
             'categories' => RequisitionCategory::query()->ordered()->get(['id', 'name', 'is_active']),
             'requestors' => User::query()->orderBy('name')->get(['id', 'name']),
+            'recipients' => Recipient::query()->orderBy('name')->get(['id', 'name', 'phone', 'status']),
+            'clients' => Project::query()
+                ->whereNotNull('client')
+                ->where('client', '!=', '')
+                ->orderBy('client')
+                ->distinct()
+                ->pluck('client')
+                ->values()
+                ->all(),
         ];
     }
 

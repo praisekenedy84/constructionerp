@@ -26,6 +26,7 @@ class RequisitionItem extends Model
         'original_line_total',
         'original_description',
         'details',
+        'recipient_id',
         'recipient_name',
         'position_id',
         'recipient_position',
@@ -109,5 +110,10 @@ class RequisitionItem extends Model
     public function position(): BelongsTo
     {
         return $this->belongsTo(Position::class, 'position_id');
+    }
+
+    public function recipient(): BelongsTo
+    {
+        return $this->belongsTo(Recipient::class);
     }
 }

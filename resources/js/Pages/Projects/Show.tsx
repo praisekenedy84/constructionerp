@@ -65,6 +65,20 @@ interface ProjectsShowProps extends PageProps {
     compliance_items?: ProjectComplianceItemRow[];
     contract_summary?: ContractSummary;
     available_rules: AvailableComplianceRule[];
+    project_staff?: Array<{
+        id: number;
+        name: string;
+        phone: string;
+        email?: string | null;
+        status: string;
+    }>;
+    available_recipients?: Array<{
+        id: number;
+        name: string;
+        phone: string;
+        email?: string | null;
+        status: string;
+    }>;
     tab?: Tab;
 }
 
@@ -89,6 +103,8 @@ export default function ProjectsShow() {
         compliance_items = [],
         contract_summary,
         available_rules = [],
+        project_staff = [],
+        available_recipients = [],
         tab = 'overview',
         auth,
         errors: pageErrors = {},
@@ -124,6 +140,15 @@ export default function ProjectsShow() {
     const complianceForm = useForm<{ compliance_items: ComplianceItemForm[] }>({
         compliance_items: [emptyComplianceItem()],
     });
+
+    const staffForm = useForm<{ recipient_ids: number[] }>({
+        recipient_ids: project_staff.map((recipient) => recipient.id),
+    });
+
+    function saveProjectStaff(e: FormEvent) {
+        e.preventDefault();
+        staffForm.post(`/projects/${project.id}/recipients`);
+    }
 
     function archiveProject() {
         if (!confirm(`Archive project "${project.code} — ${project.name}"?`)) {
@@ -363,6 +388,100 @@ export default function ProjectsShow() {
                             </dd>
                         </div>
                     </dl>
+                </DataPanel>
+
+                <DataPanel title="Project Staff / Recipients" noPadding>
+                    <div className="border-b border-slate-200 p-4">
+                        <p className="text-sm text-slate-600">
+                            Reference list of recipients used on this project. Recipients can belong
+                            to multiple projects. This list does not change project operations.
+                        </p>
+                    </div>
+                    {canUpdate ? (
+                        <form onSubmit={saveProjectStaff} className="space-y-4 p-4">
+                            {available_recipients.length === 0 ? (
+                                <p className="text-sm text-slate-500">
+                                    No recipients registered yet. Add them under Recipients first.
+                                </p>
+                            ) : (
+                                <div className="max-h-64 space-y-2 overflow-y-auto rounded-md border border-slate-200 p-3">
+                                    {available_recipients.map((recipient) => {
+                                        const checked = staffForm.data.recipient_ids.includes(
+                                            recipient.id,
+                                        );
+                                        return (
+                                            <label
+                                                key={recipient.id}
+                                                className="flex items-start gap-3 text-sm"
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    className="mt-1"
+                                                    checked={checked}
+                                                    onChange={(e) => {
+                                                        const next = e.target.checked
+                                                            ? [
+                                                                  ...staffForm.data.recipient_ids,
+                                                                  recipient.id,
+                                                              ]
+                                                            : staffForm.data.recipient_ids.filter(
+                                                                  (id) => id !== recipient.id,
+                                                              );
+                                                        staffForm.setData('recipient_ids', next);
+                                                    }}
+                                                />
+                                                <span>
+                                                    <span className="font-medium">
+                                                        {recipient.name}
+                                                    </span>
+                                                    <span className="block text-xs text-slate-500">
+                                                        {recipient.phone}
+                                                        {recipient.email
+                                                            ? ` · ${recipient.email}`
+                                                            : ''}
+                                                    </span>
+                                                </span>
+                                            </label>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                            <Button type="submit" size="sm" disabled={staffForm.processing}>
+                                {staffForm.processing ? 'Saving…' : 'Save Staff List'}
+                            </Button>
+                        </form>
+                    ) : project_staff.length === 0 ? (
+                        <p className="px-6 py-8 text-center text-sm text-slate-500">
+                            No project staff linked yet.
+                        </p>
+                    ) : (
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs text-slate-500">
+                                    <th className="px-6 py-3 font-medium">Name</th>
+                                    <th className="px-6 py-3 font-medium">Phone</th>
+                                    <th className="px-6 py-3 font-medium">Email</th>
+                                    <th className="px-6 py-3 font-medium">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {project_staff.map((recipient) => (
+                                    <tr key={recipient.id}>
+                                        <td className="px-6 py-3 font-medium">{recipient.name}</td>
+                                        <td className="px-6 py-3 text-slate-600">
+                                            {recipient.phone}
+                                        </td>
+                                        <td className="px-6 py-3 text-slate-600">
+                                            {recipient.email ?? '—'}
+                                        </td>
+                                        <td className="px-6 py-3 capitalize text-slate-600">
+                                            {recipient.status}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    )}
                 </DataPanel>
 
                 <DataPanel title="Contract Compliance" noPadding>

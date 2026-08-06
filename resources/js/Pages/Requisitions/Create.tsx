@@ -15,6 +15,7 @@ import {
     PageProps,
     Position,
     Project,
+    Recipient,
     Requisition,
     RequisitionAddressedTo,
     RequisitionCategory,
@@ -35,6 +36,7 @@ interface RequisitionsCreateProps extends PageProps {
     departments: Department[];
     positions: Position[];
     employees: Employee[];
+    recipients: Recipient[];
     requisition?: Requisition;
 }
 
@@ -45,6 +47,7 @@ interface LineItemForm {
     source: LineSource;
     inventory_item_id: string;
     requisition_category_id: string;
+    recipient_id: string;
     recipient_name: string;
     position_id: string;
     description: string;
@@ -67,6 +70,7 @@ const emptyLine = (defaults?: Partial<LineItemForm>): LineItemForm => ({
     source: 'new',
     inventory_item_id: '',
     requisition_category_id: '',
+    recipient_id: '',
     recipient_name: '',
     position_id: '',
     description: '',
@@ -100,6 +104,7 @@ function lineFromItem(item: RequisitionItem, fallbackCategoryId: string): LineIt
         requisition_category_id: item.requisition_category_id
             ? String(item.requisition_category_id)
             : fallbackCategoryId,
+        recipient_id: item.recipient_id ? String(item.recipient_id) : '',
         recipient_name: item.recipient_name === '—' ? '' : (item.recipient_name ?? ''),
         position_id: item.position_id ? String(item.position_id) : '',
         description: item.description ?? '',
@@ -151,6 +156,7 @@ export default function RequisitionsCreate() {
         departments,
         positions,
         employees = [],
+        recipients = [],
         requisition,
     } = usePage<RequisitionsCreateProps>().props;
     const isEditing = Boolean(requisition);
@@ -201,6 +207,7 @@ export default function RequisitionsCreate() {
             inventory_item_id:
                 item.source === 'catalog' && item.inventory_item_id ? item.inventory_item_id : null,
             requisition_category_id: item.requisition_category_id || null,
+            recipient_id: item.recipient_id || null,
             recipient_name: item.recipient_name.trim() || null,
             position_id: item.position_id || null,
             description: item.description,
@@ -243,17 +250,23 @@ export default function RequisitionsCreate() {
         }
 
         const payrollDept = departments.find((d) => d.name.toLowerCase() === 'payroll');
-        const lines = filtered.map((employee) =>
-            emptyLine({
+        const lines = filtered.map((employee) => {
+            const matched = recipients.find(
+                (recipient) =>
+                    recipient.name.trim().toLowerCase() === employee.name.trim().toLowerCase(),
+            );
+
+            return emptyLine({
                 requisition_category_id: salariesId,
-                recipient_name: employee.name,
+                recipient_id: matched ? String(matched.id) : '',
+                recipient_name: matched?.name ?? employee.name,
                 description: `Salary — ${employee.name} (${employee.employee_no})`,
                 unit: 'person',
                 quantity: '1',
                 unit_cost: staffPayAmount(employee),
                 employee_id: String(employee.id),
-            }),
-        );
+            });
+        });
 
         setData({
             ...data,
@@ -287,6 +300,7 @@ export default function RequisitionsCreate() {
             emptyLine({
                 requisition_category_id:
                     previous?.requisition_category_id || fallbackCategoryId,
+                recipient_id: previous?.recipient_id ?? '',
                 recipient_name: previous?.recipient_name ?? '',
                 position_id: previous?.position_id ?? '',
             }),
@@ -563,11 +577,15 @@ export default function RequisitionsCreate() {
                         }
                     >
                         <p className="mb-4 text-sm text-slate-500">
-                            Each line has its own category and optional recipient. For administrative
-                            payroll, use <span className="font-medium">Load staff (payroll)</span> to
-                            fill lines with staff and their pay amounts — fulfillment posts as
-                            Salaries overhead and appears in the Payroll module/report.
-                            Days is optional when unit cost is a daily rate.
+                            Each line must select a registered recipient (
+                            <Link href="/recipients" className="font-medium text-blue-700 underline">
+                                Recipients
+                            </Link>
+                            ). For administrative payroll, use{' '}
+                            <span className="font-medium">Load staff (payroll)</span> when staff are
+                            also registered as recipients — fulfillment posts as Salaries overhead
+                            and appears in the Payroll module/report. Days is optional when unit
+                            cost is a daily rate.
                         </p>
                         <div className="space-y-4">
                             {data.items.map((item, index) => (
@@ -650,21 +668,56 @@ export default function RequisitionsCreate() {
                                             )}
                                         </div>
                                         <div className="space-y-2 sm:col-span-2">
-                                            <Label>Recipient name (optional)</Label>
-                                            <Input
-                                                placeholder="e.g. John Doe — leave blank if for requestor"
-                                                value={item.recipient_name}
-                                                onChange={(e) =>
-                                                    updateLine(
-                                                        index,
-                                                        'recipient_name',
-                                                        e.target.value,
-                                                    )
-                                                }
-                                            />
-                                            {errors[`items.${index}.recipient_name`] && (
+                                            <Label>Recipient</Label>
+                                            <select
+                                                className="flex h-10 w-full rounded-md border border-slate-200 px-3 text-sm"
+                                                value={item.recipient_id}
+                                                onChange={(e) => {
+                                                    const selected = recipients.find(
+                                                        (recipient) =>
+                                                            String(recipient.id) === e.target.value,
+                                                    );
+                                                    const next = [...data.items];
+                                                    next[index] = {
+                                                        ...next[index],
+                                                        recipient_id: e.target.value,
+                                                        recipient_name: selected?.name ?? '',
+                                                    };
+                                                    setData('items', next);
+                                                }}
+                                                required
+                                            >
+                                                <option value="">Select registered recipient</option>
+                                                {recipients.map((recipient) => (
+                                                    <option key={recipient.id} value={recipient.id}>
+                                                        {recipient.name} — {recipient.phone}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                            {item.recipient_id && (
+                                                <p className="text-xs text-slate-500">
+                                                    {(() => {
+                                                        const selected = recipients.find(
+                                                            (recipient) =>
+                                                                String(recipient.id) ===
+                                                                item.recipient_id,
+                                                        );
+                                                        if (!selected) {
+                                                            return null;
+                                                        }
+                                                        return [
+                                                            selected.phone,
+                                                            selected.email,
+                                                            selected.address,
+                                                        ]
+                                                            .filter(Boolean)
+                                                            .join(' · ');
+                                                    })()}
+                                                </p>
+                                            )}
+                                            {errors[`items.${index}.recipient_id`] && (
                                                 <p className="text-sm text-red-600">
-                                                    {errors[`items.${index}.recipient_name`]}
+                                                    {errors[`items.${index}.recipient_id`]}
                                                 </p>
                                             )}
                                         </div>

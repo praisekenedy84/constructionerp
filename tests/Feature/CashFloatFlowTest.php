@@ -201,6 +201,9 @@ class CashFloatFlowTest extends TestCase
         $this->post('/requisitions/1/transition', [
             'to_status' => 'fulfilled',
             'payee' => 'Site Foreman Account',
+            'account_name' => 'Site Foreman Account',
+            'account_number' => '255700000001',
+            'payment_date' => now()->toDateString(),
             'reference_no' => 'RCP-001',
             'method' => 'mobile',
         ])->assertRedirect();
@@ -255,6 +258,9 @@ class CashFloatFlowTest extends TestCase
             'fulfillment_scope' => 'whole',
             'amount' => '20000',
             'payee' => 'Site Foreman',
+            'account_name' => 'Site Foreman',
+            'account_number' => '255700000001',
+            'payment_date' => now()->toDateString(),
             'reference_no' => 'PART-001',
             'method' => 'cash',
         ])->assertRedirect();
@@ -271,6 +277,9 @@ class CashFloatFlowTest extends TestCase
             'fulfillment_scope' => 'whole',
             'amount' => '30000',
             'payee' => 'Site Foreman',
+            'account_name' => 'Site Foreman',
+            'account_number' => '255700000001',
+            'payment_date' => now()->toDateString(),
             'reference_no' => 'PART-002',
             'method' => 'bank',
         ])->assertRedirect();

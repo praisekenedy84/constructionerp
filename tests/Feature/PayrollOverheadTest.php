@@ -142,6 +142,9 @@ class PayrollOverheadTest extends TestCase
         $this->post("/requisitions/{$requisition->id}/transition", [
             'to_status' => 'fulfilled',
             'payee' => 'Payroll',
+            'account_name' => 'Payroll',
+            'account_number' => '255700000001',
+            'payment_date' => now()->toDateString(),
             'reference_no' => 'PAY-1',
             'method' => 'bank',
         ])->assertRedirect();

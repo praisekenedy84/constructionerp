@@ -12,7 +12,9 @@ class RequisitionRecipient extends Model
 
     protected $fillable = [
         'requisition_id',
+        'recipient_id',
         'name',
+        'phone',
         'position_id',
         'position_name',
         'sort_order',
@@ -33,5 +35,10 @@ class RequisitionRecipient extends Model
     public function position(): BelongsTo
     {
         return $this->belongsTo(Position::class);
+    }
+
+    public function recipient(): BelongsTo
+    {
+        return $this->belongsTo(Recipient::class);
     }
 }

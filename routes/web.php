@@ -28,6 +28,8 @@ use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ProjectComplianceController;
 use App\Http\Controllers\ProjectPhaseController;
 use App\Http\Controllers\PurchaseOrderController;
+use App\Http\Controllers\RecipientAttendanceController;
+use App\Http\Controllers\RecipientController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\RequisitionCategoryController;
 use App\Http\Controllers\RequisitionController;
@@ -57,6 +59,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/projects/{id}/select', [ProjectController::class, 'select'])->name('projects.select');
     Route::get('/projects/{id}/edit', [ProjectController::class, 'edit'])->name('projects.edit');
     Route::put('/projects/{id}', [ProjectController::class, 'update'])->name('projects.update');
+    Route::post('/projects/{id}/recipients', [ProjectController::class, 'syncRecipients'])->name('projects.recipients.sync');
     Route::delete('/projects/{id}', [ProjectController::class, 'destroy'])->name('projects.destroy');
 
     Route::get('/projects/compliance-rules', [ComplianceRuleController::class, 'index'])->name('compliance-rules.index');
@@ -114,6 +117,14 @@ Route::middleware('auth')->group(function () {
     Route::post('/requisitions/positions', [PositionController::class, 'store'])->name('requisitions.positions.store');
     Route::put('/requisitions/positions/{id}', [PositionController::class, 'update'])->name('requisitions.positions.update');
     Route::delete('/requisitions/positions/{id}', [PositionController::class, 'destroy'])->name('requisitions.positions.destroy');
+    Route::get('/recipients', [RecipientController::class, 'index'])->name('recipients.index');
+    Route::post('/recipients', [RecipientController::class, 'store'])->name('recipients.store');
+    Route::put('/recipients/{id}', [RecipientController::class, 'update'])->name('recipients.update');
+    Route::delete('/recipients/{id}', [RecipientController::class, 'destroy'])->name('recipients.destroy');
+    Route::get('/recipients/attendance/export', [RecipientAttendanceController::class, 'export'])->name('recipients.attendance.export');
+    Route::get('/recipients/attendance', [RecipientAttendanceController::class, 'index'])->name('recipients.attendance.index');
+    Route::post('/recipients/attendance', [RecipientAttendanceController::class, 'store'])->name('recipients.attendance.store');
+    Route::delete('/recipients/attendance/{id}', [RecipientAttendanceController::class, 'destroy'])->name('recipients.attendance.destroy');
     Route::get('/requisitions/create', [RequisitionController::class, 'create'])->name('requisitions.create');
     Route::post('/requisitions', [RequisitionController::class, 'store'])->name('requisitions.store');
     Route::get('/requisitions/review-queue', [RequisitionController::class, 'reviewQueue'])->name('requisitions.review-queue');

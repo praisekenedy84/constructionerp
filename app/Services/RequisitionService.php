@@ -95,6 +95,7 @@ class RequisitionService
                         'requisition_category_id' => $data['requisition_category_id'] ?? null,
                         'resource_type' => $resourceType,
                         'requestor_id' => $data['requestor_id'],
+                        'recipient_id' => $data['recipient_id'] ?? null,
                         'recipient_name' => $data['recipient_name'] ?? null,
                         'recipient_position' => $data['recipient_position'] ?? null,
                         'position_id' => $data['position_id'] ?? null,
@@ -178,6 +179,9 @@ class RequisitionService
                 'department_id' => $data['department_id'] ?? $requisition->department_id,
                 'requisition_category_id' => $data['requisition_category_id'] ?? $requisition->requisition_category_id,
                 'resource_type' => $resourceType,
+                'recipient_id' => array_key_exists('recipient_id', $data)
+                    ? $data['recipient_id']
+                    : $requisition->recipient_id,
                 'recipient_name' => array_key_exists('recipient_name', $data)
                     ? $data['recipient_name']
                     : $requisition->recipient_name,
@@ -346,6 +350,9 @@ class RequisitionService
             'description' => $description,
             'requisition_category_id' => isset($item['requisition_category_id']) && $item['requisition_category_id'] !== ''
                 ? (int) $item['requisition_category_id']
+                : null,
+            'recipient_id' => isset($item['recipient_id']) && $item['recipient_id'] !== ''
+                ? (int) $item['recipient_id']
                 : null,
             'recipient_name' => array_key_exists('recipient_name', $item)
                 ? ($item['recipient_name'] !== null && $item['recipient_name'] !== ''
@@ -1254,29 +1261,38 @@ class RequisitionService
     }
 
     /**
-     * @param  list<array{name?: string, position_id?: int|null, position_name?: string|null}>  $recipients
+     * @param  list<array{recipient_id?: int|null, name?: string, phone?: string|null, position_id?: int|null, position_name?: string|null}>  $recipients
      */
     private function syncRecipients(Requisition $requisition, array $recipients): void
     {
         $requisition->recipients()->delete();
 
         foreach (array_values($recipients) as $index => $recipient) {
+            $recipientId = isset($recipient['recipient_id']) && $recipient['recipient_id'] !== ''
+                ? (int) $recipient['recipient_id']
+                : null;
             $name = trim((string) ($recipient['name'] ?? ''));
             $positionId = isset($recipient['position_id']) && $recipient['position_id'] !== ''
                 ? (int) $recipient['position_id']
                 : null;
 
-            if ($name === '' && ! $positionId) {
+            if ($name === '' && ! $positionId && ! $recipientId) {
                 continue;
             }
 
             RequisitionRecipient::create([
                 'requisition_id' => $requisition->id,
+                'recipient_id' => $recipientId,
                 'name' => $name !== '' ? $name : '—',
+                'phone' => $recipient['phone'] ?? null,
                 'position_id' => $positionId,
                 'position_name' => $recipient['position_name'] ?? null,
                 'sort_order' => $index,
             ]);
+
+            if ($recipientId && $requisition->project_id) {
+                $requisition->project?->recipients()->syncWithoutDetaching([$recipientId]);
+            }
         }
     }
 

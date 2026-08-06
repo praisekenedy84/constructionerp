@@ -26,12 +26,22 @@ class FulfillmentService
 
             $payee = trim((string) ($opts['payee'] ?? $opts['account_name'] ?? ''));
             $accountName = trim((string) ($opts['account_name'] ?? $payee));
+            $accountNumber = trim((string) ($opts['account_number'] ?? ''));
             $referenceNo = trim((string) ($opts['reference_no'] ?? ''));
             $method = strtolower(trim((string) ($opts['method'] ?? '')));
+            $disbursedAt = ! empty($opts['payment_date'])
+                ? \Illuminate\Support\Carbon::parse((string) $opts['payment_date'])->startOfDay()
+                : now();
 
             if ($payee === '' && $accountName === '') {
                 throw ValidationException::withMessages([
-                    'payee' => 'Enter the account or party that received the cash.',
+                    'account_name' => 'Enter the account name that received the cash.',
+                ]);
+            }
+
+            if ($accountNumber === '') {
+                throw ValidationException::withMessages([
+                    'account_number' => 'Enter the account number that received the cash.',
                 ]);
             }
 
@@ -71,9 +81,10 @@ class FulfillmentService
                 'method' => $method,
                 'payee' => $payee !== '' ? $payee : $accountName,
                 'account_name' => $accountName !== '' ? $accountName : $payee,
+                'account_number' => $accountNumber,
                 'reference_no' => $referenceNo,
                 'disbursed_by' => $actor->id,
-                'disbursed_at' => now(),
+                'disbursed_at' => $disbursedAt,
                 'created_at' => now(),
             ]);
         });

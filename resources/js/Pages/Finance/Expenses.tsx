@@ -30,9 +30,12 @@ interface ExpenseSummary {
 }
 
 interface FilterOptions {
-    projects: Pick<Project, 'id' | 'code' | 'name'>[];
+    projects: Pick<Project, 'id' | 'code' | 'name' | 'client'>[];
     sub_types: string[];
     recorders: Array<{ id: number; name: string }>;
+    recipients?: Array<{ id: number; name: string; phone?: string; status?: string }>;
+    requisitions?: Array<{ id: number; requisition_no: string }>;
+    clients?: string[];
 }
 
 interface ExpensesProps extends PageProps {
@@ -46,6 +49,10 @@ interface ExpensesProps extends PageProps {
         category?: string;
         source?: string;
         recorded_by?: string;
+        recipient_id?: string;
+        requisition_id?: string;
+        client?: string;
+        payment_status?: string;
     };
 }
 
@@ -254,7 +261,7 @@ export default function Expenses() {
                 <ListToolbar
                     baseUrl="/finance/expenses"
                     filters={{ ...filters, sub_type: activeSubType }}
-                    searchPlaceholder="Search description, category, project, requisition, recorder…"
+                    searchPlaceholder="Search description, recipient, requisition, project, client…"
                     sortOptions={[
                         { value: 'expense_date', label: 'Expense date' },
                         { value: 'amount', label: 'Amount' },
@@ -275,6 +282,45 @@ export default function Expenses() {
                                   },
                               ]
                             : []),
+                        ...((filterOptions.clients?.length ?? 0) > 0
+                            ? [
+                                  {
+                                      key: 'client',
+                                      label: 'Client',
+                                      emptyLabel: 'All clients',
+                                      options: (filterOptions.clients ?? []).map((client) => ({
+                                          value: client,
+                                          label: client,
+                                      })),
+                                  },
+                              ]
+                            : []),
+                        ...((filterOptions.recipients?.length ?? 0) > 0
+                            ? [
+                                  {
+                                      key: 'recipient_id',
+                                      label: 'Recipient',
+                                      emptyLabel: 'All recipients',
+                                      options: (filterOptions.recipients ?? []).map((recipient) => ({
+                                          value: String(recipient.id),
+                                          label: recipient.name,
+                                      })),
+                                  },
+                              ]
+                            : []),
+                        ...((filterOptions.requisitions?.length ?? 0) > 0
+                            ? [
+                                  {
+                                      key: 'requisition_id',
+                                      label: 'Requisition',
+                                      emptyLabel: 'All requisitions',
+                                      options: (filterOptions.requisitions ?? []).map((req) => ({
+                                          value: String(req.id),
+                                          label: req.requisition_no,
+                                      })),
+                                  },
+                              ]
+                            : []),
                         {
                             key: 'source',
                             label: 'Source',
@@ -283,6 +329,15 @@ export default function Expenses() {
                                 { value: 'requisition', label: 'From requisition' },
                                 { value: 'ipc', label: 'From IPC' },
                                 { value: 'manual', label: 'Manual' },
+                            ],
+                        },
+                        {
+                            key: 'payment_status',
+                            label: 'Payment status',
+                            emptyLabel: 'All payment statuses',
+                            options: [
+                                { value: 'paid', label: 'Paid / disbursed' },
+                                { value: 'unpaid', label: 'Not disbursed' },
                             ],
                         },
                         ...(filterOptions.sub_types.length > 0

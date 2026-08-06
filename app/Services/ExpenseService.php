@@ -11,6 +11,8 @@ use App\Models\CashDisbursement;
 use App\Models\BudgetTransaction;
 use App\Models\Expense;
 use App\Models\Project;
+use App\Models\Recipient;
+use App\Models\Requisition;
 use App\Models\RequisitionCategory;
 use App\Models\User;
 use App\Support\ListingQuery;
@@ -348,6 +350,61 @@ class ExpenseService
             $query->where('project_id', $request->integer('project_id'));
         }
 
+        if ($request->filled('requisition_id')) {
+            $query->where('requisition_id', $request->integer('requisition_id'));
+        }
+
+        if ($request->filled('client')) {
+            $client = trim($request->string('client')->toString());
+            $query->whereHas(
+                'project',
+                fn (Builder $q) => $q->where('client', 'like', "%{$client}%"),
+            );
+        }
+
+        if ($request->filled('recipient_id')) {
+            $recipientId = $request->integer('recipient_id');
+            $query->whereHas('requisition', function (Builder $q) use ($recipientId) {
+                $q->where('recipient_id', $recipientId)
+                    ->orWhereHas(
+                        'recipients',
+                        fn (Builder $r) => $r->where('recipient_id', $recipientId),
+                    )
+                    ->orWhereHas(
+                        'items',
+                        fn (Builder $i) => $i->where('recipient_id', $recipientId),
+                    );
+            });
+        }
+
+        if ($request->filled('recipient_name')) {
+            $name = trim($request->string('recipient_name')->toString());
+            $query->whereHas('requisition', function (Builder $q) use ($name) {
+                $q->where('recipient_name', 'like', "%{$name}%")
+                    ->orWhereHas(
+                        'recipients',
+                        fn (Builder $r) => $r->where('name', 'like', "%{$name}%"),
+                    )
+                    ->orWhereHas(
+                        'items',
+                        fn (Builder $i) => $i->where('recipient_name', 'like', "%{$name}%"),
+                    )
+                    ->orWhereHas(
+                        'recipient',
+                        fn (Builder $r) => $r->where('name', 'like', "%{$name}%"),
+                    );
+            });
+        }
+
+        if ($request->filled('payment_status')) {
+            $paymentStatus = $request->string('payment_status')->toString();
+            if ($paymentStatus === 'paid') {
+                $query->whereHas('cashDisbursements');
+            } elseif ($paymentStatus === 'unpaid') {
+                $query->whereDoesntHave('cashDisbursements');
+            }
+        }
+
         $subType = $request->input('sub_type') ?: $request->input('category');
         if (filled($subType)) {
             $needle = (string) $subType;
@@ -459,9 +516,15 @@ class ExpenseService
             ->values()
             ->all();
 
+        $expenseRequisitionIds = Expense::query()
+            ->where('category', $category)
+            ->whereNotNull('requisition_id')
+            ->distinct()
+            ->pluck('requisition_id');
+
         return [
             'projects' => $category === ExpenseCategory::Direct
-                ? Project::query()->orderBy('name')->get(['id', 'code', 'name'])->all()
+                ? Project::query()->orderBy('name')->get(['id', 'code', 'name', 'client'])->all()
                 : [],
             'sub_types' => $subTypes,
             'recorders' => User::query()
@@ -469,6 +532,22 @@ class ExpenseService
                 ->orderBy('name')
                 ->get(['id', 'name'])
                 ->all(),
+            'recipients' => Recipient::query()->orderBy('name')->get(['id', 'name', 'phone', 'status'])->all(),
+            'requisitions' => Requisition::query()
+                ->whereIn('id', $expenseRequisitionIds)
+                ->orderByDesc('id')
+                ->get(['id', 'requisition_no'])
+                ->all(),
+            'clients' => $category === ExpenseCategory::Direct
+                ? Project::query()
+                    ->whereNotNull('client')
+                    ->where('client', '!=', '')
+                    ->orderBy('client')
+                    ->distinct()
+                    ->pluck('client')
+                    ->values()
+                    ->all()
+                : [],
         ];
     }
 
@@ -537,12 +616,14 @@ class ExpenseService
             'sub_type',
             'activity_ref',
             'requisition.requisition_no',
+            'requisition.recipient_name',
             'recorder.name',
         ];
 
         if ($category === ExpenseCategory::Direct) {
             $columns[] = 'project.name';
             $columns[] = 'project.code';
+            $columns[] = 'project.client';
         }
 
         return $columns;

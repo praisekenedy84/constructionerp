@@ -7,6 +7,7 @@ use App\Enums\RequisitionStatus;
 use App\Models\BoqItem;
 use App\Models\InventoryItem;
 use App\Models\Project;
+use App\Models\Recipient;
 use App\Models\Requisition;
 use App\Models\Tenant;
 use App\Services\AuthService;
@@ -56,6 +57,12 @@ class FlexibleRequisitionTest extends TestCase
                 'category' => 'materials',
                 'reorder_point' => '10.000',
             ]);
+
+            Recipient::create([
+                'name' => 'Alice Worker',
+                'phone' => '+255700000001',
+                'status' => 'active',
+            ]);
         });
 
         tenancy()->end();
@@ -85,6 +92,7 @@ class FlexibleRequisitionTest extends TestCase
                     'unit' => 'lump',
                     'quantity' => '1',
                     'unit_cost' => '150000',
+                    'recipient_id' => 1,
                 ],
             ],
         ])->assertRedirect();
@@ -103,6 +111,8 @@ class FlexibleRequisitionTest extends TestCase
             $this->assertNull($req->items->first()->inventory_item_id);
             $this->assertSame('Petty cash for local transport', $req->items->first()->description);
             $this->assertSame('lump', $req->items->first()->unit);
+            $this->assertSame(1, (int) $req->items->first()->recipient_id);
+            $this->assertSame('Alice Worker', $req->items->first()->recipient_name);
         });
     }
 
@@ -127,6 +137,7 @@ class FlexibleRequisitionTest extends TestCase
                     'unit' => 'bag',
                     'quantity' => '20',
                     'unit_cost' => '18000',
+                    'recipient_id' => 1,
                 ],
             ],
         ])->assertRedirect();
@@ -162,6 +173,7 @@ class FlexibleRequisitionTest extends TestCase
                     'unit' => 'worker-day',
                     'quantity' => '50',
                     'unit_cost' => '25000',
+                    'recipient_id' => 1,
                 ],
             ],
         ])->assertRedirect();
@@ -200,6 +212,7 @@ class FlexibleRequisitionTest extends TestCase
                     'unit' => 'worker-day',
                     'quantity' => '8',
                     'unit_cost' => '20000',
+                    'recipient_id' => 1,
                 ],
             ],
         ])->assertRedirect();
@@ -221,6 +234,7 @@ class FlexibleRequisitionTest extends TestCase
                     'unit' => 'worker-day',
                     'quantity' => '24',
                     'unit_cost' => '25000',
+                    'recipient_id' => 1,
                 ],
             ],
         ])->assertRedirect();
@@ -271,6 +285,7 @@ class FlexibleRequisitionTest extends TestCase
                     'description' => 'Should fail',
                     'quantity' => '1',
                     'unit_cost' => '1',
+                    'recipient_id' => 1,
                 ],
             ],
         ])->assertRedirect('/requisitions/1');
@@ -301,12 +316,14 @@ class FlexibleRequisitionTest extends TestCase
                     'unit' => 'worker-day',
                     'quantity' => '50',
                     'unit_cost' => '25000',
+                    'recipient_id' => 1,
                 ],
                 [
                     'description' => 'Skilled masons',
                     'unit' => 'worker-day',
                     'quantity' => '12',
                     'unit_cost' => '40000',
+                    'recipient_id' => 1,
                 ],
             ],
         ])->assertRedirect();
@@ -329,7 +346,9 @@ class FlexibleRequisitionTest extends TestCase
         $tenant = Tenant::where('slug', 'flexible-req-co')->firstOrFail();
         $categoryIds = [];
         $positionId = null;
-        $tenant->run(function () use (&$categoryIds, &$positionId) {
+        $aliceId = null;
+        $bobId = null;
+        $tenant->run(function () use (&$categoryIds, &$positionId, &$aliceId, &$bobId) {
             $categoryIds = \App\Models\RequisitionCategory::query()
                 ->orderBy('id')
                 ->limit(2)
@@ -354,6 +373,13 @@ class FlexibleRequisitionTest extends TestCase
                     'sort_order' => 1,
                 ])->id;
             }
+
+            $aliceId = (int) Recipient::query()->where('name', 'Alice Worker')->value('id');
+            $bobId = Recipient::create([
+                'name' => 'Bob Helper',
+                'phone' => '+255700000002',
+                'status' => 'active',
+            ])->id;
         });
         tenancy()->end();
 
@@ -374,7 +400,7 @@ class FlexibleRequisitionTest extends TestCase
                     'quantity' => '1',
                     'unit_cost' => '5000',
                     'requisition_category_id' => $categoryIds[0],
-                    'recipient_name' => 'Alice Worker',
+                    'recipient_id' => $aliceId,
                     'position_id' => $positionId,
                 ],
                 [
@@ -383,19 +409,21 @@ class FlexibleRequisitionTest extends TestCase
                     'quantity' => '1',
                     'unit_cost' => '3000',
                     'requisition_category_id' => $categoryIds[1],
-                    'recipient_name' => 'Bob Helper',
+                    'recipient_id' => $bobId,
                     'position_id' => null,
                 ],
             ],
         ])->assertRedirect();
 
-        $tenant->run(function () use ($categoryIds, $positionId) {
+        $tenant->run(function () use ($categoryIds, $positionId, $aliceId, $bobId) {
             $req = Requisition::with(['items', 'recipients', 'categories'])->latest('id')->firstOrFail();
             $this->assertCount(2, $req->items);
             $this->assertSame((int) $categoryIds[0], (int) $req->items[0]->requisition_category_id);
             $this->assertSame((int) $categoryIds[1], (int) $req->items[1]->requisition_category_id);
+            $this->assertSame((int) $aliceId, (int) $req->items[0]->recipient_id);
             $this->assertSame('Alice Worker', $req->items[0]->recipient_name);
             $this->assertSame((int) $positionId, (int) $req->items[0]->position_id);
+            $this->assertSame((int) $bobId, (int) $req->items[1]->recipient_id);
             $this->assertSame('Bob Helper', $req->items[1]->recipient_name);
             $this->assertEqualsCanonicalizing(
                 $categoryIds,
@@ -445,6 +473,7 @@ class FlexibleRequisitionTest extends TestCase
                     'unit' => 'lump',
                     'quantity' => '1',
                     'unit_cost' => '1000',
+                    'recipient_id' => 1,
                 ],
             ],
         ])->assertRedirect();
@@ -477,12 +506,14 @@ class FlexibleRequisitionTest extends TestCase
                     'quantity' => '1',
                     'days' => '3',
                     'unit_cost' => '800000',
+                    'recipient_id' => 1,
                 ],
                 [
                     'description' => 'Diesel drums',
                     'unit' => 'drum',
                     'quantity' => '2',
                     'unit_cost' => '150000',
+                    'recipient_id' => 1,
                 ],
             ],
         ])->assertRedirect();

@@ -260,6 +260,9 @@ export default function FulfillQueue() {
                                                 <thead>
                                                     <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs text-slate-500">
                                                         <th className="px-3 py-2 font-medium">
+                                                            Recipient
+                                                        </th>
+                                                        <th className="px-3 py-2 font-medium">
                                                             Description
                                                         </th>
                                                         <th className="px-3 py-2 font-medium">Unit</th>
@@ -280,6 +283,11 @@ export default function FulfillQueue() {
                                                 <tbody className="divide-y divide-slate-100">
                                                     {(selected.items ?? []).map((item) => (
                                                         <tr key={item.id}>
+                                                            <td className="px-3 py-2 text-slate-800">
+                                                                {item.recipient_name ||
+                                                                    selected.recipient_name ||
+                                                                    '—'}
+                                                            </td>
                                                             <td className="px-3 py-2 text-slate-800">
                                                                 {item.description}
                                                             </td>

@@ -30,6 +30,8 @@ class ModulePermission
         'equipment' => ['read', 'create', 'update', 'assign'],
         'reports' => ['read', 'export', 'schedule'],
         'valuations' => ['read', 'create', 'update', 'approve', 'delete-soft'],
+        'sales' => ['read', 'convert', 'collect'],
+        'invoices' => ['read', 'create', 'issue', 'print', 'collect', 'sign'],
     ];
 
     /** @var list<string> */
@@ -47,6 +49,8 @@ class ModulePermission
         'equipment',
         'reports',
         'valuations',
+        'sales',
+        'invoices',
     ];
 
     /** Flat union of all actions (for UI headers / validation helpers). */
@@ -70,6 +74,10 @@ class ModulePermission
         'schedule',
         'override',
         'delete-soft',
+        'convert',
+        'collect',
+        'print',
+        'sign',
     ];
 
     /** @return array<string, list<string>> */
@@ -95,6 +103,8 @@ class ModulePermission
             'equipment' => 'Equipment',
             'reports' => 'Reports',
             'valuations' => 'Valuations',
+            'sales' => 'Sales',
+            'invoices' => 'Invoices',
         ];
     }
 
@@ -121,6 +131,10 @@ class ModulePermission
             'schedule' => 'Schedule',
             'override' => 'Override limits',
             'delete-soft' => 'Archive',
+            'convert' => 'Convert to receivable',
+            'collect' => 'Collect receivable',
+            'print' => 'Print / download PDF',
+            'sign' => 'Add digital signatures',
         ];
     }
 
@@ -147,6 +161,10 @@ class ModulePermission
             'schedule' => 'Configure scheduled report delivery',
             'override' => 'Bypass BOQ quantity or cash-on-hand checks',
             'delete-soft' => 'Archive / soft-delete records',
+            'convert' => 'Recognize closed-project profit as a receivable',
+            'collect' => 'Transfer receivable collections into a company account',
+            'print' => 'Generate printable documents',
+            'sign' => 'Attach prepared-by and approved-by signatures',
         ];
     }
 
@@ -165,24 +183,28 @@ class ModulePermission
             'System Administrator' => $all,
             'Managing Director' => $all,
             'Finance Manager' => array_values(array_unique(array_merge(
-                self::fullOn(['projects', 'boq', 'budgets', 'audit', 'requisitions', 'procurement', 'reports', 'valuations']),
+                self::fullOn(['projects', 'boq', 'budgets', 'audit', 'requisitions', 'procurement', 'reports', 'valuations', 'sales', 'invoices']),
                 self::only(['inventory'], ['read', 'receive']),
                 self::only(['payroll'], ['read', 'approve']),
                 self::only(['settings'], ['read']),
             ))),
             'Manager' => array_values(array_unique(array_merge(
-                self::readOnly(['projects', 'boq', 'budgets', 'requisitions', 'reports', 'valuations']),
+                self::readOnly(['projects', 'boq', 'budgets', 'requisitions', 'reports', 'valuations', 'sales', 'invoices']),
                 self::only(['projects'], ['update']),
                 self::only(['budgets'], ['approve', 'reject', 'receive']),
                 self::only(['requisitions'], ['approve', 'reject']),
+                self::only(['sales'], ['convert', 'collect']),
+                self::only(['invoices'], ['issue', 'print', 'sign']),
             ))),
             'Accountant' => array_values(array_unique(array_merge(
-                self::fullOn(['projects', 'budgets', 'reports', 'valuations']),
+                self::fullOn(['projects', 'budgets', 'reports', 'valuations', 'sales', 'invoices']),
                 self::only(['requisitions'], ['read']),
             ))),
             'Quantity Surveyor' => array_values(array_unique(array_merge(
                 self::fullOn(['projects', 'boq', 'reports', 'valuations']),
                 self::only(['requisitions'], ['read']),
+                self::only(['sales'], ['read']),
+                self::only(['invoices'], ['read', 'create']),
             ))),
             'Procurement Officer' => array_values(array_unique(array_merge(
                 self::fullOn(['procurement', 'boq']),
@@ -199,6 +221,8 @@ class ModulePermission
                 self::fullOn(['projects', 'boq', 'requisitions', 'reports', 'valuations']),
                 self::only(['budgets'], ['read']),
                 self::only(['equipment'], ['read', 'assign']),
+                self::only(['sales'], ['read']),
+                self::only(['invoices'], ['read']),
             ))),
             'Site Engineer' => array_values(array_unique(array_merge(
                 self::only(['boq'], ['read']),
@@ -214,7 +238,7 @@ class ModulePermission
             ))),
             'Auditor' => array_values(array_unique(array_merge(
                 self::fullOn(['audit']),
-                self::readOnly(['reports', 'projects', 'boq', 'budgets', 'requisitions', 'procurement', 'inventory', 'payroll', 'valuations']),
+                self::readOnly(['reports', 'projects', 'boq', 'budgets', 'requisitions', 'procurement', 'inventory', 'payroll', 'valuations', 'sales', 'invoices']),
                 self::only(['reports'], ['export']),
             ))),
         ];

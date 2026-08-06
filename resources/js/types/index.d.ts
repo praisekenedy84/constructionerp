@@ -19,6 +19,9 @@ export interface PlatformAdmin {
 export interface UiSettings {
     app_name: string;
     tagline: string;
+    company_address?: string;
+    company_contact?: string;
+    company_logo_url?: string;
     nav_overrides?: {
         hidden?: string[];
         role_hidden?: Record<string, string[]>;
@@ -52,6 +55,7 @@ export interface Project {
     code: string;
     name: string;
     client: string;
+    customer_id?: number | null;
     location: string;
     contract_amount: string;
     wht_percentage: string;
@@ -59,11 +63,114 @@ export interface Project {
     remaining_budget?: string;
     profit_percentage?: string;
     utilization_percentage?: string;
+    remaining_contract_value?: string;
+    contract_compliance_total?: string;
     physical_progress_pct: string;
     start_date: string;
     end_date: string;
     status: ProjectStatus;
     created_at?: string;
+}
+
+export interface Customer {
+    id: number;
+    name: string;
+    contact: string | null;
+    address: string | null;
+    tax_information: string | null;
+    projects?: Project[];
+}
+
+export type InvoiceStatus =
+    | 'draft'
+    | 'issued'
+    | 'printed'
+    | 'partially_paid'
+    | 'paid'
+    | 'overdue';
+
+export interface InvoicePayment {
+    id: number;
+    receipt_number: string;
+    payment_date: string;
+    amount_paid: string;
+    payment_method: string;
+    receipt_file: string | null;
+    receipt_url?: string | null;
+    notes?: string | null;
+    creator?: { id: number; name: string };
+}
+
+export interface InvoiceSignature {
+    id: number;
+    signature_type: 'prepared_by' | 'approved_by';
+    signature_file: string;
+    signature_url?: string;
+    signed_date: string;
+    signer?: { id: number; name: string };
+}
+
+export interface Invoice {
+    id: number;
+    invoice_number: string;
+    customer_id: number;
+    project_id: number;
+    phase_id: number;
+    invoice_date: string;
+    due_date: string;
+    description: string | null;
+    amount_before_tax: string;
+    tax_mode: 'exclusive' | 'inclusive';
+    tax_type: string | null;
+    tax_rate: string;
+    tax_amount: string;
+    deduction_type: string | null;
+    deduction_rate: string;
+    deduction_amount: string;
+    total_amount: string;
+    paid_amount: string;
+    outstanding_amount: string;
+    payment_status: 'unpaid' | 'partially_paid' | 'paid';
+    status: Exclude<InvoiceStatus, 'overdue'>;
+    display_status: InvoiceStatus;
+    pending_days: number;
+    printed_at?: string | null;
+    customer?: Customer;
+    project?: Project;
+    phase?: ProjectPhase;
+    payments?: InvoicePayment[];
+    signatures?: InvoiceSignature[];
+}
+
+export type SaleStatus = 'open' | 'receivable' | 'partially_paid' | 'paid';
+
+export interface Sale {
+    id: number;
+    sale_code: string;
+    status: SaleStatus;
+    status_label: string;
+    contract_amount: string;
+    profit_amount: string;
+    collected_amount: string;
+    outstanding_amount: string;
+    converted_at?: string | null;
+    can_convert: boolean;
+    can_collect: boolean;
+    customer?: string | null;
+    project?: Pick<Project, 'id' | 'code' | 'name' | 'client' | 'contract_amount' | 'net_budget' | 'status'> | null;
+    converter?: { id: number; name: string } | null;
+}
+
+export interface SaleReceivablePayment {
+    id: number;
+    sale_id: number;
+    amount: string;
+    method: string | null;
+    reference_no: string | null;
+    notes: string | null;
+    occurred_at: string | null;
+    account?: { id: number; name: string; type: string } | null;
+    recorder?: { id: number; name: string } | null;
 }
 
 export type PhaseStatus = 'pending' | 'in_progress' | 'succeeded' | 'unsatisfactory' | 'closed';
@@ -441,15 +548,44 @@ export type PurchaseOrderStatus =
 
 export interface PurchaseOrder {
     id: number;
+    purchase_order_no?: string | null;
     requisition_id: number;
     supplier_id: number;
-    boq_item_id: number;
+    equipment_id?: number | null;
+    boq_item_id: number | null;
     quantity: string;
     unit_cost: string;
     total_amount: string;
+    paid_amount: string;
+    outstanding_amount: string;
+    payment_status: 'unpaid' | 'partially_paid' | 'paid';
+    purchase_date?: string | null;
     status: PurchaseOrderStatus;
     supplier?: Supplier;
     requisition?: Requisition;
+    equipment?: Equipment | null;
+    items?: PurchaseOrderItem[];
+    payments?: PurchaseOrderPayment[];
+}
+
+export interface PurchaseOrderItem {
+    id: number;
+    purchase_order_id: number;
+    name: string;
+    quantity: string;
+    unit_price: string;
+    total_amount: string;
+}
+
+export interface PurchaseOrderPayment {
+    id: number;
+    purchase_order_id: number;
+    amount: string;
+    method: 'cash' | 'mobile' | 'bank';
+    reference_no: string;
+    notes?: string | null;
+    recorded_by: number;
+    paid_at: string;
 }
 
 export interface GoodsReceipt {
@@ -587,11 +723,13 @@ export interface EquipmentAssignment {
 export interface EquipmentMaintenance {
     id: number;
     equipment_id: number;
+    purchase_order_id?: number | null;
     type: 'maintenance' | 'repair';
     cost: string;
     description: string | null;
     date: string;
     equipment?: Equipment;
+    purchase_order?: Pick<PurchaseOrder, 'id' | 'purchase_order_no'> | null;
 }
 
 export interface EquipmentFuelLog {

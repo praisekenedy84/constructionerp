@@ -50,8 +50,8 @@ export default function BudgetShow() {
     const budgetByType = aggregateBudgetByType(rows);
     const budgetTimeline = aggregateBudgetTimeline(rows);
     const budgetOverview = [
-        { name: 'Utilized', amount: parseFloat(utilized_budget) || 0 },
-        { name: 'Remaining', amount: parseFloat(remaining_budget) || 0 },
+        { name: 'Expenses', amount: parseFloat(utilized_budget) || 0 },
+        { name: 'Net Operating Profit', amount: parseFloat(remaining_budget) || 0 },
     ];
     const [open, setOpen] = useState(false);
     const { data, setData, post, processing, errors, reset, clearErrors, isDirty } = useForm({
@@ -109,17 +109,17 @@ export default function BudgetShow() {
                             {formatCurrency(ipc_deductions)}
                         </p>
                     </DataPanel>
-                    <DataPanel title="Net Budget">
+                    <DataPanel title="Net Sales Received">
                         <p className="text-2xl font-bold text-slate-900">
                             {formatCurrency(project.net_budget)}
                         </p>
                     </DataPanel>
-                    <DataPanel title="Remaining Budget">
+                    <DataPanel title="Net Operating Profit">
                         <p className="text-2xl font-bold text-green-700">
                             {formatCurrency(remaining_budget)}
                         </p>
                     </DataPanel>
-                    <DataPanel title="Utilized">
+                    <DataPanel title="Expenses">
                         <p className="text-2xl font-bold text-slate-600">
                             {formatCurrency(utilized_budget)}
                         </p>
@@ -132,7 +132,7 @@ export default function BudgetShow() {
                 <div className="grid gap-6 lg:grid-cols-2">
                     <DataPanel
                         title="Budget Allocation"
-                        description="IPC deductions and later charges vs remaining budget"
+                        description="IPC deductions and later charges vs net operating profit"
                     >
                         <SimpleBarChart
                             data={budgetOverview}

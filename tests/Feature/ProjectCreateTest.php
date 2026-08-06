@@ -38,7 +38,7 @@ class ProjectCreateTest extends TestCase
         return $tenant;
     }
 
-    public function test_project_starts_with_zero_net_budget_before_phase_disbursement(): void
+    public function test_project_starts_with_full_contract_net_budget_before_phase_disbursement(): void
     {
         $tenant = $this->loginAsTenantAdmin();
 
@@ -57,7 +57,8 @@ class ProjectCreateTest extends TestCase
         $tenant->run(function () use (&$projectId) {
             $project = Project::where('code', 'PRJ-100')->first();
             $this->assertNotNull($project);
-            $this->assertSame('0.00', (string) $project->net_budget);
+            // Before phases/compliance: remaining contract value equals contract amount.
+            $this->assertSame('1000000.00', (string) $project->net_budget);
             $this->assertSame('5.00', (string) $project->wht_percentage);
             $projectId = $project->id;
         });
@@ -169,7 +170,8 @@ class ProjectCreateTest extends TestCase
 
         $this->assertSame('Updated Name', $project->name);
         $this->assertSame('active', $project->status->value);
-        $this->assertSame('0.00', (string) $project->net_budget);
+        // Still no phases: net tracks remaining contract value after update.
+        $this->assertSame('2000000.00', (string) $project->net_budget);
     }
 
     public function test_project_can_be_soft_deleted(): void

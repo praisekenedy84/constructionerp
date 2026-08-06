@@ -49,12 +49,15 @@ class StoreProjectRequest extends FormRequest
             ->values()
             ->all();
 
+        $phaseName = trim((string) ($this->input('initial_phase_name') ?? ''));
+        $disbursed = $this->blankToNull($this->input('initial_phase_disbursed_amount'));
+
         $this->merge([
             'wht_percentage' => $this->blankToNull($this->input('wht_percentage')) ?? 0,
             'location' => $this->input('location') ?: '',
             'client' => $this->input('client') ?: '',
-            'initial_phase_name' => trim((string) ($this->input('initial_phase_name') ?: 'Phase 1')),
-            'initial_phase_disbursed_amount' => $this->blankToNull($this->input('initial_phase_disbursed_amount')),
+            'initial_phase_name' => $phaseName !== '' ? $phaseName : null,
+            'initial_phase_disbursed_amount' => $disbursed,
             'ipcs' => $ipcs,
         ]);
     }

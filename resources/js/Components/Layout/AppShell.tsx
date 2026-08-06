@@ -11,6 +11,7 @@ import {
     Package,
     Receipt,
     Settings,
+    ShoppingCart,
     Users,
     Wallet,
     XCircle,
@@ -377,6 +378,7 @@ function NavIcon({ href, active }: { href: string; active: boolean }) {
     const icons: Record<string, typeof LayoutDashboard> = {
         '/dashboard': LayoutDashboard,
         '/projects': Building2,
+        '/sales': ShoppingCart,
         '/requisitions': ClipboardList,
         '/finance': Wallet,
         '/procurement': Receipt,

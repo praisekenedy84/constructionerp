@@ -6,6 +6,11 @@ use Illuminate\Http\RedirectResponse;
 
 class HubController extends Controller
 {
+    public function sales(): RedirectResponse
+    {
+        return redirect()->route('sales.index');
+    }
+
     public function finance(): RedirectResponse
     {
         return redirect()->route('finance.overview');

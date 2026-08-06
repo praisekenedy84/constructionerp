@@ -36,12 +36,12 @@ export default function ManagerTransactions() {
     const rows = transactions.data ?? [];
 
     return (
-        <AppShell title="Manager Transactions">
-            <Head title="Manager Transactions" />
+        <AppShell title="Company Transactions">
+            <Head title="Company Transactions" />
             <div className="space-y-6">
                 <PageHeader
-                    title="Manager Transactions"
-                    description="Deposits into manager accounts and transfers out when fund requests are approved."
+                    title="Company Transactions"
+                    description="Deposits into company accounts and transfers out when fund requests are approved."
                     actions={
                         <Link href="/finance/accounts">
                             <span className="text-sm text-blue-700 hover:underline">Manage accounts</span>
@@ -51,7 +51,7 @@ export default function ManagerTransactions() {
 
                 <div className="grid gap-4 sm:grid-cols-2">
                     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                        <p className="text-xs text-slate-500">Total manager balance</p>
+                        <p className="text-xs text-slate-500">Total company balance</p>
                         <p className="mt-1 text-2xl font-bold text-slate-900">
                             {formatCurrency(summary.balance)}
                         </p>
@@ -75,7 +75,7 @@ export default function ManagerTransactions() {
                         {
                             key: 'account_id',
                             label: 'Account',
-                            emptyLabel: 'All manager accounts',
+                            emptyLabel: 'All company accounts',
                             options: accounts.map((a) => ({
                                 value: String(a.id),
                                 label: `${a.name} (${formatCurrency(a.balance)})`,
@@ -87,7 +87,7 @@ export default function ManagerTransactions() {
                 <DataPanel title={`Transactions (${transactions.total})`} noPadding>
                     {rows.length === 0 ? (
                         <p className="px-6 py-12 text-center text-sm text-slate-500">
-                            No manager transactions yet.
+                            No company transactions yet.
                         </p>
                     ) : (
                         <>

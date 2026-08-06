@@ -2,14 +2,20 @@
 
 namespace App\Services;
 
+use App\Enums\ComplianceAllocationLevel;
 use App\Enums\PhaseStatus;
 use App\Enums\RetentionStatus;
 use App\Models\Project;
+use App\Models\ProjectComplianceItem;
 use App\Models\ProjectPhase;
 use Illuminate\Support\Facades\DB;
 
 class PhaseService
 {
+    public function __construct(
+        private readonly BudgetService $budgetService,
+    ) {}
+
     public function create(Project $project, array $attributes): ProjectPhase
     {
         return DB::transaction(function () use ($project, $attributes) {
@@ -27,6 +33,27 @@ class PhaseService
             }
 
             $sequence = (int) $project->phases()->max('sequence_no') + 1;
+
+            // Phase 1 absorbs existing contract compliance — disbursement must cover those obligations
+            // (compliance is deducted from the phase, not from the allocation ceiling).
+            if ($sequence === 1) {
+                $contractCompliance = bcadd(
+                    (string) ProjectComplianceItem::query()
+                        ->where('project_id', $project->id)
+                        ->where('allocation_level', ComplianceAllocationLevel::Contract)
+                        ->sum('amount'),
+                    '0',
+                    2,
+                );
+                if (bccomp($contractCompliance, '0', 2) === 1
+                    && bccomp($disbursed, $contractCompliance, 2) === -1
+                ) {
+                    throw new \InvalidArgumentException(
+                        "Phase 1 disbursement must be at least {$contractCompliance} to cover contract compliance obligations that will move to this phase."
+                    );
+                }
+            }
+
             $phase = ProjectPhase::create([
                 'project_id' => $project->id,
                 'sequence_no' => $sequence,
@@ -41,7 +68,7 @@ class PhaseService
                 'retention_status' => RetentionStatus::None,
             ]);
 
-            $this->syncProjectNetBudget($project);
+            $this->budgetService->syncProjectNetBudget($project);
 
             return $phase->fresh();
         });
@@ -68,7 +95,7 @@ class PhaseService
             ]);
 
             $this->recalculatePhaseBudget($phase->fresh());
-            $this->syncProjectNetBudget($phase->project);
+            $this->budgetService->syncProjectNetBudget($phase->project);
 
             return $phase->fresh();
         });
@@ -95,7 +122,7 @@ class PhaseService
             ]);
 
             $this->recalculatePhaseBudget($phase->fresh());
-            $this->syncProjectNetBudget($phase->project);
+            $this->budgetService->syncProjectNetBudget($phase->project);
 
             return $phase->fresh();
         });
@@ -133,12 +160,5 @@ class PhaseService
                 ? RetentionStatus::Held
                 : $phase->retention_status,
         ]);
-    }
-
-    public function syncProjectNetBudget(Project $project): void
-    {
-        $project = Project::lockForUpdate()->findOrFail($project->id);
-        $net = bcadd((string) $project->phases()->sum('phase_net_budget'), '0', 2);
-        $project->update(['net_budget' => $net]);
     }
 }

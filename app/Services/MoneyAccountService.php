@@ -62,7 +62,7 @@ class MoneyAccountService
             $account = MoneyAccount::lockForUpdate()->findOrFail($account->id);
 
             if (! $account->isManagerAccount()) {
-                throw new \InvalidArgumentException('Deposits can only be recorded on manager accounts.');
+                throw new \InvalidArgumentException('Deposits can only be recorded on company accounts.');
             }
 
             if (! $account->is_active) {
@@ -92,7 +92,7 @@ class MoneyAccountService
     }
 
     /**
-     * Move funds from a manager account into the single finance wallet
+     * Move funds from a company account into the single finance wallet
      * when a fund request is approved.
      *
      * @param  array{method?: string|null, reference_no?: string|null}  $opts
@@ -110,7 +110,7 @@ class MoneyAccountService
             $finance = MoneyAccount::lockForUpdate()->findOrFail($this->ensureFinanceAccount($actor)->id);
 
             if (! $source->isManagerAccount()) {
-                throw new \InvalidArgumentException('Fund transfers must come from a manager account.');
+                throw new \InvalidArgumentException('Fund transfers must come from a company account.');
             }
 
             if (! $source->is_active) {
@@ -210,6 +210,59 @@ class MoneyAccountService
                 'reference_no' => $opts['reference_no'] ?? null,
                 'method' => $opts['method'] ?? null,
                 'reference_entity_type' => $opts['reference_entity_type'] ?? null,
+                'reference_entity_id' => $opts['reference_entity_id'] ?? null,
+                'recorded_by' => $actor->id,
+                'occurred_at' => $opts['occurred_at'] ?? now(),
+            ]);
+        });
+    }
+
+    /**
+     * Credit a manager (company) account with a receivable collection.
+     *
+     * @param  array{
+     *     description?: string|null,
+     *     reference_no?: string|null,
+     *     method?: string|null,
+     *     reference_entity_type?: string|null,
+     *     reference_entity_id?: int|null,
+     *     occurred_at?: mixed
+     * }  $opts
+     */
+    public function receiveReceivablePayment(
+        MoneyAccount $account,
+        string $amount,
+        User $actor,
+        array $opts = [],
+    ): AccountTransaction {
+        return DB::transaction(function () use ($account, $amount, $actor, $opts) {
+            $account = MoneyAccount::lockForUpdate()->findOrFail($account->id);
+
+            if (! $account->isManagerAccount()) {
+                throw new \InvalidArgumentException('Receivable collections must be posted to a company (manager) account.');
+            }
+
+            if (! $account->is_active) {
+                throw new \InvalidArgumentException('Cannot collect into an inactive account.');
+            }
+
+            $normalized = bcadd($amount, '0', 2);
+            if (bccomp($normalized, '0', 2) !== 1) {
+                throw new \InvalidArgumentException('Collection amount must be greater than zero.');
+            }
+
+            $balance = bcadd((string) $account->balance, $normalized, 2);
+            $account->update(['balance' => $balance]);
+
+            return AccountTransaction::create([
+                'money_account_id' => $account->id,
+                'type' => AccountTransactionType::ReceivablePayment,
+                'amount' => $normalized,
+                'balance_after' => $balance,
+                'description' => $opts['description'] ?? 'Receivable collection',
+                'reference_no' => $opts['reference_no'] ?? null,
+                'method' => $opts['method'] ?? null,
+                'reference_entity_type' => $opts['reference_entity_type'] ?? 'sale',
                 'reference_entity_id' => $opts['reference_entity_id'] ?? null,
                 'recorded_by' => $actor->id,
                 'occurred_at' => $opts['occurred_at'] ?? now(),

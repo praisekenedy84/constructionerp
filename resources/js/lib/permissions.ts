@@ -41,6 +41,7 @@ export interface NavItem {
 export const navItems: NavItem[] = [
     { label: 'Dashboard', href: '/dashboard' },
     { label: 'Projects', href: '/projects', permission: { module: 'projects', action: 'read' } },
+    { label: 'Sales', href: '/sales', permission: { module: 'sales', action: 'read' } },
     { label: 'Requisitions', href: '/requisitions', permission: { module: 'requisitions', action: 'read' } },
     { label: 'Finance', href: '/finance/approvals', permission: { module: 'budgets', action: 'read' } },
     { label: 'Procurement', href: '/procurement/suppliers', permission: { module: 'procurement', action: 'read' } },

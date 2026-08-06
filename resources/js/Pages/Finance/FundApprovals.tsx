@@ -150,7 +150,7 @@ export default function FundApprovals() {
             <div className="space-y-6">
                 <PageHeader
                     title="Fund Approvals"
-                    description="Finance requests cash into the shared Finance Wallet. Manager approval transfers funds from a manager account — spendable on project or company expenses."
+                    description="Finance requests cash into the shared Finance Wallet. Manager approval transfers funds from a company account — spendable on project or company expenses."
                     actions={
                         <>
                             <div className="flex items-center gap-3 text-sm">
@@ -353,7 +353,7 @@ export default function FundApprovals() {
                                                         {approvingId === allocation.id && (
                                                             <div className="flex w-full max-w-xs flex-col gap-2">
                                                                 <p className="text-xs text-slate-500">
-                                                                    Choose the manager account to transfer from.
+                                                                    Choose the company account to transfer from.
                                                                 </p>
                                                                 <select
                                                                     className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
@@ -442,7 +442,7 @@ export default function FundApprovals() {
                         }
                     }}
                     title="Request Funds"
-                    description="Request funds into the Finance Wallet. A manager will approve and transfer from one of their accounts."
+                    description="Request funds into the Finance Wallet. A manager will approve and transfer from a company account."
                 >
                     <form onSubmit={submitRequest} className="space-y-4">
                         <div className="space-y-2">

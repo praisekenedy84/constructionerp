@@ -56,4 +56,9 @@ class ProjectPhase extends Model
     {
         return $this->hasMany(Valuation::class, 'phase_id');
     }
+
+    public function invoices(): HasMany
+    {
+        return $this->hasMany(Invoice::class, 'phase_id');
+    }
 }

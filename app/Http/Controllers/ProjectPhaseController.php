@@ -7,6 +7,7 @@ use App\Http\Requests\StoreProjectPhaseRequest;
 use App\Models\Project;
 use App\Models\ProjectPhase;
 use App\Services\PhaseService;
+use App\Services\ProjectComplianceService;
 use App\Services\ValuationService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -19,6 +20,7 @@ class ProjectPhaseController extends Controller
     public function __construct(
         private readonly PhaseService $phaseService,
         private readonly ValuationService $valuationService,
+        private readonly ProjectComplianceService $projectComplianceService,
     ) {}
 
     public function show(Request $request, int $projectId, int $phaseId): Response
@@ -55,8 +57,19 @@ class ProjectPhaseController extends Controller
         unset($validated['ipcs']);
 
         try {
-            $phase = DB::transaction(function () use ($request, $project, $validated, $ipcs) {
+            $migratedCount = 0;
+            $phase = DB::transaction(function () use ($request, $project, $validated, $ipcs, &$migratedCount) {
                 $phase = $this->phaseService->create($project, $validated);
+
+                // Phase One initiation: move contract-level compliance onto this phase (same amounts).
+                if ((int) $phase->sequence_no === 1) {
+                    $valuation = $this->projectComplianceService->migrateContractItemsToPhase(
+                        $project->fresh(),
+                        $phase,
+                        $request->user(),
+                    );
+                    $migratedCount = $valuation?->deductions()?->count() ?? 0;
+                }
 
                 foreach ($ipcs as $ipc) {
                     $this->valuationService->create(
@@ -74,9 +87,12 @@ class ProjectPhaseController extends Controller
         }
 
         $ipcCount = count($ipcs);
-        $message = $ipcCount > 0
-            ? "Phase {$phase->sequence_no} added with {$ipcCount} IPC".($ipcCount === 1 ? '' : 's').'.'
-            : "Phase {$phase->sequence_no} added and budget updated.";
+        $message = match (true) {
+            $migratedCount > 0 && $ipcCount > 0 => "Phase {$phase->sequence_no} added. Migrated {$migratedCount} contract compliance item(s) and added {$ipcCount} IPC".($ipcCount === 1 ? '' : 's').'.',
+            $migratedCount > 0 => "Phase {$phase->sequence_no} added. Migrated {$migratedCount} contract compliance item(s) to this phase.",
+            $ipcCount > 0 => "Phase {$phase->sequence_no} added with {$ipcCount} IPC".($ipcCount === 1 ? '' : 's').'.',
+            default => "Phase {$phase->sequence_no} added and budget updated.",
+        };
 
         return back()->with('success', $message);
     }

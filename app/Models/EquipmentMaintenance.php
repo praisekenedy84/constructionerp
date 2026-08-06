@@ -14,6 +14,7 @@ class EquipmentMaintenance extends Model
 
     protected $fillable = [
         'equipment_id',
+        'purchase_order_id',
         'type',
         'cost',
         'description',
@@ -34,5 +35,10 @@ class EquipmentMaintenance extends Model
     public function equipment(): BelongsTo
     {
         return $this->belongsTo(Equipment::class);
+    }
+
+    public function purchaseOrder(): BelongsTo
+    {
+        return $this->belongsTo(PurchaseOrder::class);
     }
 }

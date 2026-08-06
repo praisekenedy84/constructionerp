@@ -3,8 +3,10 @@
 namespace App\Services;
 
 use App\Enums\BudgetTransactionType;
+use App\Enums\ComplianceAllocationLevel;
 use App\Models\BudgetTransaction;
 use App\Models\Project;
+use App\Models\ProjectComplianceItem;
 use Illuminate\Support\Facades\DB;
 
 class BudgetService
@@ -16,19 +18,49 @@ class BudgetService
      *     ledger_spend: string,
      *     utilized_budget: string,
      *     remaining_budget: string,
-     *     utilization_percentage: string
+     *     utilization_percentage: string,
+     *     contract_amount: string,
+     *     contract_compliance_total: string,
+     *     remaining_contract_value: string,
+     *     phase_allocated: string,
+     *     unallocated_contract_value: string,
+     *     has_phases: bool
      * }
      */
     public function summary(Project $project): array
     {
-        $grossBudget = bcadd((string) $project->phases()->sum('disbursed_amount'), '0', 2);
+        $contractAmount = bcadd((string) $project->contract_amount, '0', 2);
+        $contractCompliance = bcadd(
+            (string) ProjectComplianceItem::query()
+                ->where('project_id', $project->id)
+                ->where('allocation_level', ComplianceAllocationLevel::Contract)
+                ->sum('amount'),
+            '0',
+            2,
+        );
+        $remainingContract = bcsub($contractAmount, $contractCompliance, 2);
+        if (bccomp($remainingContract, '0', 2) === -1) {
+            $remainingContract = '0.00';
+        }
+
+        $phaseAllocated = bcadd((string) $project->phases()->sum('disbursed_amount'), '0', 2);
+        $unallocatedContract = bcsub($contractAmount, $phaseAllocated, 2);
+        if (bccomp($unallocatedContract, '0', 2) === -1) {
+            $unallocatedContract = '0.00';
+        }
+        $hasPhases = $project->phases()->exists();
+
+        // Before phases: gross tracks remaining contract value after compliance.
+        $grossBudget = $hasPhases ? $phaseAllocated : $remainingContract;
         $netBudget = bcadd((string) $project->net_budget, '0', 2);
         $ledgerSpend = bcadd(
             (string) BudgetTransaction::where('project_id', $project->id)->sum('amount'),
             '0',
             2,
         );
-        $ipcDeductions = bcsub($grossBudget, $netBudget, 2);
+        $ipcDeductions = $hasPhases
+            ? bcsub($grossBudget, $netBudget, 2)
+            : $contractCompliance;
         if (bccomp($ipcDeductions, '0', 2) === -1) {
             $ipcDeductions = '0.00';
         }
@@ -45,6 +77,12 @@ class BudgetService
             'utilization_percentage' => bccomp($grossBudget, '0', 2) === 0
                 ? '0.00'
                 : bcmul(bcdiv($utilizedBudget, $grossBudget, 6), '100', 2),
+            'contract_amount' => $contractAmount,
+            'contract_compliance_total' => $contractCompliance,
+            'remaining_contract_value' => $remainingContract,
+            'phase_allocated' => $phaseAllocated,
+            'unallocated_contract_value' => $unallocatedContract,
+            'has_phases' => $hasPhases,
         ];
     }
 
@@ -76,6 +114,37 @@ class BudgetService
     public function utilizationPercentage(Project $project): string
     {
         return $this->summary($project)['utilization_percentage'];
+    }
+
+    /**
+     * Persist project.net_budget from the current financial layer.
+     * Before phases: contract − contract-level compliance.
+     * After phases: Σ phase_net_budget (compliance lives on phases/IPCs).
+     */
+    public function syncProjectNetBudget(Project $project): void
+    {
+        $project = Project::lockForUpdate()->findOrFail($project->id);
+
+        if (! $project->phases()->exists()) {
+            $compliance = bcadd(
+                (string) ProjectComplianceItem::query()
+                    ->where('project_id', $project->id)
+                    ->where('allocation_level', ComplianceAllocationLevel::Contract)
+                    ->sum('amount'),
+                '0',
+                2,
+            );
+            $net = bcsub(bcadd((string) $project->contract_amount, '0', 2), $compliance, 2);
+            if (bccomp($net, '0', 2) === -1) {
+                $net = '0.00';
+            }
+            $project->update(['net_budget' => $net]);
+
+            return;
+        }
+
+        $net = bcadd((string) $project->phases()->sum('phase_net_budget'), '0', 2);
+        $project->update(['net_budget' => $net]);
     }
 
     /**

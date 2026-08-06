@@ -90,13 +90,14 @@ export default function Maintenance() {
                                 <th className="px-6 py-3 font-medium">Date</th>
                                 <th className="px-6 py-3 font-medium">Equipment</th>
                                 <th className="px-6 py-3 font-medium">Type</th>
+                                <th className="px-6 py-3 font-medium">Description / Source</th>
                                 <th className="px-6 py-3 text-right font-medium">Cost</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {rows.length === 0 ? (
                                 <tr>
-                                    <td colSpan={4} className="px-6 py-12 text-center text-slate-500">
+                                    <td colSpan={5} className="px-6 py-12 text-center text-slate-500">
                                         No maintenance records found.
                                     </td>
                                 </tr>
@@ -106,6 +107,14 @@ export default function Maintenance() {
                                         <td className="px-6 py-4">{formatDate(m.date)}</td>
                                         <td className="px-6 py-4">{m.equipment?.name}</td>
                                         <td className="px-6 py-4 capitalize">{m.type}</td>
+                                        <td className="px-6 py-4">
+                                            <p>{m.description ?? '—'}</p>
+                                            {m.purchase_order?.purchase_order_no && (
+                                                <p className="mt-0.5 font-mono text-xs text-blue-700 dark:text-blue-400">
+                                                    {m.purchase_order.purchase_order_no}
+                                                </p>
+                                            )}
+                                        </td>
                                         <td className="px-6 py-4 text-right font-medium">
                                             {formatCurrency(m.cost)}
                                         </td>

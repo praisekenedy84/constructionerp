@@ -6,9 +6,13 @@ use App\Http\Requests\StoreProjectRequest;
 use App\Http\Requests\UpdateProjectProgressRequest;
 use App\Http\Requests\UpdateProjectRequest;
 use App\Models\ComplianceRule;
+use App\Models\Customer;
 use App\Models\Project;
+use App\Models\ProjectComplianceItem;
 use App\Services\BudgetService;
 use App\Services\PhaseService;
+use App\Services\ProjectComplianceService;
+use App\Services\SaleService;
 use App\Services\ValuationService;
 use App\Support\ListingQuery;
 use Illuminate\Http\RedirectResponse;
@@ -23,6 +27,8 @@ class ProjectController extends Controller
         private BudgetService $budgetService,
         private ValuationService $valuationService,
         private PhaseService $phaseService,
+        private SaleService $saleService,
+        private ProjectComplianceService $projectComplianceService,
     ) {}
 
     public function index(Request $request): Response
@@ -47,18 +53,7 @@ class ProjectController extends Controller
     {
         $this->authorizePermission($request->user(), 'projects', 'create');
 
-        return Inertia::render('Projects/Create', [
-            'available_rules' => ComplianceRule::active()
-                ->orderBy('name')
-                ->get(['id', 'name', 'description'])
-                ->map(fn (ComplianceRule $rule) => [
-                    'id' => $rule->id,
-                    'name' => $rule->name,
-                    'description' => $rule->description,
-                ])
-                ->values()
-                ->all(),
-        ]);
+        return Inertia::render('Projects/Create');
     }
 
     public function store(StoreProjectRequest $request): RedirectResponse
@@ -94,6 +89,13 @@ class ProjectController extends Controller
                 );
             }
 
+            if ($phase === null) {
+                // Contract is the first financial source: remaining = contract − contract compliance.
+                $this->budgetService->syncProjectNetBudget($project);
+            }
+
+            $this->saleService->ensureForProject($project);
+
             return $project->fresh();
         });
 
@@ -113,15 +115,58 @@ class ProjectController extends Controller
 
     public function show(Request $request, int $id): Response
     {
-        $project = Project::with(['withholdingTaxRates'])->findOrFail($id);
+        $project = Project::with(['withholdingTaxRates', 'sale'])->findOrFail($id);
+        $sale = $this->saleService->ensureForProject($project);
+        $budget = $this->budgetService->summary($project);
+
+        $complianceItems = ProjectComplianceItem::query()
+            ->where('project_id', $project->id)
+            ->with(['complianceRule:id,name', 'phase:id,sequence_no,name', 'events'])
+            ->orderBy('id')
+            ->get()
+            ->map(fn (ProjectComplianceItem $item) => [
+                'id' => $item->id,
+                'compliance_rule_id' => $item->compliance_rule_id,
+                'rule_name' => $item->complianceRule?->name,
+                'calculation_type' => $item->calculation_type->value,
+                'rate' => $item->rate !== null ? (string) $item->rate : null,
+                'fixed_amount' => $item->fixed_amount !== null ? (string) $item->fixed_amount : null,
+                'amount' => (string) $item->amount,
+                'allocation_level' => $item->allocation_level->value,
+                'phase_id' => $item->phase_id,
+                'phase_label' => $item->phase
+                    ? 'Phase '.$item->phase->sequence_no.': '.$item->phase->name
+                    : null,
+                'valuation_id' => $item->valuation_id,
+                'attached_at' => $item->attached_at?->toIso8601String(),
+                'migrated_at' => $item->migrated_at?->toIso8601String(),
+                'events' => $item->events->map(fn ($event) => [
+                    'event_type' => $event->event_type->value,
+                    'phase_id' => $event->phase_id,
+                    'created_at' => $event->created_at?->toIso8601String(),
+                    'meta' => $event->meta,
+                ])->values()->all(),
+            ])
+            ->values()
+            ->all();
 
         return Inertia::render('Projects/Show', [
-            'project' => $this->withBudgetSummary($project),
+            'project' => $this->withBudgetSummary($project, $budget),
+            'sale' => $this->saleService->formatSale($sale),
             'phases' => $project->phases()
                 ->withCount('valuations')
                 ->withSum('valuations', 'total_deductions')
                 ->orderBy('sequence_no')
                 ->get(),
+            'compliance_items' => $complianceItems,
+            'contract_summary' => [
+                'contract_amount' => $budget['contract_amount'],
+                'compliance_total' => $budget['contract_compliance_total'],
+                'remaining_contract_value' => $budget['remaining_contract_value'],
+                'phase_allocated' => $budget['phase_allocated'],
+                'unallocated_contract_value' => $budget['unallocated_contract_value'],
+                'has_phases' => $budget['has_phases'],
+            ],
             'available_rules' => ComplianceRule::active()
                 ->orderBy('name')
                 ->get(['id', 'name', 'description'])
@@ -165,8 +210,10 @@ class ProjectController extends Controller
 
         DB::transaction(function () use ($request, $project) {
             $this->persistProject($project, $request->validated());
-            // Rate-% rules are based on phase disbursement; still recalculate if project setup changes.
-            $this->valuationService->recalculateProjectIpcs($project->fresh());
+            $fresh = $project->fresh();
+            $this->projectComplianceService->recalculateContractItems($fresh);
+            // Rate-% IPC rules are based on phase disbursement; still recalculate if project setup changes.
+            $this->valuationService->recalculateProjectIpcs($fresh);
         });
 
         return redirect()
@@ -208,9 +255,9 @@ class ProjectController extends Controller
         return back()->with('success', 'Project progress updated.');
     }
 
-    private function withBudgetSummary(Project $project): Project
+    private function withBudgetSummary(Project $project, ?array $budget = null): Project
     {
-        $budget = $this->budgetService->summary($project);
+        $budget ??= $this->budgetService->summary($project);
         $remainingBudget = $budget['remaining_budget'];
         $profitPercentage = bccomp((string) $project->net_budget, '0', 2) === 0
             ? '0.00'
@@ -219,6 +266,8 @@ class ProjectController extends Controller
         $project->setAttribute('remaining_budget', $remainingBudget);
         $project->setAttribute('profit_percentage', $profitPercentage);
         $project->setAttribute('utilization_percentage', $budget['utilization_percentage']);
+        $project->setAttribute('remaining_contract_value', $budget['remaining_contract_value']);
+        $project->setAttribute('contract_compliance_total', $budget['contract_compliance_total']);
 
         return $project;
     }
@@ -228,7 +277,14 @@ class ProjectController extends Controller
      */
     private function persistProject(Project $project, array $attributes): Project
     {
-        // Net budget starts at 0 and grows with phase disbursements/releases.
+        if (! empty($attributes['client'])) {
+            $attributes['customer_id'] = Customer::firstOrCreate([
+                'name' => trim((string) $attributes['client']),
+            ])->id;
+        }
+
+        // Before phases: net_budget tracks remaining contract value (synced after save).
+        // After phases: net_budget is the sum of phase nets.
         if (! $project->exists) {
             $attributes['net_budget'] = '0.00';
         }

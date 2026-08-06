@@ -60,7 +60,7 @@ export default function ProjectsIndex() {
                         { value: 'code', label: 'Code' },
                         { value: 'client', label: 'Client' },
                         { value: 'status', label: 'Status' },
-                        { value: 'net_budget', label: 'Budget' },
+                        { value: 'net_budget', label: 'Net Sales Received' },
                     ]}
                 />
 
@@ -72,7 +72,7 @@ export default function ProjectsIndex() {
                                 <th className="px-6 py-3 font-medium">Name</th>
                                 <th className="px-6 py-3 font-medium">Client</th>
                                 <th className="px-6 py-3 font-medium">Status</th>
-                                <th className="px-6 py-3 text-right font-medium">Net Budget</th>
+                                <th className="px-6 py-3 text-right font-medium">Net Sales Received</th>
                                 <th className="px-6 py-3 text-right font-medium">Utilization</th>
                                 <th className="px-6 py-3 font-medium">End Date</th>
                                 <th className="px-6 py-3 text-right font-medium">Actions</th>

@@ -65,10 +65,10 @@ class EquipmentController extends Controller
         $this->authorizePermission($request->user(), 'equipment', 'read');
 
         $listing = ListingQuery::for(
-            EquipmentMaintenance::query()->with('equipment'),
+            EquipmentMaintenance::query()->with(['equipment', 'purchaseOrder']),
             $request,
         )
-            ->search(['description', 'equipment.name'])
+            ->search(['description', 'equipment.name', 'purchaseOrder.purchase_order_no'])
             ->dateRange('date')
             ->sort(['date', 'cost', 'created_at'], 'date');
 

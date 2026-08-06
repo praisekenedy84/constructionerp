@@ -10,4 +10,5 @@ enum AccountTransactionType: string
     case Disbursement = 'disbursement';
     case OpeningBalance = 'opening_balance';
     case Adjustment = 'adjustment';
+    case ReceivablePayment = 'receivable_payment';
 }

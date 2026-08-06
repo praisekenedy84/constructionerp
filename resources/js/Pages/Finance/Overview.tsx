@@ -101,7 +101,7 @@ export default function FinanceOverview() {
             color: 'text-green-700',
         },
         {
-            label: 'Manager Accounts',
+            label: 'Company Accounts',
             value: formatCurrency(summary.organization_cash_on_hand),
             sub: 'Source funds & deposits',
             icon: Landmark,

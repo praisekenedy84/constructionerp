@@ -15,10 +15,10 @@ import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
 import { formatCurrency, formatDate, formatPercent } from '@/lib/formatters';
 import { hasPermission } from '@/lib/permissions';
-import { PageProps, Project, ProjectPhase } from '@/types';
+import { PageProps, Project, ProjectPhase, Sale } from '@/types';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { cn } from '@/lib/utils';
-import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { Pencil, Plus, ShoppingCart, Trash2 } from 'lucide-react';
 import { FormEvent, useState } from 'react';
 
 type Tab = 'overview' | 'boq' | 'budget' | 'requisitions' | 'finance' | 'reports';
@@ -27,9 +27,43 @@ interface PhaseIpcForm {
     compliance_items: ComplianceItemForm[];
 }
 
+interface ProjectComplianceItemRow {
+    id: number;
+    compliance_rule_id: number;
+    rule_name: string | null;
+    calculation_type: 'rate_percent' | 'fixed_amount';
+    rate: string | null;
+    fixed_amount: string | null;
+    amount: string;
+    allocation_level: 'contract' | 'phase';
+    phase_id: number | null;
+    phase_label: string | null;
+    valuation_id: number | null;
+    attached_at: string | null;
+    migrated_at: string | null;
+    events: Array<{
+        event_type: string;
+        phase_id: number | null;
+        created_at: string | null;
+        meta: Record<string, unknown> | null;
+    }>;
+}
+
+interface ContractSummary {
+    contract_amount: string;
+    compliance_total: string;
+    remaining_contract_value: string;
+    phase_allocated: string;
+    unallocated_contract_value: string;
+    has_phases: boolean;
+}
+
 interface ProjectsShowProps extends PageProps {
     project: Project;
+    sale?: Sale | null;
     phases: ProjectPhase[];
+    compliance_items?: ProjectComplianceItemRow[];
+    contract_summary?: ContractSummary;
     available_rules: AvailableComplianceRule[];
     tab?: Tab;
 }
@@ -50,16 +84,24 @@ function emptyIpc(): PhaseIpcForm {
 export default function ProjectsShow() {
     const {
         project,
+        sale = null,
         phases,
+        compliance_items = [],
+        contract_summary,
         available_rules = [],
         tab = 'overview',
         auth,
-    } = usePage<ProjectsShowProps>().props;
+        errors: pageErrors = {},
+    } = usePage<ProjectsShowProps & { errors?: Record<string, string> }>().props;
     const canUpdate = hasPermission(auth.user, 'projects', 'update');
     const canDelete = hasPermission(auth.user, 'projects', 'delete-soft');
     const nextPhaseNo = (phases[phases.length - 1]?.sequence_no ?? 0) + 1;
+    const hasPhases = contract_summary?.has_phases ?? phases.length > 0;
+    const contractItems = compliance_items.filter((item) => item.allocation_level === 'contract');
+    const migratedItems = compliance_items.filter((item) => item.allocation_level === 'phase');
 
     const [phaseDialogOpen, setPhaseDialogOpen] = useState(false);
+    const [complianceDialogOpen, setComplianceDialogOpen] = useState(false);
     const {
         data,
         setData,
@@ -77,6 +119,10 @@ export default function ProjectsShow() {
         name: `Phase ${nextPhaseNo}`,
         disbursed_amount: '',
         ipcs: [],
+    });
+
+    const complianceForm = useForm<{ compliance_items: ComplianceItemForm[] }>({
+        compliance_items: [emptyComplianceItem()],
     });
 
     function archiveProject() {
@@ -116,6 +162,40 @@ export default function ProjectsShow() {
                 clearErrors();
             },
         });
+    }
+
+    function openComplianceDialog() {
+        complianceForm.clearErrors();
+        complianceForm.reset();
+        complianceForm.setData('compliance_items', [emptyComplianceItem()]);
+        setComplianceDialogOpen(true);
+    }
+
+    function closeComplianceDialog() {
+        if (!confirmDiscardIfDirty(complianceForm.isDirty)) {
+            return;
+        }
+        setComplianceDialogOpen(false);
+        complianceForm.reset();
+        complianceForm.clearErrors();
+    }
+
+    function submitCompliance(e: FormEvent) {
+        e.preventDefault();
+        complianceForm.post(`/projects/${project.id}/compliance`, {
+            onSuccess: () => {
+                setComplianceDialogOpen(false);
+                complianceForm.reset();
+                complianceForm.clearErrors();
+            },
+        });
+    }
+
+    function removeComplianceItem(itemId: number, ruleName: string | null) {
+        if (!confirm(`Remove contract compliance "${ruleName ?? 'item'}"?`)) {
+            return;
+        }
+        router.delete(`/projects/${project.id}/compliance/${itemId}`);
     }
 
     function addIpc() {
@@ -172,20 +252,36 @@ export default function ProjectsShow() {
                                     IPCs
                                 </Button>
                             </Link>
+                            {sale && (
+                                <Link href={`/sales/${sale.id}`}>
+                                    <Button variant="outline" size="sm">
+                                        <ShoppingCart className="h-4 w-4" />
+                                        Sale
+                                    </Button>
+                                </Link>
+                            )}
                         </div>
                     }
                 />
 
                 <div className="grid gap-4 sm:grid-cols-4">
-                    <DataPanel title="Net Budget">
+                    <DataPanel title={hasPhases ? 'Net Sales Received' : 'Remaining Contract Value'}>
                         <p className="text-2xl font-bold text-slate-900">
-                            {formatCurrency(project.net_budget)}
+                            {formatCurrency(
+                                hasPhases
+                                    ? project.net_budget
+                                    : (contract_summary?.remaining_contract_value ??
+                                          project.remaining_contract_value ??
+                                          project.net_budget),
+                            )}
                         </p>
                         <p className="mt-1 text-xs text-slate-500">
-                            Sum of phase budgets after deductions and retention actions
+                            {hasPhases
+                                ? 'Sum of phase budgets after deductions and retention actions'
+                                : 'Contract value minus contract-level compliance (phases not started)'}
                         </p>
                     </DataPanel>
-                    <DataPanel title="Remaining">
+                    <DataPanel title="Net Operating Profit">
                         <p className="text-2xl font-bold text-green-700">
                             {formatCurrency(project.remaining_budget)}
                         </p>
@@ -194,13 +290,27 @@ export default function ProjectsShow() {
                         <p className="text-2xl font-bold text-slate-900">
                             {formatCurrency(project.contract_amount)}
                         </p>
+                        {(contract_summary?.compliance_total ??
+                            project.contract_compliance_total) &&
+                            Number(
+                                contract_summary?.compliance_total ??
+                                    project.contract_compliance_total,
+                            ) > 0 && (
+                                <p className="mt-1 text-xs text-slate-500">
+                                    Contract compliance:{' '}
+                                    {formatCurrency(
+                                        contract_summary?.compliance_total ??
+                                            project.contract_compliance_total,
+                                    )}
+                                </p>
+                            )}
                     </DataPanel>
                     <DataPanel title="Budget Utilization">
                         <p className="text-2xl font-bold text-blue-700">
                             {formatPercent(project.utilization_percentage)}
                         </p>
                         <p className="mt-1 text-xs text-slate-500">
-                            Includes IPC deductions and subsequent budget charges
+                            Includes compliance deductions and subsequent budget charges
                         </p>
                     </DataPanel>
                 </div>
@@ -245,10 +355,182 @@ export default function ProjectsShow() {
                     </dl>
                 </DataPanel>
 
+                <DataPanel title="Contract Compliance" noPadding>
+                    <div className="flex items-center justify-between gap-3 border-b border-slate-200 p-4">
+                        <p className="text-sm text-slate-600">
+                            Compliance is tracked against contract value first. When Phase 1 is
+                            started, these obligations move to that phase (same amounts, no
+                            duplication).
+                        </p>
+                        {canUpdate && !hasPhases && (
+                            <Button type="button" size="sm" onClick={openComplianceDialog}>
+                                <Plus className="h-4 w-4" />
+                                Add Compliance
+                            </Button>
+                        )}
+                    </div>
+                    {hasPhases && (
+                        <p className="border-b border-slate-100 bg-slate-50 px-4 py-2 text-xs text-slate-500">
+                            Phases have started — new compliance is added on the phase via IPCs.
+                            Contract items above were migrated to Phase 1 (or remain for history).
+                        </p>
+                    )}
+                    {(pageErrors.compliance || complianceForm.errors.compliance) && (
+                        <p className="border-b border-red-100 bg-red-50 px-4 py-2 text-sm text-red-700">
+                            {pageErrors.compliance || complianceForm.errors.compliance}
+                        </p>
+                    )}
+                    <div className="border-b border-slate-100 px-4 py-3 text-sm">
+                        <dl className="flex flex-wrap gap-x-6 gap-y-1 text-slate-600">
+                            <div>
+                                Contract:{' '}
+                                <span className="font-medium text-slate-900">
+                                    {formatCurrency(
+                                        contract_summary?.contract_amount ??
+                                            project.contract_amount,
+                                    )}
+                                </span>
+                            </div>
+                            <div>
+                                Compliance:{' '}
+                                <span className="font-medium text-red-700">
+                                    −
+                                    {formatCurrency(
+                                        contract_summary?.compliance_total ?? '0',
+                                    )}
+                                </span>
+                            </div>
+                            <div>
+                                Remaining:{' '}
+                                <span className="font-medium text-slate-900">
+                                    {formatCurrency(
+                                        contract_summary?.remaining_contract_value ??
+                                            project.remaining_contract_value,
+                                    )}
+                                </span>
+                            </div>
+                            {hasPhases && (
+                                <div>
+                                    Unallocated after phases:{' '}
+                                    <span className="font-medium text-slate-900">
+                                        {formatCurrency(
+                                            contract_summary?.unallocated_contract_value,
+                                        )}
+                                    </span>
+                                </div>
+                            )}
+                        </dl>
+                    </div>
+                    <table className="w-full text-sm">
+                        <thead>
+                            <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs text-slate-500">
+                                <th className="px-6 py-3 font-medium">Rule</th>
+                                <th className="px-6 py-3 font-medium">Basis</th>
+                                <th className="px-6 py-3 text-right font-medium">Amount</th>
+                                <th className="px-6 py-3 font-medium">Status</th>
+                                <th className="px-6 py-3 text-right font-medium">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {compliance_items.length === 0 ? (
+                                <tr>
+                                    <td
+                                        colSpan={5}
+                                        className="px-6 py-10 text-center text-slate-500"
+                                    >
+                                        {hasPhases
+                                            ? 'No contract compliance on record. Add new obligations on the phase via IPCs.'
+                                            : 'No compliance yet. Attach obligations to the contract value — a phase is not required.'}
+                                    </td>
+                                </tr>
+                            ) : (
+                                <>
+                                    {contractItems.map((item) => (
+                                        <tr key={item.id}>
+                                            <td className="px-6 py-3 font-medium text-slate-900">
+                                                {item.rule_name}
+                                            </td>
+                                            <td className="px-6 py-3 text-slate-600">
+                                                {item.calculation_type === 'rate_percent'
+                                                    ? `${item.rate}% of contract`
+                                                    : 'Fixed amount'}
+                                            </td>
+                                            <td className="px-6 py-3 text-right font-medium">
+                                                {formatCurrency(item.amount)}
+                                            </td>
+                                            <td className="px-6 py-3 text-slate-600">
+                                                On contract
+                                                {item.attached_at && (
+                                                    <div className="text-xs text-slate-400">
+                                                        Attached {formatDate(item.attached_at)}
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td className="px-6 py-3 text-right">
+                                                {canUpdate && !hasPhases && (
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={() =>
+                                                            removeComplianceItem(
+                                                                item.id,
+                                                                item.rule_name,
+                                                            )
+                                                        }
+                                                    >
+                                                        <Trash2 className="h-4 w-4 text-slate-500" />
+                                                    </Button>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                    {migratedItems.map((item) => (
+                                        <tr key={item.id} className="bg-slate-50/60">
+                                            <td className="px-6 py-3 font-medium text-slate-900">
+                                                {item.rule_name}
+                                            </td>
+                                            <td className="px-6 py-3 text-slate-600">
+                                                {item.calculation_type === 'rate_percent'
+                                                    ? `${item.rate}% of contract (at attach)`
+                                                    : 'Fixed amount'}
+                                            </td>
+                                            <td className="px-6 py-3 text-right font-medium">
+                                                {formatCurrency(item.amount)}
+                                            </td>
+                                            <td className="px-6 py-3 text-slate-600">
+                                                Migrated to {item.phase_label ?? 'phase'}
+                                                {item.migrated_at && (
+                                                    <div className="text-xs text-slate-400">
+                                                        {formatDate(item.migrated_at)}
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td className="px-6 py-3 text-right text-xs text-slate-400">
+                                                {item.valuation_id ? (
+                                                    <Link
+                                                        href={`/projects/${project.id}/valuations/${item.valuation_id}`}
+                                                        className="text-blue-700 hover:underline"
+                                                    >
+                                                        View IPC
+                                                    </Link>
+                                                ) : (
+                                                    '—'
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </>
+                            )}
+                        </tbody>
+                    </table>
+                </DataPanel>
+
                 <DataPanel title="Phases & Retention" noPadding>
                     <div className="flex items-center justify-between gap-3 border-b border-slate-200 p-4">
                         <p className="text-sm text-slate-600">
-                            Add each client disbursement as a phase, optionally with its IPCs.
+                            Phases are optional at project start. Add each client disbursement when
+                            it arrives — even after compliance setup or acquisitions have begun.
                         </p>
                         {canUpdate && (
                             <Button type="button" size="sm" onClick={openPhaseDialog}>
@@ -282,7 +564,9 @@ export default function ProjectsShow() {
                                         colSpan={8}
                                         className="px-6 py-10 text-center text-slate-500"
                                     >
-                                        No phases added yet.
+                                        No phases yet. Add a phase when the client disburses
+                                        payment — this can be after compliance or once work has
+                                        started.
                                     </td>
                                 </tr>
                             ) : (
@@ -378,7 +662,7 @@ export default function ProjectsShow() {
                 open={phaseDialogOpen}
                 onOpenChange={(next) => (next ? undefined : closePhaseDialog())}
                 title={`Add Phase ${nextPhaseNo}`}
-                description="Record the next client disbursement and optionally attach IPCs for this phase."
+                description="Record the next client disbursement. If this is Phase 1, any contract-level compliance moves here automatically."
                 className="max-w-3xl"
             >
                 <form onSubmit={submitPhase} className="space-y-5">
@@ -403,6 +687,14 @@ export default function ProjectsShow() {
                                 onValueChange={(v) => setData('disbursed_amount', v)}
                                 required
                             />
+                            {nextPhaseNo === 1 &&
+                                Number(contract_summary?.compliance_total ?? 0) > 0 && (
+                                    <p className="text-xs text-slate-500">
+                                        Phase 1 must be at least{' '}
+                                        {formatCurrency(contract_summary?.compliance_total)} so
+                                        contract compliance can move onto this disbursement.
+                                    </p>
+                                )}
                             {errors.disbursed_amount && (
                                 <p className="text-sm text-red-600">{errors.disbursed_amount}</p>
                             )}
@@ -485,6 +777,48 @@ export default function ProjectsShow() {
                         processing={processing}
                         submitLabel="Save Phase"
                         processingLabel="Saving…"
+                    />
+                </form>
+            </Dialog>
+
+            <Dialog
+                open={complianceDialogOpen}
+                onOpenChange={(next) => (next ? undefined : closeComplianceDialog())}
+                title="Add Contract Compliance"
+                description="Obligations are calculated against the project contract value. They move to Phase 1 when that phase is started."
+                className="max-w-3xl"
+            >
+                <form onSubmit={submitCompliance} className="space-y-5">
+                    {available_rules.length === 0 ? (
+                        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                            No compliance rules defined yet. Create them under{' '}
+                            <Link href="/projects/compliance-rules" className="underline">
+                                Compliance Rules
+                            </Link>{' '}
+                            first.
+                        </p>
+                    ) : (
+                        <ComplianceItemsEditor
+                            items={complianceForm.data.compliance_items}
+                            availableRules={available_rules}
+                            baseAmount={String(project.contract_amount)}
+                            baseLabel="Contract amount"
+                            ipcLabel="Contract compliance"
+                            summaryMode="ipc-only"
+                            hideHeader
+                            errors={complianceForm.errors}
+                            onChange={(items) =>
+                                complianceForm.setData('compliance_items', items)
+                            }
+                        />
+                    )}
+
+                    <DialogFormActions
+                        onCancel={closeComplianceDialog}
+                        processing={complianceForm.processing}
+                        submitLabel="Save Compliance"
+                        processingLabel="Saving…"
+                        disabled={available_rules.length === 0}
                     />
                 </form>
             </Dialog>

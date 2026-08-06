@@ -20,6 +20,7 @@ class ValuationService
     public function __construct(
         private readonly ExpenseService $expenseService,
         private readonly PhaseService $phaseService,
+        private readonly BudgetService $budgetService,
     ) {}
 
     /**
@@ -46,7 +47,7 @@ class ValuationService
             $this->syncComplianceItems($valuation, $phase, $phaseBase, $complianceItems);
             $this->syncDirectExpenses($valuation->fresh(['deductions']), $creator->id);
             $this->phaseService->recalculatePhaseBudget($phase);
-            $this->phaseService->syncProjectNetBudget($project);
+            $this->budgetService->syncProjectNetBudget($project);
 
             return $valuation->fresh(['deductions']);
         });
@@ -72,7 +73,7 @@ class ValuationService
             $this->syncComplianceItems($valuation, $phase, $phaseBase, $complianceItems);
             $this->syncDirectExpenses($valuation->fresh(['deductions']), (int) $valuation->created_by);
             $this->phaseService->recalculatePhaseBudget($phase);
-            $this->phaseService->syncProjectNetBudget($project);
+            $this->budgetService->syncProjectNetBudget($project);
 
             return $valuation->fresh(['deductions', 'project']);
         });
@@ -110,13 +111,13 @@ class ValuationService
             $this->removeDirectExpenses($valuation);
             $valuation->delete();
             $this->phaseService->recalculatePhaseBudget($valuation->phase);
-            $this->phaseService->syncProjectNetBudget($project);
+            $this->budgetService->syncProjectNetBudget($project);
         });
     }
 
     public function syncProjectNetBudget(Project $project): void
     {
-        $this->phaseService->syncProjectNetBudget($project);
+        $this->budgetService->syncProjectNetBudget($project);
     }
 
     /**
@@ -152,7 +153,7 @@ class ValuationService
                 $this->phaseService->recalculatePhaseBudget($valuation->phase);
             }
 
-            $this->phaseService->syncProjectNetBudget($project);
+            $this->budgetService->syncProjectNetBudget($project);
         });
     }
 

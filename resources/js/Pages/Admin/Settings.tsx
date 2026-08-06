@@ -18,6 +18,9 @@ export default function AdminSettings() {
     const { data, setData, post, processing, errors } = useForm({
         app_name: ui_settings.app_name,
         tagline: ui_settings.tagline,
+        company_address: ui_settings.company_address ?? '',
+        company_contact: ui_settings.company_contact ?? '',
+        company_logo_url: ui_settings.company_logo_url ?? '',
     });
 
     function submit(e: FormEvent) {
@@ -54,6 +57,30 @@ export default function AdminSettings() {
                                 <Input
                                     value={data.tagline}
                                     onChange={(e) => setData('tagline', e.target.value)}
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Company Address</Label>
+                                <Input
+                                    value={data.company_address}
+                                    onChange={(e) => setData('company_address', e.target.value)}
+                                    placeholder="Postal or physical address shown on invoices"
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Company Contact</Label>
+                                <Input
+                                    value={data.company_contact}
+                                    onChange={(e) => setData('company_contact', e.target.value)}
+                                    placeholder="Phone, email, or website"
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Company Logo URL</Label>
+                                <Input
+                                    value={data.company_logo_url}
+                                    onChange={(e) => setData('company_logo_url', e.target.value)}
+                                    placeholder="HTTPS URL or /storage/... path"
                                 />
                             </div>
                             <Button type="submit" disabled={processing}>

@@ -5,7 +5,9 @@ namespace App\Models;
 use App\Enums\ProjectStatus;
 use App\Traits\LogsActivity;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Project extends Model
@@ -16,6 +18,7 @@ class Project extends Model
         'code',
         'name',
         'client',
+        'customer_id',
         'location',
         'contract_amount',
         'wht_percentage',
@@ -114,9 +117,24 @@ class Project extends Model
         return $this->hasMany(WithholdingTaxRate::class);
     }
 
+    public function customer(): BelongsTo
+    {
+        return $this->belongsTo(Customer::class);
+    }
+
+    public function invoices(): HasMany
+    {
+        return $this->hasMany(Invoice::class);
+    }
+
     public function complianceRules(): HasMany
     {
         return $this->hasMany(ProjectComplianceRule::class);
+    }
+
+    public function complianceItems(): HasMany
+    {
+        return $this->hasMany(ProjectComplianceItem::class);
     }
 
     public function boqSections(): HasMany
@@ -177,6 +195,11 @@ class Project extends Model
     public function phases(): HasMany
     {
         return $this->hasMany(ProjectPhase::class);
+    }
+
+    public function sale(): HasOne
+    {
+        return $this->hasOne(Sale::class);
     }
 
     public function workflowConfigs(): HasMany

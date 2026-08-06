@@ -54,6 +54,7 @@ class AccountTransaction extends Model
             AccountTransactionType::Deposit,
             AccountTransactionType::TransferIn,
             AccountTransactionType::OpeningBalance,
+            AccountTransactionType::ReceivablePayment,
         ], true);
     }
 }

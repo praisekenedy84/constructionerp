@@ -37,7 +37,7 @@ class CashAllocationService
     }
 
     /**
-     * Manager approval transfers cash from a manager account into the finance wallet.
+     * Manager approval transfers cash from a company account into the finance wallet.
      * Project budget is not charged here — costs hit the ledger when expenses / project
      * requisitions are recorded.
      *
@@ -59,7 +59,7 @@ class CashAllocationService
 
             $sourceAccountId = (int) ($opts['source_account_id'] ?? 0);
             if ($sourceAccountId < 1) {
-                throw new \InvalidArgumentException('Select a manager account to fund this request from.');
+                throw new \InvalidArgumentException('Select a company account to fund this request from.');
             }
 
             $fundedAmount = isset($opts['approved_amount']) && $opts['approved_amount'] !== null && $opts['approved_amount'] !== ''
@@ -136,7 +136,7 @@ class CashAllocationService
             $receivedAmount = bcadd($amount, '0', 2);
             $sourceAccountId = (int) ($opts['source_account_id'] ?? $allocation->source_account_id ?? 0);
             if ($sourceAccountId < 1) {
-                throw new \InvalidArgumentException('Select a manager account to fund this receipt from.');
+                throw new \InvalidArgumentException('Select a company account to fund this receipt from.');
             }
 
             $source = MoneyAccount::findOrFail($sourceAccountId);

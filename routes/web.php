@@ -13,22 +13,25 @@ use App\Http\Controllers\ComplianceRuleController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DepartmentController;
 use App\Http\Controllers\EmployeeController;
-use App\Http\Controllers\PositionController;
 use App\Http\Controllers\EquipmentController;
 use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\FinanceController;
-use App\Http\Controllers\MoneyAccountController;
 use App\Http\Controllers\GoodsReceiptController;
 use App\Http\Controllers\HubController;
 use App\Http\Controllers\InventoryController;
+use App\Http\Controllers\InvoiceController;
+use App\Http\Controllers\MoneyAccountController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PayrollController;
+use App\Http\Controllers\PositionController;
 use App\Http\Controllers\ProjectController;
+use App\Http\Controllers\ProjectComplianceController;
 use App\Http\Controllers\ProjectPhaseController;
 use App\Http\Controllers\PurchaseOrderController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\RequisitionCategoryController;
 use App\Http\Controllers\RequisitionController;
+use App\Http\Controllers\SaleController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\ValuationController;
@@ -90,6 +93,8 @@ Route::middleware('auth')->group(function () {
         Route::post('/projects/{id}/phases', [ProjectPhaseController::class, 'store'])->name('projects.phases.store');
         Route::post('/projects/{id}/phases/{phaseId}/retention/release', [ProjectPhaseController::class, 'releaseRetention'])->name('projects.phases.retention.release');
         Route::post('/projects/{id}/phases/{phaseId}/retention/forfeit', [ProjectPhaseController::class, 'forfeitRetention'])->name('projects.phases.retention.forfeit');
+        Route::post('/projects/{id}/compliance', [ProjectComplianceController::class, 'store'])->name('projects.compliance.store');
+        Route::delete('/projects/{id}/compliance/{itemId}', [ProjectComplianceController::class, 'destroy'])->name('projects.compliance.destroy');
     });
 
     Route::post('/boq/revisions', [BOQRevisionController::class, 'store'])->name('boq.revisions.store');
@@ -130,6 +135,16 @@ Route::middleware('auth')->group(function () {
     Route::post('/approvals/steps/{id}/resolve', [ApprovalController::class, 'resolve'])->name('approvals.resolve');
 
     Route::get('/finance', [HubController::class, 'finance'])->name('finance.hub');
+    Route::get('/sales', [SaleController::class, 'index'])->name('sales.index');
+    Route::get('/sales/{id}', [SaleController::class, 'show'])->name('sales.show');
+    Route::post('/sales/{id}/convert-receivable', [SaleController::class, 'convert'])->name('sales.convert');
+    Route::post('/sales/{id}/collect', [SaleController::class, 'collect'])->name('sales.collect');
+    Route::get('/invoices', [InvoiceController::class, 'index'])->name('invoices.index');
+    Route::post('/invoices', [InvoiceController::class, 'store'])->name('invoices.store');
+    Route::post('/invoices/{id}/issue', [InvoiceController::class, 'issue'])->whereNumber('id')->name('invoices.issue');
+    Route::post('/invoices/{id}/payments', [InvoiceController::class, 'recordPayment'])->whereNumber('id')->name('invoices.payments.store');
+    Route::post('/invoices/{id}/signatures', [InvoiceController::class, 'storeSignature'])->whereNumber('id')->name('invoices.signatures.store');
+    Route::get('/invoices/{id}/pdf', [InvoiceController::class, 'pdf'])->whereNumber('id')->name('invoices.pdf');
     Route::get('/finance/overview', [FinanceController::class, 'overview'])->name('finance.overview');
     Route::get('/finance/accounts', [MoneyAccountController::class, 'index'])->name('finance.accounts');
     Route::post('/finance/accounts', [MoneyAccountController::class, 'store'])->name('finance.accounts.store');
@@ -168,6 +183,9 @@ Route::middleware('auth')->group(function () {
     Route::post('/procurement/suppliers', [SupplierController::class, 'store'])->name('procurement.suppliers.store');
     Route::get('/procurement/purchase-orders', [PurchaseOrderController::class, 'index'])->name('procurement.purchase-orders.index');
     Route::post('/procurement/purchase-orders', [PurchaseOrderController::class, 'store'])->name('procurement.purchase-orders.store');
+    Route::post('/procurement/purchase-orders/{id}/payments', [PurchaseOrderController::class, 'recordPayment'])
+        ->whereNumber('id')
+        ->name('procurement.purchase-orders.payments.store');
     Route::get('/procurement/goods-receipts', [GoodsReceiptController::class, 'index'])->name('procurement.goods-receipts.index');
     Route::post('/procurement/goods-receipts', [GoodsReceiptController::class, 'store'])->name('procurement.goods-receipts.store');
 

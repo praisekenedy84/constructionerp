@@ -82,12 +82,12 @@ export default function Accounts() {
             <div className="space-y-6">
                 <PageHeader
                     title="Accounts"
-                    description="Manager accounts hold source funds (bank, cash, etc.). The Finance Wallet receives approved transfers and pays project or company expenses."
+                    description="Company accounts hold source funds (bank, cash, etc.). The Finance Wallet receives approved transfers and pays project or company expenses."
                     actions={
                         can_manage ? (
                             <Button onClick={() => setCreateOpen(true)}>
                                 <Plus className="mr-2 h-4 w-4" />
-                                New manager account
+                                New company account
                             </Button>
                         ) : undefined
                     }
@@ -122,10 +122,10 @@ export default function Accounts() {
                     </DataPanel>
                 )}
 
-                <DataPanel title={`Manager accounts (${managerAccounts.length})`} noPadding>
+                <DataPanel title={`Company accounts (${managerAccounts.length})`} noPadding>
                     {managerAccounts.length === 0 ? (
                         <p className="px-6 py-12 text-center text-sm text-slate-500">
-                            No manager accounts yet. Create one (e.g. “Main Bank”) to record deposits.
+                            No company accounts yet. Create one (e.g. “Main Bank”) to record deposits.
                         </p>
                     ) : (
                         <div className="overflow-x-auto">
@@ -193,7 +193,7 @@ export default function Accounts() {
                             closeCreate();
                         }
                     }}
-                    title="New manager account"
+                    title="New company account"
                     description="Create a custom source account such as a bank account or petty cash."
                 >
                     <form onSubmit={submitCreate} className="space-y-4">
@@ -237,7 +237,7 @@ export default function Accounts() {
                         }
                     }}
                     title={`Deposit — ${depositAccount.name}`}
-                    description="Record money into this manager account. No attachment required."
+                    description="Record money into this company account. No attachment required."
                 >
                     <form onSubmit={submitDeposit} className="space-y-4">
                         <div className="space-y-2">

@@ -434,9 +434,9 @@ export default function InvoiceIndex() {
                     {customer && (
                         <div className="grid gap-3 rounded-lg border border-slate-200 p-4 sm:grid-cols-4 dark:border-slate-700">
                             <Info label="Customer" value={customer.name} />
-                            <Info label="Contact" value={customer.contact} />
-                            <Info label="Address" value={customer.address} />
-                            <Info label="Tax Information" value={customer.tax_information} />
+                            <Info label="Phone" value={customer.contact} />
+                            <Info label="Location" value={customer.address} />
+                            <Info label="TIN" value={customer.tax_information} />
                         </div>
                     )}
 

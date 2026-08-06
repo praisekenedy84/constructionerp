@@ -5,27 +5,37 @@ namespace App\Services;
 use App\Enums\AttendanceStatus;
 use App\Enums\BudgetTransactionType;
 use App\Enums\ExpenseCategory;
+use App\Enums\FulfillmentType;
 use App\Enums\PaymentMethod;
 use App\Enums\PayrollDeductionType;
 use App\Enums\PayrollRunStatus;
 use App\Enums\PayStructure;
+use App\Enums\RequisitionAddressedTo;
+use App\Enums\RequisitionStatus;
+use App\Exceptions\InsufficientCashException;
 use App\Models\Advance;
 use App\Models\Attendance;
 use App\Models\BudgetTransaction;
+use App\Models\Department;
 use App\Models\Employee;
 use App\Models\Expense;
 use App\Models\PayrollDeduction;
 use App\Models\PayrollItem;
 use App\Models\PayrollRun;
 use App\Models\Project;
+use App\Models\Requisition;
+use App\Models\RequisitionCategory;
 use App\Models\User;
 use App\Support\OrganizationFundUse;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class PayrollService
 {
     public function __construct(
         private readonly ExpenseService $expenseService,
+        private readonly RequisitionService $requisitionService,
+        private readonly MoneyAccountService $moneyAccountService,
     ) {}
 
     /**
@@ -58,24 +68,284 @@ class PayrollService
         ];
     }
 
-    public function post(PayrollRun $run, User $actor): PayrollRun
+    /**
+     * Submit a draft payroll run for payment via an administrative cash requisition.
+     * Salaries hit overhead only when that requisition is fulfilled.
+     */
+    public function submitForPayment(PayrollRun $run, User $actor): PayrollRun
     {
         return DB::transaction(function () use ($run, $actor) {
             $run = PayrollRun::lockForUpdate()
-                ->with(['items', 'project:id,code,name'])
+                ->with(['items.employee', 'project:id,code,name'])
                 ->findOrFail($run->id);
 
             if ($run->status === PayrollRunStatus::Posted) {
                 throw new \InvalidArgumentException('Payroll run has already been posted.');
             }
 
-            $this->recordSalariesOverheadExpense($run, $actor);
+            if ($run->status === PayrollRunStatus::Approved && $run->requisition_id) {
+                throw new \InvalidArgumentException('Payroll run already has a payment requisition.');
+            }
+
+            if ($run->items->isEmpty()) {
+                throw ValidationException::withMessages([
+                    'payroll' => 'Payroll run has no employees to pay.',
+                ]);
+            }
+
+            $totalNetPay = '0';
+            foreach ($run->items as $item) {
+                $totalNetPay = bcadd($totalNetPay, (string) $item->net_pay, 2);
+            }
+
+            if (bccomp($totalNetPay, '0', 2) <= 0) {
+                throw ValidationException::withMessages([
+                    'payroll' => 'Total net pay must be greater than zero.',
+                ]);
+            }
+
+            $available = $this->moneyAccountService->financeBalance();
+            if (bccomp($available, $totalNetPay, 2) < 0) {
+                throw new InsufficientCashException(
+                    $totalNetPay,
+                    $available,
+                    'Fund the Finance Wallet before submitting payroll for payment.',
+                    'Finance Wallet',
+                );
+            }
+
+            $category = $this->ensureSalariesCategory();
+            $department = $this->ensurePayrollDepartment();
+            $periodStart = $run->period_start?->toDateString() ?? (string) $run->period_start;
+            $periodEnd = $run->period_end?->toDateString() ?? (string) $run->period_end;
+            $projectLabel = $run->project
+                ? "{$run->project->code} — {$run->project->name}"
+                : "project #{$run->project_id}";
+
+            $items = [];
+            $recipients = [];
+
+            foreach ($run->items as $item) {
+                $employee = $item->employee;
+                $name = $employee?->name ?? 'Employee';
+                $netPay = bcadd((string) $item->net_pay, '0', 2);
+
+                if (bccomp($netPay, '0', 2) <= 0) {
+                    continue;
+                }
+
+                $items[] = [
+                    'requisition_category_id' => $category->id,
+                    'recipient_name' => $name,
+                    'description' => "Salary — {$name} ({$periodStart} to {$periodEnd})",
+                    'unit' => 'person',
+                    'quantity' => '1',
+                    'unit_cost' => $netPay,
+                    'details' => [
+                        'payroll_run_id' => $run->id,
+                        'payroll_item_id' => $item->id,
+                        'employee_id' => $item->employee_id,
+                    ],
+                ];
+
+                $recipients[] = [
+                    'name' => $name,
+                    'position_name' => $employee?->role,
+                ];
+            }
+
+            if ($items === []) {
+                throw ValidationException::withMessages([
+                    'payroll' => 'No payable employees on this run.',
+                ]);
+            }
+
+            $requisition = $this->requisitionService->create([
+                'project_id' => null,
+                'department' => $department->name,
+                'department_id' => $department->id,
+                'requisition_category_id' => $category->id,
+                'requisition_category_ids' => [$category->id],
+                'requestor_id' => $actor->id,
+                'fulfillment_type' => FulfillmentType::CashDisbursement,
+                'addressed_to' => RequisitionAddressedTo::Finance,
+                'items' => $items,
+                'recipients' => $recipients,
+            ]);
+
+            $requisition = $this->requisitionService->transition(
+                $requisition,
+                RequisitionStatus::UnderReview->value,
+                $actor,
+                ['comment' => "Payroll run #{$run->id} ({$projectLabel})"],
+            );
+
+            $run->update([
+                'status' => PayrollRunStatus::Approved,
+                'requisition_id' => $requisition->id,
+            ]);
+
+            return $run->fresh(['items', 'requisition']);
+        });
+    }
+
+    /**
+     * Legacy alias: posting now routes through an administrative requisition.
+     */
+    public function post(PayrollRun $run, User $actor): PayrollRun
+    {
+        return $this->submitForPayment($run, $actor);
+    }
+
+    /**
+     * Called when the linked administrative requisition is fulfilled.
+     * Cash / expense already recorded by requisition fulfillment.
+     */
+    public function markPostedFromRequisition(PayrollRun $run): void
+    {
+        $run = PayrollRun::lockForUpdate()->with('items')->findOrFail($run->id);
+
+        if ($run->status === PayrollRunStatus::Posted) {
             $this->removeLegacyPayrollBudgetTransactions($run);
 
-            $run->update(['status' => PayrollRunStatus::Posted]);
+            return;
+        }
 
-            return $run->fresh(['items']);
-        });
+        $this->removeLegacyPayrollBudgetTransactions($run);
+        $run->update(['status' => PayrollRunStatus::Posted]);
+    }
+
+    /**
+     * After an administrative Salaries requisition is fulfilled without a prior
+     * payroll run, create posted run(s) so payroll module + reports show who was paid.
+     *
+     * @return list<PayrollRun>
+     */
+    public function recordRunsFromFulfilledRequisition(Requisition $requisition, User $actor): array
+    {
+        $requisition->loadMissing(['items', 'payrollRun']);
+
+        if ($requisition->payrollRun) {
+            $this->markPostedFromRequisition($requisition->payrollRun);
+
+            return [$requisition->payrollRun->fresh(['items'])];
+        }
+
+        if (! $this->isSalariesRequisition($requisition)) {
+            return [];
+        }
+
+        $byProject = [];
+
+        foreach ($requisition->items as $item) {
+            $employeeId = (int) ($item->details['employee_id'] ?? 0);
+            if ($employeeId <= 0) {
+                continue;
+            }
+
+            $employee = Employee::query()->find($employeeId);
+            if (! $employee) {
+                continue;
+            }
+
+            $netPay = $item->amountForQuantity((string) $item->quantity);
+            if (bccomp($netPay, '0', 2) <= 0) {
+                continue;
+            }
+
+            $projectId = (int) $employee->project_id;
+            $byProject[$projectId][] = [
+                'employee_id' => $employee->id,
+                'net_pay' => $netPay,
+            ];
+        }
+
+        if ($byProject === []) {
+            return [];
+        }
+
+        $runs = [];
+        $periodEnd = now()->toDateString();
+        $periodStart = now()->startOfMonth()->toDateString();
+
+        foreach ($byProject as $projectId => $lines) {
+            $run = PayrollRun::create([
+                'project_id' => $projectId,
+                'period_start' => $periodStart,
+                'period_end' => $periodEnd,
+                'status' => PayrollRunStatus::Posted,
+                'requisition_id' => $requisition->id,
+            ]);
+
+            foreach ($lines as $line) {
+                PayrollItem::create([
+                    'payroll_run_id' => $run->id,
+                    'employee_id' => $line['employee_id'],
+                    'base' => $line['net_pay'],
+                    'overtime' => '0',
+                    'allowances' => '0',
+                    'deductions_total' => '0',
+                    'net_pay' => $line['net_pay'],
+                    'created_at' => now(),
+                ]);
+            }
+
+            $runs[] = $run->load('items');
+        }
+
+        return $runs;
+    }
+
+    public function isSalariesRequisition(Requisition $requisition): bool
+    {
+        $label = mb_strtolower($requisition->categoryLabel());
+
+        return str_contains($label, mb_strtolower(OrganizationFundUse::SALARIES))
+            || str_contains($label, 'payroll');
+    }
+
+    public function ensureSalariesCategory(): RequisitionCategory
+    {
+        $existing = RequisitionCategory::query()
+            ->whereRaw('LOWER(name) = ?', [mb_strtolower(OrganizationFundUse::SALARIES)])
+            ->first();
+
+        if ($existing) {
+            if (! $existing->is_active) {
+                $existing->update(['is_active' => true]);
+            }
+
+            return $existing;
+        }
+
+        return RequisitionCategory::create([
+            'name' => OrganizationFundUse::SALARIES,
+            'description' => 'Staff payroll / salaries (administrative overhead)',
+            'is_active' => true,
+            'sort_order' => 10,
+        ]);
+    }
+
+    public function ensurePayrollDepartment(): Department
+    {
+        $existing = Department::query()
+            ->whereRaw('LOWER(name) = ?', ['payroll'])
+            ->first();
+
+        if ($existing) {
+            if (! $existing->is_active) {
+                $existing->update(['is_active' => true]);
+            }
+
+            return $existing;
+        }
+
+        return Department::create([
+            'name' => 'Payroll',
+            'description' => 'Staff salary payments',
+            'is_active' => true,
+            'sort_order' => 10,
+        ]);
     }
 
     /**
@@ -102,6 +372,24 @@ class PayrollService
                 $this->removeLegacyPayrollBudgetTransactions($run);
 
                 continue;
+            }
+
+            if ($run->requisition_id) {
+                $reqExpense = Expense::query()
+                    ->where('requisition_id', $run->requisition_id)
+                    ->where('category', ExpenseCategory::Indirect)
+                    ->first();
+
+                if ($reqExpense) {
+                    $reqExpense->update([
+                        'sub_type' => OrganizationFundUse::SALARIES,
+                        'activity_ref' => $ref,
+                    ]);
+                    $this->removeLegacyPayrollBudgetTransactions($run);
+                    $created++;
+
+                    continue;
+                }
             }
 
             DB::transaction(function () use ($run, $actor, &$created) {

@@ -9,6 +9,7 @@ import { formatCurrency, formatQuantity } from '@/lib/formatters';
 import {
     BoqItem,
     Department,
+    Employee,
     FulfillmentType,
     InventoryItem,
     PageProps,
@@ -20,7 +21,7 @@ import {
     RequisitionItem,
 } from '@/types';
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
-import { FormEvent } from 'react';
+import { FormEvent, useState } from 'react';
 
 interface BoqItemOption extends Pick<BoqItem, 'id' | 'description' | 'unit' | 'unit_rate' | 'available_qty'> {
     project_id: number | null;
@@ -33,6 +34,7 @@ interface RequisitionsCreateProps extends PageProps {
     categories: RequisitionCategory[];
     departments: Department[];
     positions: Position[];
+    employees: Employee[];
     requisition?: Requisition;
 }
 
@@ -48,7 +50,9 @@ interface LineItemForm {
     description: string;
     unit: string;
     quantity: string;
+    days: string;
     unit_cost: string;
+    employee_id: string;
 }
 
 let lineKeySeq = 0;
@@ -68,9 +72,25 @@ const emptyLine = (defaults?: Partial<LineItemForm>): LineItemForm => ({
     description: '',
     unit: '',
     quantity: '',
+    days: '',
     unit_cost: '',
+    employee_id: '',
     ...defaults,
 });
+
+function daysFromItem(item: RequisitionItem): string {
+    const raw = item.details?.days;
+    if (raw == null || raw === '') {
+        return '';
+    }
+    const n = parseFloat(String(raw));
+    return Number.isFinite(n) && n > 0 ? String(n) : '';
+}
+
+function employeeIdFromItem(item: RequisitionItem): string {
+    const raw = item.details?.employee_id;
+    return raw != null && raw !== '' ? String(raw) : '';
+}
 
 function lineFromItem(item: RequisitionItem, fallbackCategoryId: string): LineItemForm {
     return {
@@ -85,7 +105,9 @@ function lineFromItem(item: RequisitionItem, fallbackCategoryId: string): LineIt
         description: item.description ?? '',
         unit: item.unit ?? '',
         quantity: item.quantity ?? '',
+        days: daysFromItem(item),
         unit_cost: item.unit_cost ?? '',
+        employee_id: employeeIdFromItem(item),
     };
 }
 
@@ -107,25 +129,47 @@ function fulfillmentOptions(addressedTo: RequisitionAddressedTo): {
     ];
 }
 
+function daysMultiplier(days: string): number {
+    const n = parseFloat(days);
+    return Number.isFinite(n) && n > 0 ? n : 1;
+}
+
 function lineEstimate(item: LineItemForm): number {
-    return (parseFloat(item.quantity) || 0) * (parseFloat(item.unit_cost) || 0);
+    return (
+        (parseFloat(item.quantity) || 0) *
+        (parseFloat(item.unit_cost) || 0) *
+        daysMultiplier(item.days)
+    );
 }
 
 export default function RequisitionsCreate() {
-    const { projects, boqItems, inventoryItems, categories, departments, positions, requisition } =
-        usePage<RequisitionsCreateProps>().props;
+    const {
+        projects,
+        boqItems,
+        inventoryItems,
+        categories,
+        departments,
+        positions,
+        employees = [],
+        requisition,
+    } = usePage<RequisitionsCreateProps>().props;
     const isEditing = Boolean(requisition);
+    const [staffProjectFilter, setStaffProjectFilter] = useState('');
 
     const initialDepartment =
         departments.find((department) => department.id === requisition?.department_id) ??
         departments.find((department) => department.name === requisition?.department) ??
+        departments.find((department) => department.name.toLowerCase() === 'payroll') ??
         departments[0] ??
         null;
+    const salariesCategory =
+        categories.find((category) => category.name.toLowerCase() === 'salaries') ?? null;
     const fallbackCategoryId =
         (requisition?.categories?.[0] && String(requisition.categories[0].id)) ||
         (requisition?.requisition_category_id
             ? String(requisition.requisition_category_id)
             : '') ||
+        (salariesCategory ? String(salariesCategory.id) : '') ||
         (categories[0] ? String(categories[0].id) : '');
     const initialAddressedTo = (requisition?.addressed_to ?? 'finance') as RequisitionAddressedTo;
 
@@ -162,7 +206,11 @@ export default function RequisitionsCreate() {
             description: item.description,
             unit: item.unit || null,
             quantity: item.quantity,
+            days: item.days.trim() || null,
             unit_cost: item.unit_cost,
+            details: item.employee_id
+                ? { employee_id: Number(item.employee_id) }
+                : undefined,
         })),
     }));
 
@@ -172,6 +220,54 @@ export default function RequisitionsCreate() {
     );
     const selectedBoq = projectBoqItems.find((b) => String(b.id) === data.boq_item_id);
     const availableFulfillments = fulfillmentOptions(data.addressed_to);
+
+    function staffPayAmount(employee: Employee): string {
+        if (employee.pay_structure === 'daily') {
+            return employee.daily_rate ?? '0';
+        }
+
+        return employee.monthly_salary ?? '0';
+    }
+
+    function loadStaffPayrollLines() {
+        const salariesId = salariesCategory
+            ? String(salariesCategory.id)
+            : fallbackCategoryId;
+        const filtered = employees.filter(
+            (employee) =>
+                !staffProjectFilter || String(employee.project_id) === staffProjectFilter,
+        );
+
+        if (filtered.length === 0) {
+            return;
+        }
+
+        const payrollDept = departments.find((d) => d.name.toLowerCase() === 'payroll');
+        const lines = filtered.map((employee) =>
+            emptyLine({
+                requisition_category_id: salariesId,
+                recipient_name: employee.name,
+                description: `Salary — ${employee.name} (${employee.employee_no})`,
+                unit: 'person',
+                quantity: '1',
+                unit_cost: staffPayAmount(employee),
+                employee_id: String(employee.id),
+            }),
+        );
+
+        setData({
+            ...data,
+            scope: 'organization',
+            project_id: '',
+            boq_item_id: '',
+            department_id: payrollDept
+                ? String(payrollDept.id)
+                : data.department_id,
+            addressed_to: 'finance',
+            fulfillment_type: 'cash_disbursement',
+            items: lines,
+        });
+    }
 
     function submit(e: FormEvent) {
         e.preventDefault();
@@ -434,14 +530,44 @@ export default function RequisitionsCreate() {
                     <DataPanel
                         title="Request Lines"
                         actions={
-                            <Button type="button" variant="outline" size="sm" onClick={addLine}>
-                                Add another line
-                            </Button>
+                            <div className="flex flex-wrap items-center gap-2">
+                                {isOrganization && employees.length > 0 && (
+                                    <>
+                                        <select
+                                            className="flex h-8 rounded-md border border-slate-200 px-2 text-xs"
+                                            value={staffProjectFilter}
+                                            onChange={(e) => setStaffProjectFilter(e.target.value)}
+                                            aria-label="Filter staff by project"
+                                        >
+                                            <option value="">All staff</option>
+                                            {projects.map((project) => (
+                                                <option key={project.id} value={project.id}>
+                                                    {project.code}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={loadStaffPayrollLines}
+                                        >
+                                            Load staff (payroll)
+                                        </Button>
+                                    </>
+                                )}
+                                <Button type="button" variant="outline" size="sm" onClick={addLine}>
+                                    Add another line
+                                </Button>
+                            </div>
                         }
                     >
                         <p className="mb-4 text-sm text-slate-500">
-                            Each line has its own category and optional recipient. New lines copy
-                            the previous line&apos;s category and recipient.
+                            Each line has its own category and optional recipient. For administrative
+                            payroll, use <span className="font-medium">Load staff (payroll)</span> to
+                            fill lines with staff and their pay amounts — fulfillment posts as
+                            Salaries overhead and appears in the Payroll module/report.
+                            Days is optional when unit cost is a daily rate.
                         </p>
                         <div className="space-y-4">
                             {data.items.map((item, index) => (
@@ -585,8 +711,8 @@ export default function RequisitionsCreate() {
                                         </div>
                                     )}
 
-                                    <div className="grid gap-3 sm:grid-cols-6">
-                                        <div className="space-y-2 sm:col-span-3">
+                                    <div className="grid gap-3 sm:grid-cols-12">
+                                        <div className="space-y-2 sm:col-span-4">
                                             <Label>Description</Label>
                                             <Input
                                                 placeholder="What is needed"
@@ -597,7 +723,7 @@ export default function RequisitionsCreate() {
                                                 required
                                             />
                                         </div>
-                                        <div className="space-y-2">
+                                        <div className="space-y-2 sm:col-span-2">
                                             <Label>Unit</Label>
                                             <Input
                                                 placeholder="bag, L, pcs, day"
@@ -607,7 +733,7 @@ export default function RequisitionsCreate() {
                                                 }
                                             />
                                         </div>
-                                        <div className="space-y-2">
+                                        <div className="space-y-2 sm:col-span-2">
                                             <Label>Qty</Label>
                                             <Input
                                                 type="number"
@@ -619,7 +745,20 @@ export default function RequisitionsCreate() {
                                                 required
                                             />
                                         </div>
-                                        <div className="space-y-2">
+                                        <div className="space-y-2 sm:col-span-2">
+                                            <Label>Days (optional)</Label>
+                                            <Input
+                                                type="number"
+                                                step="0.001"
+                                                min="0"
+                                                placeholder="e.g. 3"
+                                                value={item.days}
+                                                onChange={(e) =>
+                                                    updateLine(index, 'days', e.target.value)
+                                                }
+                                            />
+                                        </div>
+                                        <div className="space-y-2 sm:col-span-2">
                                             <Label>Unit cost</Label>
                                             <AmountInput
                                                 value={item.unit_cost}
@@ -629,11 +768,22 @@ export default function RequisitionsCreate() {
                                                 required
                                             />
                                         </div>
-                                        <div className="space-y-2 sm:col-span-6">
+                                        <div className="space-y-2 sm:col-span-12">
                                             <Label>Estimated line cost</Label>
                                             <p className="flex h-10 items-center rounded-md border border-slate-100 bg-slate-50 px-3 text-sm font-medium text-slate-900">
                                                 {formatCurrency(lineEstimate(item))}
                                             </p>
+                                            {item.days.trim() && daysMultiplier(item.days) > 0 && (
+                                                <p className="text-xs text-slate-500">
+                                                    Qty × unit cost × {daysMultiplier(item.days)}{' '}
+                                                    days
+                                                </p>
+                                            )}
+                                            {errors[`items.${index}.days`] && (
+                                                <p className="text-sm text-red-600">
+                                                    {errors[`items.${index}.days`]}
+                                                </p>
+                                            )}
                                         </div>
                                     </div>
                                 </div>

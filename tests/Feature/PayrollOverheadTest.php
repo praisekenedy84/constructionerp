@@ -3,20 +3,21 @@
 namespace Tests\Feature;
 
 use App\Enums\BudgetTransactionType;
-use App\Enums\CashAllocationStatus;
 use App\Enums\ExpenseCategory;
 use App\Enums\PayrollRunStatus;
 use App\Enums\PayStructure;
+use App\Enums\RequisitionStatus;
 use App\Models\BudgetTransaction;
-use App\Models\CashAllocation;
 use App\Models\CashDisbursement;
 use App\Models\Employee;
 use App\Models\Expense;
 use App\Models\PayrollItem;
 use App\Models\PayrollRun;
 use App\Models\Project;
+use App\Models\Requisition;
 use App\Models\Tenant;
 use App\Services\AuthService;
+use App\Services\MoneyAccountService;
 use App\Services\PayrollService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -64,7 +65,14 @@ class PayrollOverheadTest extends TestCase
         return compact('tenant', 'admin', 'project');
     }
 
-    public function test_posting_payroll_creates_salaries_overhead_expense(): void
+    private function fundFinanceWallet(string $balance = '1000000.00'): void
+    {
+        app(MoneyAccountService::class)
+            ->ensureFinanceAccount()
+            ->update(['balance' => $balance]);
+    }
+
+    public function test_submitting_payroll_creates_requisition_and_fulfillment_posts_salaries_overhead(): void
     {
         ['project' => $project] = $this->setupTenant();
 
@@ -73,18 +81,8 @@ class PayrollOverheadTest extends TestCase
             'password' => 'password',
         ]);
 
-        CashAllocation::create([
-            'project_id' => null,
-            'requested_amount' => '1000000.00',
-            'received_amount' => '1000000.00',
-            'utilized_amount' => '0.00',
-            'status' => CashAllocationStatus::Received,
-            'requested_by' => 1,
-            'approved_by' => 1,
-            'requested_at' => now(),
-            'received_at' => now(),
-            'decided_at' => now(),
-        ]);
+        tenancy()->initialize(Tenant::where('slug', 'payroll-co')->firstOrFail());
+        $this->fundFinanceWallet('1000000.00');
 
         $employee = Employee::create([
             'employee_no' => 'E-001',
@@ -112,9 +110,44 @@ class PayrollOverheadTest extends TestCase
             'net_pay' => '500000',
             'created_at' => now(),
         ]);
+        tenancy()->end();
 
         $this->post("/payroll/{$run->id}/post")
             ->assertRedirect(route('payroll.runs.show', $run->id));
+
+        tenancy()->initialize(Tenant::where('slug', 'payroll-co')->firstOrFail());
+
+        $run->refresh();
+        $this->assertSame(PayrollRunStatus::Approved, $run->status);
+        $this->assertNotNull($run->requisition_id);
+
+        $requisition = Requisition::with('items', 'approvalSteps')->findOrFail($run->requisition_id);
+        $this->assertNull($requisition->project_id);
+        $this->assertSame(1, $requisition->items()->count());
+        $this->assertSame('Worker One', $requisition->items->first()->recipient_name);
+        $this->assertSame(0, Expense::count());
+
+        // Seeded workflow may leave the req under review — resolve approval when needed.
+        if ($requisition->status === RequisitionStatus::UnderReview) {
+            $step = $requisition->approvalSteps()->where('status', 'pending')->first();
+            $this->assertNotNull($step);
+            $this->post("/approvals/steps/{$step->id}/resolve", [
+                'action' => 'approved',
+            ])->assertRedirect();
+            $requisition->refresh();
+        }
+
+        $this->assertSame(RequisitionStatus::Approved, $requisition->status);
+
+        $this->post("/requisitions/{$requisition->id}/transition", [
+            'to_status' => 'fulfilled',
+            'payee' => 'Payroll',
+            'reference_no' => 'PAY-1',
+            'method' => 'bank',
+        ])->assertRedirect();
+
+        $run->refresh();
+        $this->assertSame(PayrollRunStatus::Posted, $run->status);
 
         $this->assertDatabaseHas('expenses', [
             'category' => ExpenseCategory::Indirect->value,
@@ -125,7 +158,6 @@ class PayrollOverheadTest extends TestCase
 
         $this->assertSame(0, BudgetTransaction::where('type', BudgetTransactionType::Payroll)->count());
         $this->assertSame(1, CashDisbursement::count());
-        $this->assertSame('500000.00', (string) CashAllocation::first()->utilized_amount);
 
         $this->get('/finance/overhead')
             ->assertOk()
@@ -134,11 +166,12 @@ class PayrollOverheadTest extends TestCase
                 ->has('expenses.data', 1)
                 ->where('expenses.data.0.sub_type', 'Salaries')
                 ->where('total_overhead', '500000.00')
-                ->where('organization_cash.cash_on_hand', '500000.00')
             );
+
+        tenancy()->end();
     }
 
-    public function test_posting_payroll_requires_organization_cash(): void
+    public function test_submitting_payroll_requires_organization_cash(): void
     {
         ['project' => $project] = $this->setupTenant();
 
@@ -146,6 +179,9 @@ class PayrollOverheadTest extends TestCase
             'email' => 'finance@payroll.local',
             'password' => 'password',
         ]);
+
+        tenancy()->initialize(Tenant::where('slug', 'payroll-co')->firstOrFail());
+        $this->fundFinanceWallet('0.00');
 
         $employee = Employee::create([
             'employee_no' => 'E-010',
@@ -173,6 +209,7 @@ class PayrollOverheadTest extends TestCase
             'net_pay' => '100000',
             'created_at' => now(),
         ]);
+        tenancy()->end();
 
         $this->post("/payroll/{$run->id}/post")
             ->assertRedirect()
@@ -180,6 +217,7 @@ class PayrollOverheadTest extends TestCase
 
         $this->assertSame(PayrollRunStatus::Draft, $run->fresh()->status);
         $this->assertSame(0, Expense::count());
+        $this->assertSame(0, Requisition::count());
     }
 
     public function test_overhead_page_backfills_legacy_payroll_budget_posts(): void
@@ -247,7 +285,6 @@ class PayrollOverheadTest extends TestCase
                 ->exists()
         );
 
-        // Idempotent — second visit does not duplicate.
         $this->get('/finance/overhead')->assertOk();
         $this->assertSame(1, Expense::where('sub_type', 'Salaries')->count());
     }

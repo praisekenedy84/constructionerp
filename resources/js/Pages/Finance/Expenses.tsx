@@ -254,11 +254,11 @@ export default function Expenses() {
                 <ListToolbar
                     baseUrl="/finance/expenses"
                     filters={{ ...filters, sub_type: activeSubType }}
-                    searchPlaceholder="Search description, purpose, project, requisition, recorder…"
+                    searchPlaceholder="Search description, category, project, requisition, recorder…"
                     sortOptions={[
                         { value: 'expense_date', label: 'Expense date' },
                         { value: 'amount', label: 'Amount' },
-                        { value: 'sub_type', label: 'Purpose' },
+                        { value: 'sub_type', label: 'Category' },
                         { value: 'created_at', label: 'Date created' },
                     ]}
                     selectFilters={[
@@ -289,8 +289,8 @@ export default function Expenses() {
                             ? [
                                   {
                                       key: 'sub_type',
-                                      label: 'Purpose',
-                                      emptyLabel: 'All purposes',
+                                      label: 'Category',
+                                      emptyLabel: 'All categories',
                                       options: filterOptions.sub_types.map((type) => ({
                                           value: type,
                                           label: type,
@@ -321,7 +321,7 @@ export default function Expenses() {
                                 <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs text-slate-500">
                                     <th className="px-4 py-3 font-medium">Date</th>
                                     <th className="px-4 py-3 font-medium">Project</th>
-                                    <th className="px-4 py-3 font-medium">Purpose</th>
+                                    <th className="px-4 py-3 font-medium">Category</th>
                                     <th className="px-4 py-3 font-medium">Details</th>
                                     <th className="px-4 py-3 font-medium">Source</th>
                                     <th className="px-4 py-3 font-medium">Payment</th>

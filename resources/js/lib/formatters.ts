@@ -12,6 +12,8 @@ export function formatCurrency(amount: number | string | null | undefined, curre
     return new Intl.NumberFormat('en-TZ', {
         style: 'currency',
         currency,
+        // Match app-wide "TZS" labels; default symbol ("TSh") looks inconsistent.
+        currencyDisplay: 'code',
         minimumFractionDigits: 0,
         maximumFractionDigits: 2,
     }).format(value);

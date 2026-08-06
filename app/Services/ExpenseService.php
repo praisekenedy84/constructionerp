@@ -11,6 +11,7 @@ use App\Models\CashDisbursement;
 use App\Models\BudgetTransaction;
 use App\Models\Expense;
 use App\Models\Project;
+use App\Models\RequisitionCategory;
 use App\Models\User;
 use App\Support\ListingQuery;
 use App\Support\OrganizationFundUse;
@@ -349,7 +350,14 @@ class ExpenseService
 
         $subType = $request->input('sub_type') ?: $request->input('category');
         if (filled($subType)) {
-            $query->where('sub_type', $subType);
+            $needle = (string) $subType;
+            // Requisition expenses store comma-joined category names in sub_type.
+            $query->where(function (Builder $q) use ($needle) {
+                $q->where('sub_type', $needle)
+                    ->orWhere('sub_type', 'like', $needle.', %')
+                    ->orWhere('sub_type', 'like', '%, '.$needle.', %')
+                    ->orWhere('sub_type', 'like', '%, '.$needle);
+            });
         }
 
         if ($request->filled('recorded_by')) {
@@ -427,28 +435,35 @@ class ExpenseService
      */
     public function filterOptions(ExpenseCategory $category): array
     {
-        $subTypes = Expense::query()
+        $tokens = Expense::query()
             ->where('category', $category)
             ->whereNotNull('sub_type')
             ->where('sub_type', '!=', '')
             ->distinct()
-            ->orderBy('sub_type')
             ->pluck('sub_type')
-            ->all();
+            ->flatMap(fn (string $value) => preg_split('/\s*,\s*/', $value) ?: [])
+            ->map(fn (string $value) => trim($value))
+            ->filter();
 
         if ($category === ExpenseCategory::Indirect) {
-            $subTypes = collect([...OrganizationFundUse::subtypes(), ...$subTypes])
-                ->unique()
-                ->sort()
-                ->values()
-                ->all();
+            $tokens = $tokens->merge(OrganizationFundUse::subtypes());
+        } else {
+            $tokens = $tokens->merge(
+                RequisitionCategory::query()->ordered()->pluck('name'),
+            );
         }
+
+        $subTypes = $tokens
+            ->unique()
+            ->sort()
+            ->values()
+            ->all();
 
         return [
             'projects' => $category === ExpenseCategory::Direct
                 ? Project::query()->orderBy('name')->get(['id', 'code', 'name'])->all()
                 : [],
-            'sub_types' => array_values($subTypes),
+            'sub_types' => $subTypes,
             'recorders' => User::query()
                 ->whereIn('id', Expense::query()->where('category', $category)->select('recorded_by'))
                 ->orderBy('name')

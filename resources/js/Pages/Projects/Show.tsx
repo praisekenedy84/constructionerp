@@ -224,7 +224,17 @@ export default function ProjectsShow() {
             <div className="space-y-6">
                 <PageHeader
                     title={project.name}
-                    description={`${project.code} · ${project.client} · ${project.location}`}
+                    description={[
+                        project.code,
+                        project.client,
+                        project.customer?.contact,
+                        project.customer?.tax_information
+                            ? `TIN ${project.customer.tax_information}`
+                            : null,
+                        project.location,
+                    ]
+                        .filter(Boolean)
+                        .join(' · ')}
                     actions={
                         <div className="flex flex-wrap items-center gap-2">
                             {canUpdate && (

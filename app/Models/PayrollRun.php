@@ -18,6 +18,7 @@ class PayrollRun extends Model
         'period_start',
         'period_end',
         'status',
+        'requisition_id',
     ];
 
     protected function casts(): array
@@ -32,6 +33,11 @@ class PayrollRun extends Model
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class);
+    }
+
+    public function requisition(): BelongsTo
+    {
+        return $this->belongsTo(Requisition::class);
     }
 
     public function items(): HasMany

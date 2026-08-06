@@ -52,9 +52,9 @@
             <td>
                 <div class="label">Bill To</div>
                 <div class="value">{{ $invoice->customer->name }}</div>
-                @if($invoice->customer->contact)<div>{{ $invoice->customer->contact }}</div>@endif
-                @if($invoice->customer->address)<div>{{ $invoice->customer->address }}</div>@endif
-                @if($invoice->customer->tax_information)<div>Tax: {{ $invoice->customer->tax_information }}</div>@endif
+                @if($invoice->customer->contact)<div>Phone: {{ $invoice->customer->contact }}</div>@endif
+                @if($invoice->customer->tax_information)<div>TIN: {{ $invoice->customer->tax_information }}</div>@endif
+                @if($invoice->customer->address)<div>Location: {{ $invoice->customer->address }}</div>@endif
             </td>
             <td>
                 <div class="label">Invoice Number</div>
@@ -69,6 +69,9 @@
 
     <div class="label">Project</div>
     <div class="value">{{ $invoice->project->name }} ({{ $invoice->project->code }})</div>
+    @if($invoice->project->location)
+        <div class="muted" style="margin-bottom: 10px;">{{ $invoice->project->location }}</div>
+    @endif
     <div class="label">Phase</div>
     <div class="value">{{ $invoice->phase->name }}</div>
     @if($invoice->description)

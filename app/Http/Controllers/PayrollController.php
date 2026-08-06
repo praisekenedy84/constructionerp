@@ -97,7 +97,7 @@ class PayrollController extends Controller
         $this->authorizePermission($request->user(), 'payroll', 'read');
 
         $run = PayrollRun::query()
-            ->with(['project:id,code,name', 'items.employee'])
+            ->with(['project:id,code,name', 'items.employee', 'requisition:id,requisition_no,status'])
             ->withCount('items')
             ->withSum('items', 'net_pay')
             ->findOrFail($id);
@@ -173,13 +173,24 @@ class PayrollController extends Controller
         $run = PayrollRun::findOrFail($id);
 
         try {
-            $this->payrollService->post($run, $request->user());
+            $run = $this->payrollService->submitForPayment($run, $request->user());
         } catch (\App\Exceptions\InsufficientCashException $e) {
             return back()->with('error', $e->getMessage());
+        } catch (\InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return back()->withErrors($e->errors());
         }
+
+        $requisitionId = $run->requisition_id;
 
         return redirect()
             ->route('payroll.runs.show', $run->id)
-            ->with('success', 'Payroll posted. Salaries paid from administrative cash on hand.');
+            ->with(
+                'success',
+                $requisitionId
+                    ? "Payroll submitted for payment via requisition. Approve and fulfill the requisition to pay salaries (overhead)."
+                    : 'Payroll submitted for payment.'
+            );
     }
 }

@@ -52,6 +52,40 @@ class RequisitionItem extends Model
             || $this->original_line_total !== null;
     }
 
+    /**
+     * Optional duration multiplier stored in details.days.
+     * Returns null when the line does not use days.
+     */
+    public function days(): ?string
+    {
+        $days = $this->details['days'] ?? null;
+        if ($days === null || $days === '') {
+            return null;
+        }
+
+        $normalized = bcadd((string) $days, '0', 3);
+
+        return bccomp($normalized, '0', 3) === 1 ? $normalized : null;
+    }
+
+    /**
+     * Multiplier for money calculations: days when set, otherwise 1.
+     */
+    public function daysMultiplier(): string
+    {
+        return $this->days() ?? '1';
+    }
+
+    /**
+     * Amount for a fulfilled (or remaining) quantity, including optional days.
+     */
+    public function amountForQuantity(string $quantity): string
+    {
+        $base = bcmul(bcadd($quantity, '0', 3), (string) $this->unit_cost, 4);
+
+        return bcmul($base, $this->daysMultiplier(), 2);
+    }
+
     public function requisition(): BelongsTo
     {
         return $this->belongsTo(Requisition::class);

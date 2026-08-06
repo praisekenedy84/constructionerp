@@ -455,4 +455,55 @@ class FlexibleRequisitionTest extends TestCase
             $this->assertSame(sprintf('REQ-%d-00007', $year), $created->requisition_no);
         });
     }
+
+    public function test_optional_days_multiplies_line_total(): void
+    {
+        $this->seedTenant();
+
+        $this->post('/login', [
+            'email' => 'engineer@flexible.local',
+            'password' => 'password',
+        ])->assertRedirect();
+
+        $this->post('/requisitions', [
+            'project_id' => 1,
+            'department' => 'Plant',
+            'fulfillment_type' => 'cash_disbursement',
+            'addressed_to' => 'finance',
+            'items' => [
+                [
+                    'description' => 'Excavator hire',
+                    'unit' => 'machine',
+                    'quantity' => '1',
+                    'days' => '3',
+                    'unit_cost' => '800000',
+                ],
+                [
+                    'description' => 'Diesel drums',
+                    'unit' => 'drum',
+                    'quantity' => '2',
+                    'unit_cost' => '150000',
+                ],
+            ],
+        ])->assertRedirect();
+
+        $tenant = Tenant::where('slug', 'flexible-req-co')->firstOrFail();
+        $tenant->run(function () {
+            $req = Requisition::with('items')->firstOrFail();
+            // 1 × 800000 × 3 days + 2 × 150000 = 2,700,000
+            $this->assertSame('2700000.00', (string) $req->original_amount);
+
+            $hire = $req->items->firstWhere('description', 'Excavator hire');
+            $this->assertNotNull($hire);
+            $this->assertSame('2400000.00', (string) $hire->line_total);
+            $this->assertSame('3.000', $hire->days());
+            $this->assertSame(['days' => '3.000'], $hire->details);
+
+            $diesel = $req->items->firstWhere('description', 'Diesel drums');
+            $this->assertNotNull($diesel);
+            $this->assertSame('300000.00', (string) $diesel->line_total);
+            $this->assertNull($diesel->days());
+            $this->assertNull($diesel->details);
+        });
+    }
 }

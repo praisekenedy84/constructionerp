@@ -138,7 +138,7 @@ export default function RequisitionsReview() {
                 <ListToolbar
                     baseUrl="/requisitions/review-queue"
                     filters={filters}
-                    searchPlaceholder="Search requisition no, role, project…"
+                    searchPlaceholder="Search requisition no, role, project code…"
                     sortOptions={[
                         { value: 'assigned_at', label: 'Assigned date' },
                         { value: 'level', label: 'Level' },
@@ -171,8 +171,14 @@ export default function RequisitionsReview() {
                                                         {step.requisition?.requisition_no}
                                                     </p>
                                                     <p className="text-xs text-slate-500">
-                                                        {step.requisition?.project?.name} ·{' '}
-                                                        {step.required_role}
+                                                        <span className="font-mono">
+                                                            {step.requisition?.project?.code ??
+                                                                'ADM'}
+                                                        </span>
+                                                        {step.requisition?.project?.name
+                                                            ? ` · ${step.requisition.project.name}`
+                                                            : ' · Administrative'}{' '}
+                                                        · {step.required_role}
                                                     </p>
                                                     <p className="text-xs text-slate-600">
                                                         From:{' '}
@@ -217,6 +223,23 @@ export default function RequisitionsReview() {
                                         </LinkButton>
                                     </div>
                                     <dl className="mb-4 grid gap-3 sm:grid-cols-2">
+                                        <div>
+                                            <dt className="text-xs text-slate-500">
+                                                Requisition number
+                                            </dt>
+                                            <dd className="font-mono text-sm font-medium text-slate-900">
+                                                {requisition.requisition_no}
+                                            </dd>
+                                        </div>
+                                        <div>
+                                            <dt className="text-xs text-slate-500">Project code</dt>
+                                            <dd className="font-mono text-sm font-medium text-slate-900">
+                                                {requisition.project?.code ?? 'ADM'}
+                                            </dd>
+                                            <dd className="text-xs text-slate-500">
+                                                {requisition.project?.name ?? 'Administrative'}
+                                            </dd>
+                                        </div>
                                         <div>
                                             <dt className="text-xs text-slate-500">Requested by</dt>
                                             <dd className="text-sm font-medium text-slate-900">
@@ -265,12 +288,6 @@ export default function RequisitionsReview() {
                                             </div>
                                         ) : null}
                                         <div>
-                                            <dt className="text-xs text-slate-500">Project</dt>
-                                            <dd className="text-sm font-medium text-slate-900">
-                                                {requisition.project?.name ?? '—'}
-                                            </dd>
-                                        </div>
-                                        <div>
                                             <dt className="text-xs text-slate-500">Resource</dt>
                                             <dd className="text-sm font-medium capitalize text-slate-900">
                                                 {String(requisition.resource_type ?? '—').replace(
@@ -304,8 +321,12 @@ export default function RequisitionsReview() {
                                                             : ''}
                                                     </span>
                                                     <span className="shrink-0 text-slate-600">
-                                                        {formatQuantity(item.quantity)} ×{' '}
-                                                        {formatCurrency(item.unit_cost)}
+                                                        {formatQuantity(item.quantity)}
+                                                        {item.details?.days != null &&
+                                                        Number(item.details.days) > 0
+                                                            ? ` × ${formatQuantity(item.details.days)} days`
+                                                            : ''}{' '}
+                                                        × {formatCurrency(item.unit_cost)}
                                                     </span>
                                                 </li>
                                             ))}

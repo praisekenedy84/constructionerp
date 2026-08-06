@@ -256,6 +256,11 @@ class Requisition extends Model
         return $this->hasOne(Expense::class);
     }
 
+    public function payrollRun(): HasOne
+    {
+        return $this->hasOne(PayrollRun::class);
+    }
+
     public function expenses(): HasMany
     {
         return $this->hasMany(Expense::class);

@@ -77,20 +77,30 @@ export default function Dashboard() {
                 </div>
 
                 <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-                    {cards.map((card) => (
-                        <Link key={card.label} href={card.href}>
-                            <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm transition-shadow hover:shadow-md">
-                                <div className="flex items-center justify-between">
-                                    <p className="text-sm text-slate-500">{card.label}</p>
-                                    <card.icon className={`h-5 w-5 ${card.color}`} />
+                    {cards.map((card) => {
+                        const valueText = String(card.value);
+                        const isLongValue = valueText.length > 8;
+
+                        return (
+                            <Link key={card.label} href={card.href} className="min-w-0">
+                                <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm transition-shadow hover:shadow-md">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <p className="text-sm text-slate-500">{card.label}</p>
+                                        <card.icon className={`h-5 w-5 shrink-0 ${card.color}`} />
+                                    </div>
+                                    <p
+                                        className={`mt-2 font-bold tabular-nums tracking-tight ${
+                                            isLongValue ? 'text-xl leading-snug' : 'text-3xl'
+                                        } ${card.color}`}
+                                        title={valueText}
+                                    >
+                                        {card.value}
+                                    </p>
+                                    <p className="mt-1 text-xs text-slate-400">{card.sub}</p>
                                 </div>
-                                <p className={`mt-2 text-3xl font-bold ${card.color}`}>
-                                    {card.value}
-                                </p>
-                                <p className="mt-1 text-xs text-slate-400">{card.sub}</p>
-                            </div>
-                        </Link>
-                    ))}
+                            </Link>
+                        );
+                    })}
                 </div>
 
                 <div className="grid gap-6 lg:grid-cols-2">

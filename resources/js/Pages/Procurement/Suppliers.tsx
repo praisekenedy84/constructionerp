@@ -24,6 +24,8 @@ export default function Suppliers() {
     const [open, setOpen] = useState(false);
     const { data, setData, post, processing, errors, reset, clearErrors, isDirty } = useForm({
         name: '',
+        phone: '',
+        email: '',
         contact_info: '',
     });
 
@@ -69,10 +71,11 @@ export default function Suppliers() {
                 <ListToolbar
                     baseUrl="/procurement/suppliers"
                     filters={filters}
-                    searchPlaceholder="Search name, contact…"
+                    searchPlaceholder="Search name, phone, email…"
                     sortOptions={[
                         { value: 'name', label: 'Name' },
-                        { value: 'contact_person', label: 'Contact' },
+                        { value: 'phone', label: 'Phone' },
+                        { value: 'email', label: 'Email' },
                         { value: 'created_at', label: 'Date created' },
                     ]}
                 />
@@ -82,14 +85,16 @@ export default function Suppliers() {
                         <thead>
                             <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs text-slate-500">
                                 <th className="px-6 py-3 font-medium">Name</th>
-                                <th className="px-6 py-3 font-medium">Contact</th>
+                                <th className="px-6 py-3 font-medium">Phone</th>
+                                <th className="px-6 py-3 font-medium">Email</th>
+                                <th className="px-6 py-3 font-medium">Notes</th>
                                 <th className="px-6 py-3 font-medium">Rating</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {rows.length === 0 ? (
                                 <tr>
-                                    <td colSpan={3} className="px-6 py-12 text-center text-slate-500">
+                                    <td colSpan={5} className="px-6 py-12 text-center text-slate-500">
                                         No suppliers found.
                                     </td>
                                 </tr>
@@ -97,7 +102,9 @@ export default function Suppliers() {
                                 rows.map((s) => (
                                     <tr key={s.id}>
                                         <td className="px-6 py-4 font-medium">{s.name}</td>
-                                        <td className="px-6 py-4 text-slate-600">{s.contact_info}</td>
+                                        <td className="px-6 py-4 text-slate-600">{s.phone ?? '—'}</td>
+                                        <td className="px-6 py-4 text-slate-600">{s.email ?? '—'}</td>
+                                        <td className="px-6 py-4 text-slate-600">{s.contact_info ?? '—'}</td>
                                         <td className="px-6 py-4 text-slate-600">
                                             {s.performance_rating ?? '—'}
                                         </td>
@@ -128,12 +135,39 @@ export default function Suppliers() {
                         {errors.name && <p className="text-sm text-red-600">{errors.name}</p>}
                     </div>
                     <div className="space-y-2">
-                        <Label htmlFor="supplier-contact">Contact Info</Label>
+                        <Label htmlFor="supplier-phone">Phone</Label>
+                        <Input
+                            id="supplier-phone"
+                            type="tel"
+                            value={data.phone}
+                            onChange={(e) => setData('phone', e.target.value)}
+                            placeholder="e.g. +255 7XX XXX XXX"
+                            required
+                        />
+                        {errors.phone && <p className="text-sm text-red-600">{errors.phone}</p>}
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="supplier-email">Email</Label>
+                        <Input
+                            id="supplier-email"
+                            type="email"
+                            value={data.email}
+                            onChange={(e) => setData('email', e.target.value)}
+                            placeholder="supplier@example.com"
+                            required
+                        />
+                        {errors.email && <p className="text-sm text-red-600">{errors.email}</p>}
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="supplier-contact">Additional notes (optional)</Label>
                         <Input
                             id="supplier-contact"
                             value={data.contact_info}
                             onChange={(e) => setData('contact_info', e.target.value)}
                         />
+                        {errors.contact_info && (
+                            <p className="text-sm text-red-600">{errors.contact_info}</p>
+                        )}
                     </div>
                     <DialogFormActions
                         onCancel={closeDialog}

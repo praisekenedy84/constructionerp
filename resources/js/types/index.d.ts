@@ -56,6 +56,7 @@ export interface Project {
     name: string;
     client: string;
     customer_id?: number | null;
+    customer?: Customer | null;
     location: string;
     contract_amount: string;
     wht_percentage: string;
@@ -534,7 +535,9 @@ export interface SpendableCashFloat {
 export interface Supplier {
     id: number;
     name: string;
-    contact_info: string;
+    phone: string | null;
+    email: string | null;
+    contact_info: string | null;
     performance_rating: string | null;
 }
 
@@ -679,7 +682,9 @@ export interface PayrollRun {
     period_start: string;
     period_end: string;
     status: 'draft' | 'approved' | 'posted';
+    requisition_id?: number | null;
     project?: Project;
+    requisition?: Pick<Requisition, 'id' | 'requisition_no' | 'status'> | null;
     items?: PayrollItem[];
     items_count?: number;
     items_sum_net_pay?: string | null;

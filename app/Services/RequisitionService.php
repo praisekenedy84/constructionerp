@@ -25,6 +25,7 @@ use App\Models\RequisitionItem;
 use App\Models\RequisitionRecipient;
 use App\Models\RequisitionStatusHistory;
 use App\Models\User;
+use App\Support\OrganizationFundUse;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\UploadedFile;
@@ -371,15 +372,47 @@ class RequisitionService
     {
         $qty = bcadd((string) $item['quantity'], '0', 3);
         $unitCost = bcadd((string) $item['unit_cost'], '0', 2);
+        $days = $this->normalizeOptionalDays($item['days'] ?? null);
+        $lineTotal = $this->lineTotalFor($qty, $unitCost, $days);
+
+        $details = [];
+        if (isset($item['details']) && is_array($item['details'])) {
+            $details = $item['details'];
+        }
+        if ($days !== null) {
+            $details['days'] = $days;
+        }
 
         return [
             ...$base,
             'unit' => $unit,
             'quantity' => $qty,
             'unit_cost' => $unitCost,
-            'line_total' => bcmul($qty, $unitCost, 2),
-            'details' => null,
+            'line_total' => $lineTotal,
+            'details' => $details === [] ? null : $details,
         ];
+    }
+
+    /**
+     * @return non-empty-string|null
+     */
+    private function normalizeOptionalDays(mixed $raw): ?string
+    {
+        if ($raw === null || $raw === '') {
+            return null;
+        }
+
+        $days = bcadd((string) $raw, '0', 3);
+
+        return bccomp($days, '0', 3) === 1 ? $days : null;
+    }
+
+    private function lineTotalFor(string $quantity, string $unitCost, ?string $days): string
+    {
+        $base = bcmul($quantity, $unitCost, 4);
+        $multiplier = $days ?? '1';
+
+        return bcmul($base, $multiplier, 2);
     }
 
     public function addAttachment(
@@ -442,12 +475,18 @@ class RequisitionService
             $req->load('items');
 
             if ($toStatus === 'under_review' && $currentStatus === 'draft') {
-                app(ApprovalService::class)->createSteps($req);
+                $steps = app(ApprovalService::class)->createSteps($req);
                 $this->notifyRole('Project Manager', 'requisition_submitted', [
                     'requisition_id' => $req->id,
                     'requisition_no' => $req->requisition_no,
                     'project_id' => $req->project_id,
                 ]);
+
+                // No workflow configured — auto-approve so finance can fulfill.
+                if ($steps === []) {
+                    $this->autoApproveWithoutWorkflow($req, $actor, $opts);
+                    $finalStatus = RequisitionStatus::Approved->value;
+                }
             }
 
             if ($toStatus === 'fulfilled') {
@@ -491,6 +530,25 @@ class RequisitionService
             throw new AuthorizationException('You cannot approve your own requisition.');
         }
 
+        $this->applyApprovalEffects($req, $actor, $opts);
+    }
+
+    /**
+     * Approve when no WorkflowConfig steps exist (no separate approver to assign).
+     * Skips the self-approval guard because there is no alternate approver role.
+     *
+     * @param  array<string, mixed>  $opts
+     */
+    private function autoApproveWithoutWorkflow(Requisition $req, User $actor, array $opts = []): void
+    {
+        $this->applyApprovalEffects($req, $actor, $opts);
+    }
+
+    /**
+     * @param  array<string, mixed>  $opts
+     */
+    private function applyApprovalEffects(Requisition $req, User $actor, array $opts = []): void
+    {
         $qty = $this->sumItemQuantities($req);
         $amount = (string) $req->original_amount;
         $this->assertCashAvailable($req, $amount, $actor, $opts);
@@ -569,7 +627,9 @@ class RequisitionService
         foreach ($itemsInput as $itemData) {
             $qty = bcadd((string) ($itemData['quantity'] ?? '0'), '0', 3);
             $unitCost = bcadd((string) ($itemData['unit_cost'] ?? '0'), '0', 2);
-            $lineTotal = bcmul($qty, $unitCost, 2);
+            $days = array_key_exists('days', $itemData)
+                ? $this->normalizeOptionalDays($itemData['days'] ?? null)
+                : null;
             $description = trim((string) ($itemData['description'] ?? ''));
 
             if ($description === '' || bccomp($qty, '0', 3) !== 1) {
@@ -584,10 +644,22 @@ class RequisitionService
                     throw new \InvalidArgumentException("Unknown requisition item #{$itemId}.");
                 }
 
-                $details = $existing->details;
-                if (is_array($details) && array_key_exists('estimated_amount', $details)) {
+                // Keep existing days when the amend payload omits the field.
+                if (! array_key_exists('days', $itemData)) {
+                    $days = $existing->days();
+                }
+
+                $lineTotal = $this->lineTotalFor($qty, $unitCost, $days);
+                $details = is_array($existing->details) ? $existing->details : [];
+                if ($days !== null) {
+                    $details['days'] = $days;
+                } else {
+                    unset($details['days']);
+                }
+                if (array_key_exists('estimated_amount', $details)) {
                     $details['estimated_amount'] = $lineTotal;
                 }
+                $details = $details === [] ? null : $details;
 
                 $existing->update([
                     'description' => $description,
@@ -600,6 +672,8 @@ class RequisitionService
 
                 $keptIds[] = $existing->id;
             } else {
+                $lineTotal = $this->lineTotalFor($qty, $unitCost, $days);
+                $details = $days !== null ? ['days' => $days] : null;
                 $created = RequisitionItem::create([
                     'requisition_id' => $req->id,
                     'boq_item_id' => $itemData['boq_item_id'] ?? $headerBoqId,
@@ -613,7 +687,7 @@ class RequisitionService
                     'original_unit_cost' => '0',
                     'original_line_total' => '0',
                     'original_description' => null,
-                    'details' => null,
+                    'details' => $details,
                 ]);
                 $keptIds[] = $created->id;
             }
@@ -750,7 +824,7 @@ class RequisitionService
                     ]);
                 }
 
-                $lineAmount = bcmul($itemQty, (string) $item->unit_cost, 2);
+                $lineAmount = $item->amountForQuantity($itemQty);
                 $fulfillmentItems[] = array_merge($input, [
                     'requisition_item_id' => $item->id,
                     'quantity' => $itemQty,
@@ -828,6 +902,8 @@ class RequisitionService
             collect($fulfillmentItems)->pluck('requisition_item_id')->all(),
         );
 
+        $this->finalizePayrollFromFulfillment($req, $actor);
+
         $fullyFulfilled = $scope === 'whole' && ! $req->isAddressedToStorekeeper()
             ? bccomp($newFulfilledAmount, $targetAmount, 2) === 0
             : $req->items()->whereColumn('fulfilled_quantity', '<', 'quantity')->doesntExist();
@@ -842,6 +918,19 @@ class RequisitionService
     }
 
     /**
+     * When a Salaries / payroll requisition is paid, mark or create payroll runs
+     * so the payroll module and reports show who was paid.
+     */
+    private function finalizePayrollFromFulfillment(Requisition $req, User $actor): void
+    {
+        if (! $req->isOrganizationWide()) {
+            return;
+        }
+
+        app(PayrollService::class)->recordRunsFromFulfilledRequisition($req, $actor);
+    }
+
+    /**
      * Fulfilled requisitions become expenses:
      * project-scoped → direct; organization-wide → overhead (indirect).
      */
@@ -852,7 +941,7 @@ class RequisitionService
         ?CashDisbursement $disbursement = null,
         array $itemIds = [],
     ): Expense {
-        $req->loadMissing(['category', 'items']);
+        $req->loadMissing(['category', 'items', 'payrollRun', 'categories']);
 
         $category = $req->isOrganizationWide()
             ? ExpenseCategory::Indirect
@@ -876,16 +965,27 @@ class RequisitionService
             : 'Requisition '.$req->requisition_no;
 
         $categoryLabel = $req->categoryLabel();
+        $isPayroll = $req->payrollRun !== null
+            || str_contains(mb_strtolower($categoryLabel), mb_strtolower(OrganizationFundUse::SALARIES))
+            || str_contains(mb_strtolower($categoryLabel), 'payroll');
+
+        $subType = $isPayroll
+            ? OrganizationFundUse::SALARIES
+            : ($categoryLabel !== '—'
+                ? $categoryLabel
+                : ($req->department !== '' ? $req->department : 'Requisition'));
+
+        $activityRef = $req->payrollRun
+            ? "payroll_run:{$req->payrollRun->id}"
+            : $req->requisition_no;
 
         $expense = Expense::create([
             'project_id' => $req->project_id,
             'boq_item_id' => $req->boq_item_id,
             'requisition_id' => $req->id,
             'category' => $category,
-            'sub_type' => $categoryLabel !== '—'
-                ? $categoryLabel
-                : ($req->department !== '' ? $req->department : 'Requisition'),
-            'activity_ref' => $req->requisition_no,
+            'sub_type' => $subType,
+            'activity_ref' => $activityRef,
             'amount' => $amount,
             'description' => $description,
             'expense_date' => now()->toDateString(),

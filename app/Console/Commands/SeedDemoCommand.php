@@ -118,8 +118,22 @@ class SeedDemoCommand extends Command
             $gravel = $boqItems->firstWhere('description', 'Gravel fill');
             $siteLabour = $boqItems->firstWhere('description', 'Site labour');
 
-            Supplier::firstOrCreate(['name' => 'Kilimanjaro Supplies Ltd'], ['contact_info' => 'info@kilimanjaro.co.tz']);
-            Supplier::firstOrCreate(['name' => 'Coastal Cement Co.'], ['contact_info' => 'sales@coastalcement.co.tz']);
+            Supplier::firstOrCreate(
+                ['name' => 'Kilimanjaro Supplies Ltd'],
+                [
+                    'phone' => '+255 712 345 678',
+                    'email' => 'info@kilimanjaro.co.tz',
+                    'contact_info' => 'Dar es Salaam HQ',
+                ]
+            );
+            Supplier::firstOrCreate(
+                ['name' => 'Coastal Cement Co.'],
+                [
+                    'phone' => '+255 754 987 321',
+                    'email' => 'sales@coastalcement.co.tz',
+                    'contact_info' => 'Tanga depot',
+                ]
+            );
 
             $cement = InventoryItem::firstOrCreate(['code' => 'CEM-50KG'], [
                 'name' => 'Portland Cement 50kg',

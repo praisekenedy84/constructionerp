@@ -12,6 +12,7 @@ export type AmendLine = {
     description: string;
     unit: string;
     quantity: string;
+    days: string;
     unit_cost: string;
 };
 
@@ -23,8 +24,22 @@ type AmendFormProps = {
     onSuccess?: () => void;
 };
 
-function lineTotal(quantity: string, unitCost: string): number {
-    return (parseFloat(quantity) || 0) * (parseFloat(unitCost) || 0);
+function daysMultiplier(days: string): number {
+    const n = parseFloat(days);
+    return Number.isFinite(n) && n > 0 ? n : 1;
+}
+
+function lineTotal(quantity: string, unitCost: string, days: string): number {
+    return (parseFloat(quantity) || 0) * (parseFloat(unitCost) || 0) * daysMultiplier(days);
+}
+
+function daysFromItem(item: RequisitionItem): string {
+    const raw = item.details?.days;
+    if (raw == null || raw === '') {
+        return '';
+    }
+    const n = parseFloat(String(raw));
+    return Number.isFinite(n) && n > 0 ? String(n) : '';
 }
 
 function toAmendLines(items: RequisitionItem[]): AmendLine[] {
@@ -33,6 +48,7 @@ function toAmendLines(items: RequisitionItem[]): AmendLine[] {
         description: item.description,
         unit: item.unit ?? '',
         quantity: String(item.quantity ?? ''),
+        days: daysFromItem(item),
         unit_cost: String(item.unit_cost ?? ''),
     }));
 }
@@ -60,7 +76,7 @@ export default function AmendRequisitionForm({
     const amendedTotal = useMemo(
         () =>
             form.data.items.reduce(
-                (sum, item) => sum + lineTotal(item.quantity, item.unit_cost),
+                (sum, item) => sum + lineTotal(item.quantity, item.unit_cost, item.days),
                 0,
             ),
         [form.data.items],
@@ -79,7 +95,7 @@ export default function AmendRequisitionForm({
     function addLine() {
         form.setData('items', [
             ...form.data.items,
-            { id: null, description: '', unit: '', quantity: '', unit_cost: '' },
+            { id: null, description: '', unit: '', quantity: '', days: '', unit_cost: '' },
         ]);
     }
 
@@ -102,7 +118,7 @@ export default function AmendRequisitionForm({
         <form onSubmit={submit} className="space-y-4">
             <div className="space-y-3">
                 {form.data.items.map((item, index) => {
-                    const total = lineTotal(item.quantity, item.unit_cost);
+                    const total = lineTotal(item.quantity, item.unit_cost, item.days);
                     return (
                         <div
                             key={item.id ?? `new-${index}`}
@@ -130,7 +146,7 @@ export default function AmendRequisitionForm({
                                     </Button>
                                 )}
                             </div>
-                            <div className="grid gap-3 sm:grid-cols-4">
+                            <div className="grid gap-3 sm:grid-cols-5">
                                 <div className="space-y-2">
                                     <Label>Unit</Label>
                                     <Input
@@ -144,6 +160,17 @@ export default function AmendRequisitionForm({
                                         value={item.quantity}
                                         onValueChange={(v) => updateLine(index, { quantity: v })}
                                         required
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>Days (optional)</Label>
+                                    <Input
+                                        type="number"
+                                        step="0.001"
+                                        min="0"
+                                        placeholder="e.g. 3"
+                                        value={item.days}
+                                        onChange={(e) => updateLine(index, { days: e.target.value })}
                                     />
                                 </div>
                                 <div className="space-y-2">

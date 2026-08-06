@@ -47,6 +47,8 @@ class ProjectContractComplianceTest extends TestCase
             'code' => $code,
             'name' => 'Compliance Project',
             'client' => 'Client',
+            'client_phone' => '+255 700 000 001',
+            'client_tin' => '100-100-100',
             'location' => 'Dar',
             'contract_amount' => '100000000',
             'wht_percentage' => '0',

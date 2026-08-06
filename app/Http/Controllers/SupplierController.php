@@ -17,9 +17,9 @@ class SupplierController extends Controller
         $this->authorizePermission($request->user(), 'procurement', 'read');
 
         $listing = ListingQuery::for(Supplier::query(), $request)
-            ->search(['name', 'contact_info'])
+            ->search(['name', 'phone', 'email', 'contact_info'])
             ->dateRange('created_at')
-            ->sort(['name', 'created_at']);
+            ->sort(['name', 'phone', 'email', 'created_at']);
 
         return Inertia::render('Procurement/Suppliers', [
             'suppliers' => $listing->paginate(25),

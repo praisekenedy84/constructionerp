@@ -19,6 +19,8 @@ class UpdateProjectRequest extends FormRequest
             'wht_percentage' => $this->blankToNull($this->input('wht_percentage')) ?? 0,
             'location' => $this->input('location') ?: '',
             'client' => $this->input('client') ?: '',
+            'client_phone' => $this->input('client_phone') ?: '',
+            'client_tin' => $this->input('client_tin') ?: '',
         ]);
     }
 
@@ -34,8 +36,10 @@ class UpdateProjectRequest extends FormRequest
                 Rule::unique('projects', 'code')->ignore($projectId),
             ],
             'name' => ['required', 'string', 'max:255'],
-            'client' => ['nullable', 'string', 'max:255'],
-            'location' => ['nullable', 'string', 'max:255'],
+            'client' => ['required', 'string', 'max:255'],
+            'client_phone' => ['required', 'string', 'max:50'],
+            'client_tin' => ['required', 'string', 'max:100'],
+            'location' => ['required', 'string', 'max:255'],
             'contract_amount' => ['required', 'numeric', 'min:0'],
             'wht_percentage' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'start_date' => ['nullable', 'date'],

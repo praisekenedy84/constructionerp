@@ -17,6 +17,8 @@ export default function ProjectsEdit() {
                 code: project.code,
                 name: project.name,
                 client: project.client,
+                client_phone: project.client_phone,
+                client_tin: project.client_tin,
                 location: project.location,
                 contract_amount: project.contract_amount,
                 wht_percentage: project.wht_percentage,

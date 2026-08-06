@@ -2,12 +2,13 @@ import { Link } from '@inertiajs/react';
 import { cn } from '@/lib/utils';
 
 interface AdminNavProps {
-    active: 'users' | 'staff' | 'settings' | 'menu' | 'permissions';
+    active: 'users' | 'staff' | 'payroll' | 'settings' | 'menu' | 'permissions';
 }
 
 const links = [
     { key: 'users' as const, label: 'Users', href: '/admin/users' },
     { key: 'staff' as const, label: 'Staff', href: '/admin/staff' },
+    { key: 'payroll' as const, label: 'Payroll', href: '/payroll/runs' },
     { key: 'permissions' as const, label: 'Permissions', href: '/admin/permissions' },
     { key: 'menu' as const, label: 'Menu', href: '/admin/menu' },
     { key: 'settings' as const, label: 'Branding', href: '/settings/ui' },

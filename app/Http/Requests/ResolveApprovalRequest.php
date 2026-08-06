@@ -25,6 +25,7 @@ class ResolveApprovalRequest extends FormRequest
             'items.*.description' => ['required_with:items', 'string', 'max:1000'],
             'items.*.unit' => ['nullable', 'string', 'max:50'],
             'items.*.quantity' => ['required_with:items', 'numeric', 'gt:0'],
+            'items.*.days' => ['nullable', 'numeric', 'gt:0'],
             'items.*.unit_cost' => ['required_with:items', 'numeric', 'gte:0'],
         ];
     }

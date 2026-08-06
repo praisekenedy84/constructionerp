@@ -12,6 +12,7 @@ use App\Http\Requests\TransitionRequisitionRequest;
 use App\Models\ApprovalStep;
 use App\Models\BoqItem;
 use App\Models\Department;
+use App\Models\Employee;
 use App\Models\InventoryItem;
 use App\Models\Position;
 use App\Models\Project;
@@ -280,7 +281,7 @@ class RequisitionController extends Controller
             ->whereHas('requisition', fn ($q) => $q->where('status', 'under_review'));
 
         $listing = ListingQuery::for($query, $request)
-            ->search(['required_role', 'requisition.requisition_no', 'requisition.department', 'requisition.project.name'])
+            ->search(['required_role', 'requisition.requisition_no', 'requisition.department', 'requisition.project.name', 'requisition.project.code'])
             ->dateRange('assigned_at')
             ->sort(['assigned_at', 'level', 'required_role'], 'assigned_at');
 
@@ -403,6 +404,10 @@ class RequisitionController extends Controller
                 'project_id' => $item->section?->project_id,
             ]);
 
+        // Ensure Salaries exists so administrative payroll requisitions can use it.
+        app(\App\Services\PayrollService::class)->ensureSalariesCategory();
+        app(\App\Services\PayrollService::class)->ensurePayrollDepartment();
+
         $categories = RequisitionCategory::query()
             ->active()
             ->ordered()
@@ -486,6 +491,19 @@ class RequisitionController extends Controller
             'categories' => $categories,
             'departments' => $departments,
             'positions' => $positions,
+            'employees' => Employee::query()
+                ->with('project:id,code,name')
+                ->orderBy('name')
+                ->get([
+                    'id',
+                    'employee_no',
+                    'name',
+                    'role',
+                    'pay_structure',
+                    'daily_rate',
+                    'monthly_salary',
+                    'project_id',
+                ]),
         ];
     }
 }

@@ -267,6 +267,9 @@ export default function FulfillQueue() {
                                                             Qty
                                                         </th>
                                                         <th className="px-3 py-2 text-right font-medium">
+                                                            Days
+                                                        </th>
+                                                        <th className="px-3 py-2 text-right font-medium">
                                                             Rate
                                                         </th>
                                                         <th className="px-3 py-2 text-right font-medium">
@@ -285,6 +288,12 @@ export default function FulfillQueue() {
                                                             </td>
                                                             <td className="px-3 py-2 text-right tabular-nums text-slate-700">
                                                                 {formatQuantity(item.quantity)}
+                                                            </td>
+                                                            <td className="px-3 py-2 text-right tabular-nums text-slate-700">
+                                                                {item.details?.days != null &&
+                                                                Number(item.details.days) > 0
+                                                                    ? formatQuantity(item.details.days)
+                                                                    : '—'}
                                                             </td>
                                                             <td className="px-3 py-2 text-right tabular-nums text-slate-700">
                                                                 {formatCurrency(item.unit_cost)}

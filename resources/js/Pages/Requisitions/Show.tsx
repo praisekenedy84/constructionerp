@@ -174,7 +174,9 @@ export default function RequisitionsShow() {
     const remainingAmount = Math.max(0, Number(amount) - fulfilledAmount);
     const itemFulfillmentAmount = (requisition.items ?? []).reduce((total, item, index) => {
         const quantity = Number(transitionForm.data.items[index]?.quantity ?? 0);
-        return total + quantity * Number(item.unit_cost);
+        const daysRaw = item.details?.days;
+        const days = daysRaw != null && Number(daysRaw) > 0 ? Number(daysRaw) : 1;
+        return total + quantity * Number(item.unit_cost) * days;
     }, 0);
     const variance =
         requisition.amended_amount != null
@@ -356,6 +358,7 @@ export default function RequisitionsShow() {
                                     <th className="pb-2 font-medium">Recipient</th>
                                     <th className="pb-2 font-medium">Unit</th>
                                     <th className="pb-2 text-right font-medium">Qty</th>
+                                    <th className="pb-2 text-right font-medium">Days</th>
                                     <th className="pb-2 text-right font-medium">Fulfilled</th>
                                     <th className="pb-2 text-right font-medium">Remaining</th>
                                     <th className="pb-2 text-right font-medium">Unit Cost</th>
@@ -409,6 +412,12 @@ export default function RequisitionsShow() {
                                                 )}
                                         </td>
                                         <td className="py-2 text-right text-slate-600">
+                                            {item.details?.days != null &&
+                                            Number(item.details.days) > 0
+                                                ? formatQuantity(item.details.days)
+                                                : '—'}
+                                        </td>
+                                        <td className="py-2 text-right text-slate-600">
                                             {formatQuantity(item.fulfilled_quantity ?? 0)}
                                         </td>
                                         <td className="py-2 text-right font-medium text-slate-800">
@@ -448,7 +457,7 @@ export default function RequisitionsShow() {
                             </tbody>
                             <tfoot>
                                 <tr>
-                                    <td colSpan={8} className="pt-3 text-right font-medium">
+                                    <td colSpan={9} className="pt-3 text-right font-medium">
                                         {hasLineAmendments ? 'Amended total' : 'Total'}
                                     </td>
                                     <td className="pt-3 text-right font-bold text-slate-900">
@@ -458,7 +467,7 @@ export default function RequisitionsShow() {
                                 {hasLineAmendments && (
                                     <tr>
                                         <td
-                                            colSpan={8}
+                                            colSpan={9}
                                             className="pt-1 text-right text-xs text-slate-500"
                                         >
                                             Original total

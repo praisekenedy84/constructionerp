@@ -115,7 +115,7 @@ class ProjectController extends Controller
 
     public function show(Request $request, int $id): Response
     {
-        $project = Project::with(['withholdingTaxRates', 'sale'])->findOrFail($id);
+        $project = Project::with(['withholdingTaxRates', 'sale', 'customer'])->findOrFail($id);
         $sale = $this->saleService->ensureForProject($project);
         $budget = $this->budgetService->summary($project);
 
@@ -184,7 +184,7 @@ class ProjectController extends Controller
     {
         $this->authorizePermission($request->user(), 'projects', 'update');
 
-        $project = Project::findOrFail($id);
+        $project = Project::with('customer')->findOrFail($id);
 
         return Inertia::render('Projects/Edit', [
             'project' => [
@@ -192,6 +192,8 @@ class ProjectController extends Controller
                 'code' => $project->code,
                 'name' => $project->name,
                 'client' => $project->client,
+                'client_phone' => $project->customer?->contact ?? '',
+                'client_tin' => $project->customer?->tax_information ?? '',
                 'location' => $project->location,
                 'contract_amount' => (string) $project->contract_amount,
                 'wht_percentage' => (string) $project->wht_percentage,
@@ -277,10 +279,24 @@ class ProjectController extends Controller
      */
     private function persistProject(Project $project, array $attributes): Project
     {
+        $clientPhone = trim((string) ($attributes['client_phone'] ?? ''));
+        $clientTin = trim((string) ($attributes['client_tin'] ?? ''));
+        unset($attributes['client_phone'], $attributes['client_tin']);
+
         if (! empty($attributes['client'])) {
-            $attributes['customer_id'] = Customer::firstOrCreate([
+            $customer = Customer::firstOrCreate([
                 'name' => trim((string) $attributes['client']),
-            ])->id;
+            ]);
+
+            $customer->fill([
+                'contact' => $clientPhone !== '' ? $clientPhone : null,
+                'tax_information' => $clientTin !== '' ? $clientTin : null,
+                'address' => ! empty($attributes['location'])
+                    ? trim((string) $attributes['location'])
+                    : null,
+            ])->save();
+
+            $attributes['customer_id'] = $customer->id;
         }
 
         // Before phases: net_budget tracks remaining contract value (synced after save).

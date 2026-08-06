@@ -12,6 +12,8 @@ export interface ProjectFormValues {
     code: string;
     name: string;
     client: string;
+    client_phone: string;
+    client_tin: string;
     location: string;
     contract_amount: string;
     wht_percentage: string;
@@ -86,23 +88,6 @@ export default function ProjectForm({ mode, projectId, initial }: ProjectFormPro
                                 {errors.name && <p className="text-sm text-red-600">{errors.name}</p>}
                             </div>
                             <div className="space-y-2">
-                                <Label htmlFor="client">Client</Label>
-                                <Input
-                                    id="client"
-                                    value={data.client}
-                                    onChange={(e) => setData('client', e.target.value)}
-                                    required
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="location">Location</Label>
-                                <Input
-                                    id="location"
-                                    value={data.location}
-                                    onChange={(e) => setData('location', e.target.value)}
-                                />
-                            </div>
-                            <div className="space-y-2">
                                 <Label htmlFor="contract_amount">Contract Amount (TZS)</Label>
                                 <AmountInput
                                     id="contract_amount"
@@ -150,6 +135,64 @@ export default function ProjectForm({ mode, projectId, initial }: ProjectFormPro
                                     onChange={(e) => setData('end_date', e.target.value)}
                                     required
                                 />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+                        <h3 className="mb-1 text-sm font-semibold text-slate-900">Client Details</h3>
+                        <p className="mb-4 text-sm text-slate-500">
+                            These details appear on invoices for this project.
+                        </p>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                            <div className="space-y-2 sm:col-span-2">
+                                <Label htmlFor="client">Client Name</Label>
+                                <Input
+                                    id="client"
+                                    value={data.client}
+                                    onChange={(e) => setData('client', e.target.value)}
+                                    required
+                                />
+                                {errors.client && <p className="text-sm text-red-600">{errors.client}</p>}
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="client_phone">Phone Number</Label>
+                                <Input
+                                    id="client_phone"
+                                    type="tel"
+                                    value={data.client_phone}
+                                    onChange={(e) => setData('client_phone', e.target.value)}
+                                    placeholder="+255 …"
+                                    required
+                                />
+                                {errors.client_phone && (
+                                    <p className="text-sm text-red-600">{errors.client_phone}</p>
+                                )}
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="client_tin">TIN</Label>
+                                <Input
+                                    id="client_tin"
+                                    value={data.client_tin}
+                                    onChange={(e) => setData('client_tin', e.target.value)}
+                                    placeholder="Tax Identification Number"
+                                    required
+                                />
+                                {errors.client_tin && (
+                                    <p className="text-sm text-red-600">{errors.client_tin}</p>
+                                )}
+                            </div>
+                            <div className="space-y-2 sm:col-span-2">
+                                <Label htmlFor="location">Location</Label>
+                                <Input
+                                    id="location"
+                                    value={data.location}
+                                    onChange={(e) => setData('location', e.target.value)}
+                                    required
+                                />
+                                {errors.location && (
+                                    <p className="text-sm text-red-600">{errors.location}</p>
+                                )}
                             </div>
                         </div>
                     </div>

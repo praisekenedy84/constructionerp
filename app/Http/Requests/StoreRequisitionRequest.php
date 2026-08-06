@@ -115,11 +115,16 @@ class StoreRequisitionRequest extends FormRequest
                 $recipientName = '—';
             }
 
+            $days = array_key_exists('days', $item) && $item['days'] !== '' && $item['days'] !== null
+                ? $item['days']
+                : null;
+
             return [
                 ...$item,
                 'boq_item_id' => ! empty($item['boq_item_id']) ? $item['boq_item_id'] : null,
                 'inventory_item_id' => ! empty($item['inventory_item_id']) ? $item['inventory_item_id'] : null,
                 'unit' => ! empty($item['unit']) ? $item['unit'] : null,
+                'days' => $days,
                 'requisition_category_id' => $categoryId,
                 'recipient_name' => $recipientName,
                 'position_id' => $positionId,
@@ -220,7 +225,13 @@ class StoreRequisitionRequest extends FormRequest
             'items.*.description' => ['required', 'string', 'max:500'],
             'items.*.unit' => ['nullable', 'string', 'max:50'],
             'items.*.quantity' => ['required', 'numeric', 'gt:0'],
+            'items.*.days' => ['nullable', 'numeric', 'gt:0'],
             'items.*.unit_cost' => ['required', 'numeric', 'gte:0'],
+            'items.*.details' => ['nullable', 'array'],
+            'items.*.details.employee_id' => ['nullable', 'integer', 'exists:employees,id'],
+            'items.*.details.payroll_run_id' => ['nullable', 'integer'],
+            'items.*.details.payroll_item_id' => ['nullable', 'integer'],
+            'items.*.details.days' => ['nullable', 'numeric', 'gt:0'],
         ];
     }
 

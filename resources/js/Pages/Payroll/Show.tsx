@@ -16,9 +16,15 @@ export default function PayrollShow() {
     const { run, total_net_pay } = usePage<ShowProps>().props;
     const items = run.items ?? [];
     const isDraft = run.status === 'draft';
+    const isApproved = run.status === 'approved';
+    const requisition = run.requisition;
 
-    function postRun() {
-        if (!confirm('Post this payroll run? This pays salaries from administrative cash on hand and cannot be undone.')) {
+    function submitForPayment() {
+        if (
+            !confirm(
+                'Submit this payroll for payment? An administrative requisition will be created with each staff member and their net pay. Salaries post to overhead when the requisition is fulfilled.',
+            )
+        ) {
             return;
         }
         router.post(`/payroll/${run.id}/post`);
@@ -45,15 +51,36 @@ export default function PayrollShow() {
                                     </Link>
                                     <Button
                                         className="bg-green-700 hover:bg-green-800"
-                                        onClick={postRun}
+                                        onClick={submitForPayment}
                                     >
-                                        Post Payroll
+                                        Submit for Payment
                                     </Button>
                                 </>
+                            )}
+                            {requisition && (
+                                <Link href={`/requisitions/${requisition.id}`}>
+                                    <Button variant="outline">
+                                        Requisition {requisition.requisition_no}
+                                    </Button>
+                                </Link>
                             )}
                         </div>
                     }
                 />
+
+                {isApproved && requisition && (
+                    <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+                        Awaiting requisition fulfillment. Once finance fulfills{' '}
+                        <Link
+                            href={`/requisitions/${requisition.id}`}
+                            className="font-medium underline"
+                        >
+                            {requisition.requisition_no}
+                        </Link>
+                        , this run will be marked posted and salaries will appear as Salaries
+                        overhead.
+                    </div>
+                )}
 
                 <div className="grid gap-4 sm:grid-cols-4">
                     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">

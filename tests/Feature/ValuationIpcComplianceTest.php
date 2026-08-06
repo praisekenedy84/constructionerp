@@ -65,6 +65,8 @@ class ValuationIpcComplianceTest extends TestCase
             'code' => $code,
             'name' => 'IPC Project',
             'client' => 'Client',
+            'client_phone' => '+255 700 000 002',
+            'client_tin' => '200-200-200',
             'location' => 'Dar',
             'contract_amount' => $contract,
             'wht_percentage' => '5',

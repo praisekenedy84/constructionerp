@@ -8,6 +8,8 @@ export default function ProjectsCreate() {
                 code: '',
                 name: '',
                 client: '',
+                client_phone: '',
+                client_tin: '',
                 location: '',
                 contract_amount: '',
                 wht_percentage: '0',

@@ -250,11 +250,12 @@ export default function Generate() {
                             <AlertTriangle className="mt-0.5 h-5 w-5 text-amber-600" />
                             <div>
                                 <p className="text-sm font-medium text-amber-800">
-                                    Posting is irreversible
+                                    Payment goes through requisition
                                 </p>
                                 <p className="mt-1 text-sm text-amber-700">
-                                    Posting pays salaries from administrative cash on hand and marks
-                                    the run immutable. Review the preview carefully before posting.
+                                    Submitting creates an administrative cash requisition with each
+                                    staff member and their net pay. After approval and fulfillment,
+                                    salaries post as Salaries overhead and appear in Payroll reports.
                                 </p>
                             </div>
                         </div>
@@ -287,7 +288,7 @@ export default function Generate() {
                                 disabled={postForm.processing || !canPost}
                                 className="bg-green-700 hover:bg-green-800"
                             >
-                                Post Payroll
+                                Submit for Payment
                             </Button>
                         </div>
                     </>

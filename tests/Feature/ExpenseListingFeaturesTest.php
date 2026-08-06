@@ -122,8 +122,17 @@ class ExpenseListingFeaturesTest extends TestCase
 
         // Link the third expense to a real valuation so source=ipc filtering works.
         Tenant::where('slug', 'expense-list-co')->first()->run(function () {
+            $phase = \App\Models\ProjectPhase::create([
+                'project_id' => 1,
+                'sequence_no' => 1,
+                'name' => 'Phase 1',
+                'disbursed_amount' => '100000.00',
+                'phase_net_budget' => '100000.00',
+            ]);
+
             $valuation = \App\Models\Valuation::create([
                 'project_id' => 1,
+                'phase_id' => $phase->id,
                 'certificate_no' => 1,
                 'gross_value' => '0.00',
                 'total_deductions' => '50000.00',
@@ -167,6 +176,51 @@ class ExpenseListingFeaturesTest extends TestCase
         $this->get('/finance/expenses?source=manual')->assertOk()->assertInertia(fn ($page) => $page
             ->where('summary.total_amount', '25000.00')
             ->where('summary.expense_count', 1)
+        );
+
+        $this->get('/finance/expenses?sub_type=Fuel')->assertOk()->assertInertia(fn ($page) => $page
+            ->where('summary.total_amount', '100000.00')
+            ->where('summary.expense_count', 1)
+        );
+    }
+
+    public function test_direct_expenses_category_filter_matches_joined_labels(): void
+    {
+        $this->seedTenant();
+
+        Tenant::where('slug', 'expense-list-co')->first()->run(function () {
+            Expense::create([
+                'project_id' => 1,
+                'category' => ExpenseCategory::Direct,
+                'sub_type' => 'Materials, Labor, Fuel, Equipment',
+                'amount' => '7900000.00',
+                'description' => 'Combined requisition categories',
+                'expense_date' => now()->toDateString(),
+                'recorded_by' => 1,
+            ]);
+
+            Expense::create([
+                'project_id' => 1,
+                'category' => ExpenseCategory::Direct,
+                'sub_type' => 'Retention',
+                'amount' => '50000.00',
+                'description' => 'IPC retention',
+                'expense_date' => now()->toDateString(),
+                'recorded_by' => 1,
+            ]);
+        });
+
+        $this->post('/login', [
+            'email' => 'admin@expenselist.local',
+            'password' => 'password',
+        ]);
+
+        $this->get('/finance/expenses?sub_type=Materials')->assertOk()->assertInertia(fn ($page) => $page
+            ->where('summary.total_amount', '7900000.00')
+            ->where('summary.expense_count', 1)
+            ->where('filterOptions.sub_types', fn ($types) => collect($types)->contains('Materials')
+                && collect($types)->contains('Fuel')
+                && collect($types)->contains('Retention'))
         );
     }
 

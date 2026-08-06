@@ -24,7 +24,7 @@ class ApprovalController extends Controller
             ->where('status', 'pending');
 
         $listing = ListingQuery::for($query, $request)
-            ->search(['required_role', 'requisition.requisition_no', 'requisition.department', 'requisition.project.name'])
+            ->search(['required_role', 'requisition.requisition_no', 'requisition.department', 'requisition.project.name', 'requisition.project.code'])
             ->dateRange('assigned_at')
             ->sort(['assigned_at', 'level', 'required_role'], 'assigned_at');
 

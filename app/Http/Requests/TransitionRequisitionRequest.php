@@ -50,6 +50,22 @@ class TransitionRequisitionRequest extends FormRequest
             'new_inventory_item.code' => ['nullable', 'string', 'max:50'],
             'new_inventory_item.unit_cost' => ['nullable', 'numeric', 'gte:0'],
             'new_inventory_item.receive_quantity' => ['nullable', 'numeric', 'gt:0'],
+            'payments' => ['nullable', 'array'],
+            'payments.*.recipient_id' => ['nullable', 'integer', 'exists:recipients,id'],
+            'payments.*.recipient_key' => ['required_with:payments', 'string', 'max:255'],
+            'payments.*.payee' => ['nullable', 'string', 'max:255'],
+            'payments.*.account_name' => ['nullable', 'string', 'max:255'],
+            'payments.*.account_number' => ['nullable', 'string', 'max:100'],
+            'payments.*.method' => ['nullable', 'string', Rule::in(['cash', 'mobile', 'bank'])],
+            'payments.*.payment_date' => ['nullable', 'date'],
+            'payments.*.reference_no' => ['nullable', 'string', 'max:100'],
+            'payments.*.items' => ['nullable', 'array'],
+            'payments.*.items.*.requisition_item_id' => [
+                'required_with:payments.*.items',
+                'integer',
+                'exists:requisition_items,id',
+            ],
+            'payments.*.items.*.quantity' => ['required_with:payments.*.items', 'numeric', 'gt:0'],
         ];
     }
 
@@ -60,7 +76,7 @@ class TransitionRequisitionRequest extends FormRequest
                 return;
             }
 
-            $requisition = Requisition::find($this->route('id'));
+            $requisition = Requisition::with('items')->find($this->route('id'));
             if (! $requisition) {
                 return;
             }
@@ -76,6 +92,52 @@ class TransitionRequisitionRequest extends FormRequest
                 );
 
             if (! $isFinance) {
+                return;
+            }
+
+            $payments = $this->input('payments');
+            if (is_array($payments) && $payments !== []) {
+                foreach ($payments as $index => $payment) {
+                    if (! is_array($payment)) {
+                        continue;
+                    }
+
+                    if (! filled($payment['payee'] ?? null) && ! filled($payment['account_name'] ?? null)) {
+                        $validator->errors()->add(
+                            "payments.{$index}.account_name",
+                            'Enter the account name that received the cash.',
+                        );
+                    }
+
+                    if (! filled($payment['account_number'] ?? null)) {
+                        $validator->errors()->add(
+                            "payments.{$index}.account_number",
+                            'Enter the account number that received the cash.',
+                        );
+                    }
+
+                    if (! filled($payment['payment_date'] ?? null)) {
+                        $validator->errors()->add(
+                            "payments.{$index}.payment_date",
+                            'Enter the date the cash was received.',
+                        );
+                    }
+
+                    if (! filled($payment['reference_no'] ?? null)) {
+                        $validator->errors()->add(
+                            "payments.{$index}.reference_no",
+                            'A disbursement reference number is required.',
+                        );
+                    }
+
+                    if (! in_array($payment['method'] ?? null, ['cash', 'mobile', 'bank'], true)) {
+                        $validator->errors()->add(
+                            "payments.{$index}.method",
+                            'Choose payment method: cash, mobile, or bank.',
+                        );
+                    }
+                }
+
                 return;
             }
 

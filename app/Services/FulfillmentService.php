@@ -74,6 +74,9 @@ class FulfillmentService
 
             return CashDisbursement::create([
                 'requisition_id' => $req->id,
+                'recipient_id' => isset($opts['recipient_id']) && (int) $opts['recipient_id'] > 0
+                    ? (int) $opts['recipient_id']
+                    : null,
                 'cash_allocation_id' => null,
                 'money_account_id' => $finance->id,
                 'account_transaction_id' => $tx->id,

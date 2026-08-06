@@ -236,4 +236,108 @@ class RequisitionExpenseRecordingTest extends TestCase
             $this->assertSame('245000.00', app(MoneyAccountService::class)->financeBalance());
         });
     }
+
+    public function test_fulfillment_creates_one_disbursement_per_recipient(): void
+    {
+        $this->seedTenant();
+
+        $requisitionId = null;
+        $aliceId = null;
+        $bobId = null;
+
+        Tenant::where('slug', 'req-expense-co')->first()->run(function () use (&$requisitionId, &$aliceId, &$bobId) {
+            app(MoneyAccountService::class)->ensureFinanceAccount()->update(['balance' => '500000.00']);
+
+            $alice = Recipient::where('name', 'Alice Worker')->firstOrFail();
+            $bob = Recipient::create([
+                'name' => 'Bob Helper',
+                'phone' => '+255700000002',
+                'status' => 'active',
+            ]);
+            $aliceId = $alice->id;
+            $bobId = $bob->id;
+
+            $req = Requisition::create([
+                'requisition_no' => 'REQ-2026-01003',
+                'project_id' => 1,
+                'department' => 'Site',
+                'resource_type' => 'other',
+                'requestor_id' => 2,
+                'status' => RequisitionStatus::Approved,
+                'fulfillment_type' => 'cash_disbursement',
+                'addressed_to' => 'finance',
+                'original_amount' => '30000.00',
+            ]);
+            $requisitionId = $req->id;
+
+            RequisitionItem::create([
+                'requisition_id' => $req->id,
+                'description' => 'Alice wages',
+                'unit' => 'day',
+                'quantity' => '1.000',
+                'unit_cost' => '10000.00',
+                'line_total' => '10000.00',
+                'recipient_id' => $alice->id,
+                'recipient_name' => 'Alice Worker',
+            ]);
+
+            RequisitionItem::create([
+                'requisition_id' => $req->id,
+                'description' => 'Bob wages',
+                'unit' => 'day',
+                'quantity' => '1.000',
+                'unit_cost' => '20000.00',
+                'line_total' => '20000.00',
+                'recipient_id' => $bob->id,
+                'recipient_name' => 'Bob Helper',
+            ]);
+        });
+
+        $this->post('/login', [
+            'email' => 'admin@reqexpense.local',
+            'password' => 'password',
+        ]);
+
+        $this->post("/requisitions/{$requisitionId}/transition", [
+            'to_status' => 'fulfilled',
+            'fulfillment_scope' => 'items',
+            'payments' => [
+                [
+                    'recipient_key' => 'id:'.$aliceId,
+                    'recipient_id' => $aliceId,
+                    'payee' => 'Alice Worker',
+                    'account_name' => 'Alice Worker',
+                    'account_number' => '255711111111',
+                    'payment_date' => now()->toDateString(),
+                    'reference_no' => 'RCP-ALICE-1',
+                    'method' => 'mobile',
+                ],
+                [
+                    'recipient_key' => 'id:'.$bobId,
+                    'recipient_id' => $bobId,
+                    'payee' => 'Bob Helper',
+                    'account_name' => 'Bob Helper',
+                    'account_number' => '255722222222',
+                    'payment_date' => now()->toDateString(),
+                    'reference_no' => 'RCP-BOB-1',
+                    'method' => 'cash',
+                ],
+            ],
+        ])->assertRedirect();
+
+        Tenant::where('slug', 'req-expense-co')->first()->run(function () use ($aliceId, $bobId, $requisitionId) {
+            $disbursements = CashDisbursement::query()->orderBy('id')->get();
+            $this->assertCount(2, $disbursements);
+            $this->assertSame($aliceId, (int) $disbursements[0]->recipient_id);
+            $this->assertSame('10000.00', (string) $disbursements[0]->amount);
+            $this->assertSame($bobId, (int) $disbursements[1]->recipient_id);
+            $this->assertSame('20000.00', (string) $disbursements[1]->amount);
+
+            $this->assertSame(2, Expense::count());
+            $req = Requisition::findOrFail($requisitionId);
+            $this->assertSame(RequisitionStatus::Fulfilled, $req->status);
+            $this->assertSame('30000.00', (string) $req->fulfilled_amount);
+            $this->assertSame('470000.00', app(MoneyAccountService::class)->financeBalance());
+        });
+    }
 }

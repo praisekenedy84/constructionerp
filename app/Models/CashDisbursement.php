@@ -30,6 +30,7 @@ class CashDisbursement extends Model
 
     protected $fillable = [
         'requisition_id',
+        'recipient_id',
         'expense_id',
         'cash_allocation_id',
         'money_account_id',
@@ -57,6 +58,11 @@ class CashDisbursement extends Model
     public function requisition(): BelongsTo
     {
         return $this->belongsTo(Requisition::class);
+    }
+
+    public function recipient(): BelongsTo
+    {
+        return $this->belongsTo(Recipient::class);
     }
 
     public function expense(): BelongsTo

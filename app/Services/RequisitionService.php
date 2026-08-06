@@ -773,6 +773,13 @@ class RequisitionService
     private function onFulfilled(Requisition $req, User $actor, array $opts): string
     {
         $req = Requisition::with('items')->lockForUpdate()->findOrFail($req->id);
+        $payments = $opts['payments'] ?? null;
+        $hasRecipientPayments = is_array($payments) && $payments !== [];
+
+        if ($hasRecipientPayments && ! $req->isAddressedToStorekeeper()) {
+            return $this->onFulfilledByRecipientPayments($req, $actor, $opts, $payments);
+        }
+
         $scope = (string) ($opts['fulfillment_scope'] ?? $req->fulfillment_scope ?? 'whole');
 
         if (! in_array($scope, ['whole', 'items'], true)) {
@@ -922,6 +929,197 @@ class RequisitionService
         return $fullyFulfilled
             ? RequisitionStatus::Fulfilled->value
             : RequisitionStatus::PartiallyFulfilled->value;
+    }
+
+    /**
+     * Cash fulfillment split into one disbursement per recipient (maombi lines).
+     *
+     * @param  array<string, mixed>  $opts
+     * @param  list<array<string, mixed>>  $payments
+     */
+    private function onFulfilledByRecipientPayments(
+        Requisition $req,
+        User $actor,
+        array $opts,
+        array $payments,
+    ): string {
+        $scope = 'items';
+        if ($req->fulfillment_scope && $req->fulfillment_scope !== $scope) {
+            throw ValidationException::withMessages([
+                'fulfillment_scope' => 'The fulfillment method cannot be changed after the first installment.',
+            ]);
+        }
+
+        $targetAmount = bcadd((string) ($req->amended_amount ?? $req->original_amount), '0', 2);
+        $fulfilledAmount = bcadd((string) $req->fulfilled_amount, '0', 2);
+        $remainingAmount = bcsub($targetAmount, $fulfilledAmount, 2);
+
+        $totalAmount = '0.00';
+        $totalQty = '0';
+        $allFulfillmentItems = [];
+        $seenItemIds = [];
+
+        foreach ($payments as $index => $payment) {
+            if (! is_array($payment)) {
+                throw ValidationException::withMessages([
+                    'payments' => 'Each payment must include recipient and account details.',
+                ]);
+            }
+
+            $recipientKey = (string) ($payment['recipient_key'] ?? '');
+            $recipientId = isset($payment['recipient_id']) && (int) $payment['recipient_id'] > 0
+                ? (int) $payment['recipient_id']
+                : null;
+
+            $requestedItems = $payment['items'] ?? null;
+            if (! is_array($requestedItems) || $requestedItems === []) {
+                $requestedItems = $req->items
+                    ->filter(function (RequisitionItem $item) use ($recipientId, $recipientKey) {
+                        $itemRemaining = bcsub(
+                            (string) $item->quantity,
+                            (string) $item->fulfilled_quantity,
+                            3
+                        );
+                        if (bccomp($itemRemaining, '0', 3) !== 1) {
+                            return false;
+                        }
+
+                        return $this->itemMatchesRecipient($item, $recipientId, $recipientKey);
+                    })
+                    ->map(fn (RequisitionItem $item) => [
+                        'requisition_item_id' => $item->id,
+                        'quantity' => bcsub((string) $item->quantity, (string) $item->fulfilled_quantity, 3),
+                    ])
+                    ->values()
+                    ->all();
+            }
+
+            if ($requestedItems === []) {
+                throw ValidationException::withMessages([
+                    "payments.{$index}.items" => 'No remaining request lines for this recipient.',
+                ]);
+            }
+
+            $paymentAmount = '0.00';
+            $paymentItems = [];
+            foreach ($requestedItems as $input) {
+                $itemId = (int) ($input['requisition_item_id'] ?? 0);
+                $item = $req->items->firstWhere('id', $itemId);
+                if (! $item || isset($seenItemIds[$itemId])) {
+                    throw ValidationException::withMessages([
+                        "payments.{$index}.items" => 'Each selected line must be unique and belong to this recipient.',
+                    ]);
+                }
+
+                if (! $this->itemMatchesRecipient($item, $recipientId, $recipientKey)) {
+                    throw ValidationException::withMessages([
+                        "payments.{$index}.items" => "Line {$item->description} does not belong to this recipient.",
+                    ]);
+                }
+
+                $seenItemIds[$itemId] = true;
+                $itemQty = bcadd((string) ($input['quantity'] ?? '0'), '0', 3);
+                $itemRemaining = bcsub(
+                    (string) $item->quantity,
+                    (string) $item->fulfilled_quantity,
+                    3
+                );
+                if (bccomp($itemQty, '0', 3) !== 1 || bccomp($itemQty, $itemRemaining, 3) === 1) {
+                    throw ValidationException::withMessages([
+                        "payments.{$index}.items" => "Quantity for {$item->description} must be greater than zero and no more than {$itemRemaining}.",
+                    ]);
+                }
+
+                $lineAmount = $item->amountForQuantity($itemQty);
+                $paymentItems[] = [
+                    'requisition_item_id' => $item->id,
+                    'quantity' => $itemQty,
+                    'unit_cost' => (string) $item->unit_cost,
+                ];
+                $paymentAmount = bcadd($paymentAmount, $lineAmount, 2);
+                $totalQty = bcadd($totalQty, $itemQty, 3);
+            }
+
+            if (bccomp($paymentAmount, '0', 2) !== 1) {
+                throw ValidationException::withMessages([
+                    "payments.{$index}.items" => 'Payment amount must be greater than zero.',
+                ]);
+            }
+
+            $payeeName = trim((string) ($payment['payee'] ?? $payment['account_name'] ?? ''));
+            if ($payeeName === '') {
+                $payeeName = trim((string) ($req->items->firstWhere('id', $paymentItems[0]['requisition_item_id'])?->recipient_name ?? 'Recipient'));
+            }
+
+            $disbursement = $this->fulfillmentService->fulfillCash($req, $actor, $paymentAmount, [
+                'payee' => $payeeName,
+                'account_name' => $payment['account_name'] ?? $payeeName,
+                'account_number' => $payment['account_number'] ?? '',
+                'method' => $payment['method'] ?? 'cash',
+                'payment_date' => $payment['payment_date'] ?? null,
+                'reference_no' => $payment['reference_no'] ?? '',
+                'recipient_id' => $recipientId,
+            ]);
+
+            foreach ($paymentItems as $fulfilledItem) {
+                $req->items->firstWhere('id', $fulfilledItem['requisition_item_id'])
+                    ?->increment('fulfilled_quantity', $fulfilledItem['quantity']);
+                $allFulfillmentItems[] = $fulfilledItem;
+            }
+
+            $this->recordExpenseFromRequisition(
+                $req,
+                $actor,
+                $paymentAmount,
+                $disbursement,
+                collect($paymentItems)->pluck('requisition_item_id')->all(),
+            );
+
+            $totalAmount = bcadd($totalAmount, $paymentAmount, 2);
+        }
+
+        if (bccomp($totalAmount, $remainingAmount, 2) === 1) {
+            throw ValidationException::withMessages([
+                'payments' => "These payments exceed the remaining amount of {$remainingAmount}.",
+            ]);
+        }
+
+        if ($req->boq_item_id && bccomp($totalQty, '0', 3) === 1) {
+            $boqItem = BoqItem::lockForUpdate()->findOrFail($req->boq_item_id);
+            $boqItem->decrement('reserved_qty', $totalQty);
+            $boqItem->increment('consumed_qty', $totalQty);
+        }
+
+        $newFulfilledAmount = bcadd($fulfilledAmount, $totalAmount, 2);
+        $req->update([
+            'fulfillment_scope' => $scope,
+            'fulfilled_amount' => $newFulfilledAmount,
+        ]);
+
+        $this->finalizePayrollFromFulfillment($req, $actor);
+
+        $fullyFulfilled = $req->items()->whereColumn('fulfilled_quantity', '<', 'quantity')->doesntExist();
+
+        return $fullyFulfilled
+            ? RequisitionStatus::Fulfilled->value
+            : RequisitionStatus::PartiallyFulfilled->value;
+    }
+
+    private function itemMatchesRecipient(
+        RequisitionItem $item,
+        ?int $recipientId,
+        string $recipientKey,
+    ): bool {
+        if ($recipientId !== null) {
+            return (int) $item->recipient_id === $recipientId;
+        }
+
+        $expectedName = str_starts_with($recipientKey, 'name:')
+            ? substr($recipientKey, 5)
+            : $recipientKey;
+
+        return trim((string) $item->recipient_name) === trim($expectedName)
+            && ($item->recipient_id === null || (int) $item->recipient_id === 0);
     }
 
     /**

@@ -309,6 +309,16 @@ class MoneyAccountService
         return $account ? bcadd((string) $account->balance, '0', 2) : '0.00';
     }
 
+    public function managerBalance(bool $activeOnly = true): string
+    {
+        $total = '0.00';
+        foreach ($this->managerAccounts($activeOnly) as $account) {
+            $total = bcadd($total, (string) $account->balance, 2);
+        }
+
+        return $total;
+    }
+
     /**
      * @return list<MoneyAccount>
      */

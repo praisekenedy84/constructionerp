@@ -9,6 +9,7 @@ import { Head, Link, usePage } from '@inertiajs/react';
 import {
     Building2,
     ClipboardList,
+    Landmark,
     TrendingUp,
     Wallet,
 } from 'lucide-react';
@@ -20,6 +21,8 @@ interface DashboardPageProps extends PageProps {
 
 export default function Dashboard() {
     const { auth, stats, charts } = usePage<DashboardPageProps>().props;
+    const financeWallet = stats.finance_wallet_balance ?? stats.cash_on_hand;
+    const companyAccounts = stats.company_accounts_balance ?? '0';
 
     const cards = [
         {
@@ -47,12 +50,20 @@ export default function Dashboard() {
             color: 'text-green-700',
         },
         {
-            label: 'Cash on Hand',
-            value: formatCurrency(stats.cash_on_hand),
-            sub: `${stats.open_requisitions} open requisitions`,
-            icon: Wallet,
-            href: '/finance/approvals',
+            label: 'Company Accounts',
+            value: formatCurrency(companyAccounts),
+            sub: 'Total company bank & cash accounts',
+            icon: Landmark,
+            href: '/finance/accounts',
             color: 'text-slate-900',
+        },
+        {
+            label: 'Finance Wallet',
+            value: formatCurrency(financeWallet),
+            sub: `${stats.open_requisitions} open requisitions · accountant balance`,
+            icon: Wallet,
+            href: '/finance/finance-transactions',
+            color: 'text-indigo-700',
         },
     ];
 
@@ -76,7 +87,7 @@ export default function Dashboard() {
                     </p>
                 </div>
 
-                <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                     {cards.map((card) => {
                         const valueText = String(card.value);
                         const isLongValue = valueText.length > 8;

@@ -112,7 +112,13 @@ export default function FulfillQueue() {
                                                     {req.requisition_no}
                                                 </p>
                                                 <p className="text-xs text-slate-500">
-                                                    {req.project?.name ?? 'Administrative'} ·{' '}
+                                                    <span className="font-mono">
+                                                        {req.project?.code ?? 'ADM'}
+                                                    </span>
+                                                    {req.project?.name
+                                                        ? ` · ${req.project.name}`
+                                                        : ' · Administrative'}{' '}
+                                                    ·{' '}
                                                     {String(req.fulfillment_type).replace(/_/g, ' ')}
                                                 </p>
                                                 <p className="text-xs text-slate-600">
@@ -167,6 +173,15 @@ export default function FulfillQueue() {
                                     </div>
 
                                     <dl className="mb-4 grid gap-3 sm:grid-cols-2">
+                                        <div>
+                                            <dt className="text-xs text-slate-500">Project code</dt>
+                                            <dd className="font-mono text-sm font-medium text-slate-900">
+                                                {selected.project?.code ?? 'ADM'}
+                                            </dd>
+                                            <dd className="text-xs text-slate-500">
+                                                {selected.project?.name ?? 'Administrative'}
+                                            </dd>
+                                        </div>
                                         <div>
                                             <dt className="text-xs text-slate-500">Requested by</dt>
                                             <dd className="text-sm font-medium text-slate-900">

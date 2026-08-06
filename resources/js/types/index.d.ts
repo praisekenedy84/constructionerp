@@ -854,6 +854,8 @@ export interface DashboardStats {
     pending_approvals: number;
     budget_utilization: number;
     cash_on_hand: string;
+    finance_wallet_balance?: string;
+    company_accounts_balance?: string;
     open_requisitions: number;
 }
 

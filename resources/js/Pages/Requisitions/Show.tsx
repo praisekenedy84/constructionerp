@@ -30,6 +30,87 @@ interface CategoryOption {
     label: string;
 }
 
+type RecipientPaymentDraft = {
+    recipient_key: string;
+    recipient_id: number | null;
+    name: string;
+    selected: boolean;
+    account_name: string;
+    account_number: string;
+    method: string;
+    payment_date: string;
+    reference_no: string;
+    remaining_amount: number;
+    items: { requisition_item_id: number; quantity: string }[];
+};
+
+function lineRemainingAmount(item: NonNullable<Requisition['items']>[number]): {
+    quantity: number;
+    amount: number;
+} {
+    const quantity = Math.max(
+        0,
+        Number(item.quantity) - Number(item.fulfilled_quantity ?? 0),
+    );
+    const daysRaw = item.details?.days;
+    const days = daysRaw != null && Number(daysRaw) > 0 ? Number(daysRaw) : 1;
+    return { quantity, amount: quantity * Number(item.unit_cost) * days };
+}
+
+function buildRecipientPaymentDrafts(
+    items: NonNullable<Requisition['items']>,
+    paymentDate: string,
+): RecipientPaymentDraft[] {
+    const groups = new Map<string, RecipientPaymentDraft>();
+
+    for (const item of items) {
+        const remaining = lineRemainingAmount(item);
+        if (remaining.quantity <= 0) {
+            continue;
+        }
+
+        const recipientId = item.recipient_id ?? null;
+        const name =
+            (item.recipient_name && item.recipient_name !== '—'
+                ? item.recipient_name
+                : null) ??
+            item.recipient?.name ??
+            'Unassigned';
+        const key = recipientId ? `id:${recipientId}` : `name:${name}`;
+
+        const existing = groups.get(key);
+        if (existing) {
+            existing.remaining_amount += remaining.amount;
+            existing.items.push({
+                requisition_item_id: item.id,
+                quantity: String(remaining.quantity),
+            });
+            continue;
+        }
+
+        groups.set(key, {
+            recipient_key: key.startsWith('id:') ? key : `name:${name}`,
+            recipient_id: recipientId,
+            name,
+            selected: true,
+            account_name: name === 'Unassigned' ? '' : name,
+            account_number: '',
+            method: 'cash',
+            payment_date: paymentDate,
+            reference_no: '',
+            remaining_amount: remaining.amount,
+            items: [
+                {
+                    requisition_item_id: item.id,
+                    quantity: String(remaining.quantity),
+                },
+            ],
+        });
+    }
+
+    return Array.from(groups.values());
+}
+
 interface RequisitionsShowProps extends PageProps {
     requisition: Requisition;
     pendingStep: ApprovalStep | null;
@@ -56,10 +137,24 @@ export default function RequisitionsShow() {
         pendingStep,
     } = usePage<RequisitionsShowProps>().props;
 
+    const today = new Date().toISOString().slice(0, 10);
+    const isStockFulfillment =
+        requisition.addressed_to === 'storekeeper' ||
+        (!requisition.addressed_to && requisition.fulfillment_type === 'stock_issue');
+    const initialRecipientPayments = buildRecipientPaymentDrafts(
+        requisition.items ?? [],
+        today,
+    );
+    const [recipientPayments, setRecipientPayments] =
+        useState<RecipientPaymentDraft[]>(initialRecipientPayments);
+    const usePerRecipientPayments =
+        !isStockFulfillment && initialRecipientPayments.length > 1;
+
     const transitionForm = useForm({
         to_status: '',
         comment: '',
-        fulfillment_scope: (requisition.fulfillment_scope ?? 'whole') as 'whole' | 'items',
+        fulfillment_scope: (requisition.fulfillment_scope ??
+            (usePerRecipientPayments ? 'items' : 'whole')) as 'whole' | 'items',
         amount: String(
             Math.max(
                 0,
@@ -80,8 +175,19 @@ export default function RequisitionsShow() {
         payee: '',
         account_name: '',
         account_number: '',
-        payment_date: new Date().toISOString().slice(0, 10),
+        payment_date: today,
         reference_no: '',
+        payments: [] as Array<{
+            recipient_key: string;
+            recipient_id: number | null;
+            payee: string;
+            account_name: string;
+            account_number: string;
+            method: string;
+            payment_date: string;
+            reference_no: string;
+            items: { requisition_item_id: number; quantity: string }[];
+        }>,
         new_inventory_item: {
             name: '',
             unit: '',
@@ -106,14 +212,39 @@ export default function RequisitionsShow() {
 
     function transition(e: FormEvent, toStatus: string) {
         e.preventDefault();
-        transitionForm.transform((data) => ({
-            ...data,
-            to_status: toStatus,
-            items:
-                toStatus === 'fulfilled' && data.fulfillment_scope === 'items'
-                    ? data.items.filter((item) => Number(item.quantity) > 0)
-                    : [],
-        }));
+        transitionForm.transform((data) => {
+            const selectedPayments = usePerRecipientPayments
+                ? recipientPayments
+                      .filter((payment) => payment.selected)
+                      .map((payment) => ({
+                          recipient_key: payment.recipient_key,
+                          recipient_id: payment.recipient_id,
+                          payee: payment.account_name,
+                          account_name: payment.account_name,
+                          account_number: payment.account_number,
+                          method: payment.method,
+                          payment_date: payment.payment_date,
+                          reference_no: payment.reference_no,
+                          items: payment.items,
+                      }))
+                : [];
+
+            return {
+                ...data,
+                to_status: toStatus,
+                fulfillment_scope:
+                    toStatus === 'fulfilled' && usePerRecipientPayments
+                        ? 'items'
+                        : data.fulfillment_scope,
+                payments: toStatus === 'fulfilled' ? selectedPayments : [],
+                items:
+                    toStatus === 'fulfilled' &&
+                    data.fulfillment_scope === 'items' &&
+                    !usePerRecipientPayments
+                        ? data.items.filter((item) => Number(item.quantity) > 0)
+                        : [],
+            };
+        });
         transitionForm.post(`/requisitions/${requisition.id}/transition`, {
             onFinish: () => transitionForm.transform((data) => data),
         });
@@ -191,9 +322,6 @@ export default function RequisitionsShow() {
         [];
     const fulfillmentLabel = String(requisition.fulfillment_type).replace(/_/g, ' ');
     const status = String(requisition.status);
-    const isStockFulfillment =
-        requisition.addressed_to === 'storekeeper' ||
-        (!requisition.addressed_to && requisition.fulfillment_type === 'stock_issue');
     const canUpdate = hasPermission(auth.user, 'requisitions', 'update');
     const canPublish = hasPermission(auth.user, 'requisitions', 'publish');
     const canFulfill = hasPermission(auth.user, 'requisitions', 'fulfill');
@@ -201,6 +329,9 @@ export default function RequisitionsShow() {
     const hasLineAmendments = (requisition.items ?? []).some(
         (item) => item.original_quantity != null || item.original_line_total != null,
     );
+    const selectedRecipientPaymentTotal = recipientPayments
+        .filter((payment) => payment.selected)
+        .reduce((sum, payment) => sum + payment.remaining_amount, 0);
 
     return (
         <AppShell title={requisition.requisition_no}>
@@ -707,6 +838,168 @@ export default function RequisitionsShow() {
                                 </div>
                             </div>
 
+                            {usePerRecipientPayments ? (
+                                <div className="space-y-4">
+                                    <p className="text-sm text-slate-600">
+                                        Record a separate payment for each recipient according to
+                                        their request lines. Select who to pay now.
+                                    </p>
+                                    {recipientPayments.map((payment, index) => (
+                                        <div
+                                            key={payment.recipient_key}
+                                            className="space-y-3 rounded-lg border border-slate-200 p-4"
+                                        >
+                                            <label className="flex items-start gap-3">
+                                                <input
+                                                    type="checkbox"
+                                                    className="mt-1"
+                                                    checked={payment.selected}
+                                                    onChange={(e) => {
+                                                        const next = [...recipientPayments];
+                                                        next[index] = {
+                                                            ...payment,
+                                                            selected: e.target.checked,
+                                                        };
+                                                        setRecipientPayments(next);
+                                                    }}
+                                                />
+                                                <div>
+                                                    <p className="font-medium text-slate-900">
+                                                        {payment.name}
+                                                    </p>
+                                                    <p className="text-sm text-slate-500">
+                                                        {payment.items.length} line
+                                                        {payment.items.length === 1 ? '' : 's'} ·{' '}
+                                                        {formatCurrency(payment.remaining_amount)}
+                                                    </p>
+                                                </div>
+                                            </label>
+                                            {payment.selected && (
+                                                <div className="grid gap-3 sm:grid-cols-2">
+                                                    <div className="space-y-2">
+                                                        <Label>Account name</Label>
+                                                        <Input
+                                                            value={payment.account_name}
+                                                            onChange={(e) => {
+                                                                const next = [...recipientPayments];
+                                                                next[index] = {
+                                                                    ...payment,
+                                                                    account_name: e.target.value,
+                                                                };
+                                                                setRecipientPayments(next);
+                                                            }}
+                                                            required
+                                                        />
+                                                        {transitionForm.errors[
+                                                            `payments.${index}.account_name`
+                                                        ] && (
+                                                            <p className="text-sm text-red-600">
+                                                                {
+                                                                    transitionForm.errors[
+                                                                        `payments.${index}.account_name`
+                                                                    ]
+                                                                }
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        <Label>Account number</Label>
+                                                        <Input
+                                                            value={payment.account_number}
+                                                            onChange={(e) => {
+                                                                const next = [...recipientPayments];
+                                                                next[index] = {
+                                                                    ...payment,
+                                                                    account_number: e.target.value,
+                                                                };
+                                                                setRecipientPayments(next);
+                                                            }}
+                                                            required
+                                                        />
+                                                        {transitionForm.errors[
+                                                            `payments.${index}.account_number`
+                                                        ] && (
+                                                            <p className="text-sm text-red-600">
+                                                                {
+                                                                    transitionForm.errors[
+                                                                        `payments.${index}.account_number`
+                                                                    ]
+                                                                }
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        <Label>Date received</Label>
+                                                        <Input
+                                                            type="date"
+                                                            value={payment.payment_date}
+                                                            onChange={(e) => {
+                                                                const next = [...recipientPayments];
+                                                                next[index] = {
+                                                                    ...payment,
+                                                                    payment_date: e.target.value,
+                                                                };
+                                                                setRecipientPayments(next);
+                                                            }}
+                                                            required
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        <Label>Reference number</Label>
+                                                        <Input
+                                                            value={payment.reference_no}
+                                                            onChange={(e) => {
+                                                                const next = [...recipientPayments];
+                                                                next[index] = {
+                                                                    ...payment,
+                                                                    reference_no: e.target.value,
+                                                                };
+                                                                setRecipientPayments(next);
+                                                            }}
+                                                            required
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        <Label>Payment method</Label>
+                                                        <PaymentMethodSelect
+                                                            value={payment.method}
+                                                            onChange={(e) => {
+                                                                const next = [...recipientPayments];
+                                                                next[index] = {
+                                                                    ...payment,
+                                                                    method: e.target.value,
+                                                                };
+                                                                setRecipientPayments(next);
+                                                            }}
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        <Label>Amount</Label>
+                                                        <p className="flex h-10 items-center text-sm font-medium text-slate-900">
+                                                            {formatCurrency(payment.remaining_amount)}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                    <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                                        <span className="text-slate-500">
+                                            Cash on hand: {formatCurrency(cashOnHand)}
+                                        </span>
+                                        <span className="font-medium text-slate-900">
+                                            Paying now:{' '}
+                                            {formatCurrency(selectedRecipientPaymentTotal)}
+                                        </span>
+                                    </div>
+                                    {transitionForm.errors.payments && (
+                                        <p className="text-sm text-red-600">
+                                            {transitionForm.errors.payments}
+                                        </p>
+                                    )}
+                                </div>
+                            ) : (
+                                <>
                             <div className="space-y-2">
                                 <Label>Fulfillment method</Label>
                                 <div className="flex flex-wrap gap-4 text-sm">
@@ -1194,7 +1487,16 @@ export default function RequisitionsShow() {
                                     </div>
                                 </div>
                             )}
-                            <Button type="submit" disabled={transitionForm.processing}>
+                                </>
+                            )}
+                            <Button
+                                type="submit"
+                                disabled={
+                                    transitionForm.processing ||
+                                    (usePerRecipientPayments &&
+                                        !recipientPayments.some((payment) => payment.selected))
+                                }
+                            >
                                 Record Fulfillment
                             </Button>
                         </form>

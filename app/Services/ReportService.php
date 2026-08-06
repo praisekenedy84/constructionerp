@@ -120,6 +120,8 @@ class ReportService
             'pending_approvals' => (int) $executive['totals']['pending_approvals'],
             'budget_utilization' => $budgetUtilization,
             'cash_on_hand' => (string) $executive['totals']['cash_on_hand'],
+            'finance_wallet_balance' => $this->moneyAccountService->financeBalance(),
+            'company_accounts_balance' => $this->moneyAccountService->managerBalance(),
             'open_requisitions' => $openRequisitions,
         ];
     }

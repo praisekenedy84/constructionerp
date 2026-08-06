@@ -40,10 +40,7 @@ class FinanceController extends Controller
         $stats = $this->reportService->dashboardStats();
         $charts = $this->reportService->dashboardCharts();
 
-        $managerBalance = '0.00';
-        foreach ($this->moneyAccountService->managerAccounts() as $account) {
-            $managerBalance = bcadd($managerBalance, (string) $account->balance, 2);
-        }
+        $managerBalance = $this->moneyAccountService->managerBalance();
 
         $fundPipeline = [
             'pending' => CashAllocation::where('status', CashAllocationStatus::Pending)->count(),

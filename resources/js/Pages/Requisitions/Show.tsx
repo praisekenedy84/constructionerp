@@ -22,7 +22,7 @@ import {
     StockLocation,
 } from '@/types';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
-import { FormEvent, useRef, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import { ClipboardCheck, ExternalLink, Pencil } from 'lucide-react';
 
 interface CategoryOption {
@@ -141,14 +141,46 @@ export default function RequisitionsShow() {
     const isStockFulfillment =
         requisition.addressed_to === 'storekeeper' ||
         (!requisition.addressed_to && requisition.fulfillment_type === 'stock_issue');
-    const initialRecipientPayments = buildRecipientPaymentDrafts(
+    const remainingRecipientPayments = buildRecipientPaymentDrafts(
         requisition.items ?? [],
         today,
     );
-    const [recipientPayments, setRecipientPayments] =
-        useState<RecipientPaymentDraft[]>(initialRecipientPayments);
+    const distinctRecipientCount = new Set(
+        (requisition.items ?? []).map((item) => {
+            if (item.recipient_id) {
+                return `id:${item.recipient_id}`;
+            }
+            const name =
+                (item.recipient_name && item.recipient_name !== '—'
+                    ? item.recipient_name
+                    : null) ??
+                item.recipient?.name ??
+                'Unassigned';
+            return `name:${name}`;
+        }),
+    ).size;
+    // Keep per-recipient payments whenever the request has multiple recipients,
+    // including after a partial payment leaves only one unpaid.
     const usePerRecipientPayments =
-        !isStockFulfillment && initialRecipientPayments.length > 1;
+        !isStockFulfillment &&
+        remainingRecipientPayments.length > 0 &&
+        distinctRecipientCount > 1;
+
+    const [recipientPayments, setRecipientPayments] = useState<RecipientPaymentDraft[]>(
+        remainingRecipientPayments,
+    );
+
+    useEffect(() => {
+        setRecipientPayments(remainingRecipientPayments);
+    }, [
+        requisition.id,
+        requisition.fulfilled_amount,
+        requisition.status,
+        // Rebuild when remaining line quantities change after a partial payment.
+        (requisition.items ?? [])
+            .map((item) => `${item.id}:${item.fulfilled_quantity ?? 0}`)
+            .join('|'),
+    ]);
 
     const transitionForm = useForm({
         to_status: '',

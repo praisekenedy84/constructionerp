@@ -20,6 +20,7 @@ import {
     RequisitionAddressedTo,
     RequisitionCategory,
     RequisitionItem,
+    Unit,
 } from '@/types';
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import { FormEvent, useState } from 'react';
@@ -35,6 +36,7 @@ interface RequisitionsCreateProps extends PageProps {
     categories: RequisitionCategory[];
     departments: Department[];
     positions: Position[];
+    units: Unit[];
     employees: Employee[];
     recipients: Recipient[];
     requisition?: Requisition;
@@ -155,6 +157,7 @@ export default function RequisitionsCreate() {
         categories,
         departments,
         positions,
+        units = [],
         employees = [],
         recipients = [],
         requisition,
@@ -778,13 +781,33 @@ export default function RequisitionsCreate() {
                                         </div>
                                         <div className="space-y-2 sm:col-span-2">
                                             <Label>Unit</Label>
-                                            <Input
-                                                placeholder="bag, L, pcs, day"
+                                            <select
+                                                className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
                                                 value={item.unit}
                                                 onChange={(e) =>
                                                     updateLine(index, 'unit', e.target.value)
                                                 }
-                                            />
+                                            >
+                                                <option value="">Select unit</option>
+                                                {units.length === 0 && (
+                                                    <option value="" disabled>
+                                                        No units defined
+                                                    </option>
+                                                )}
+                                                {units.map((unit) => (
+                                                    <option key={unit.id ?? unit.name} value={unit.name}>
+                                                        {unit.name}
+                                                    </option>
+                                                ))}
+                                                {item.unit &&
+                                                    !units.some(
+                                                        (unit) =>
+                                                            unit.name.toLowerCase() ===
+                                                            item.unit.toLowerCase(),
+                                                    ) && (
+                                                        <option value={item.unit}>{item.unit}</option>
+                                                    )}
+                                            </select>
                                         </div>
                                         <div className="space-y-2 sm:col-span-2">
                                             <Label>Qty</Label>

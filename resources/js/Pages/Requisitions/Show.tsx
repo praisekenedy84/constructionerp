@@ -20,6 +20,7 @@ import {
     PageProps,
     Requisition,
     StockLocation,
+    Unit,
 } from '@/types';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { FormEvent, useEffect, useRef, useState } from 'react';
@@ -151,6 +152,7 @@ interface RequisitionsShowProps extends PageProps {
     inventoryCategories: CategoryOption[];
     cashOnHand: string;
     cashAvailability?: CashAvailability | null;
+    units?: Unit[];
     canEdit?: boolean;
     canDecide?: boolean;
 }
@@ -164,6 +166,7 @@ export default function RequisitionsShow() {
         inventoryCategories = [],
         cashOnHand,
         cashAvailability = null,
+        units = [],
         canEdit,
         canDecide,
         pendingStep,
@@ -873,6 +876,7 @@ export default function RequisitionsShow() {
                                         originalAmount={String(requisition.original_amount)}
                                         resolveUrl={`/approvals/steps/${pendingStep.id}/resolve`}
                                         showOverride={showOverride}
+                                        units={units}
                                     />
                                 </DataPanel>
                             </div>

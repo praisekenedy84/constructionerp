@@ -19,6 +19,7 @@ import {
     ListingFilters,
     PageProps,
     Paginated,
+    Unit,
 } from '@/types';
 import { Head, useForm, usePage } from '@inertiajs/react';
 import { FormEvent, useEffect, useRef, useState } from 'react';
@@ -28,11 +29,18 @@ interface RequisitionsReviewProps extends PageProps {
     cashByRequisitionId?: Record<number, CashAvailability>;
     filters: ListingFilters & { requisition_id?: string };
     focusRequisitionId?: number | null;
+    units?: Unit[];
 }
 
 export default function RequisitionsReview() {
-    const { approvalSteps, cashByRequisitionId = {}, filters, auth, focusRequisitionId } =
-        usePage<RequisitionsReviewProps>().props;
+    const {
+        approvalSteps,
+        cashByRequisitionId = {},
+        filters,
+        auth,
+        focusRequisitionId,
+        units = [],
+    } = usePage<RequisitionsReviewProps>().props;
     const steps = approvalSteps.data ?? [];
     const [selectedId, setSelectedId] = useState<number | null>(null);
     const selected = steps.find((s) => s.id === selectedId);
@@ -427,6 +435,7 @@ export default function RequisitionsReview() {
                                                 originalAmount={String(requisition.original_amount)}
                                                 resolveUrl={`/approvals/steps/${selected.id}/resolve`}
                                                 showOverride={showOverride}
+                                                units={units}
                                             />
                                         </DataPanel>
                                     </div>

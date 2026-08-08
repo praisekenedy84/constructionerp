@@ -34,6 +34,7 @@ use App\Http\Controllers\ReportController;
 use App\Http\Controllers\RequisitionCategoryController;
 use App\Http\Controllers\RequisitionController;
 use App\Http\Controllers\SaleController;
+use App\Http\Controllers\UnitController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\ValuationController;
@@ -118,6 +119,10 @@ Route::middleware('auth')->group(function () {
     Route::post('/requisitions/positions', [PositionController::class, 'store'])->name('requisitions.positions.store');
     Route::put('/requisitions/positions/{id}', [PositionController::class, 'update'])->name('requisitions.positions.update');
     Route::delete('/requisitions/positions/{id}', [PositionController::class, 'destroy'])->name('requisitions.positions.destroy');
+    Route::get('/requisitions/units', [UnitController::class, 'index'])->name('requisitions.units.index');
+    Route::post('/requisitions/units', [UnitController::class, 'store'])->name('requisitions.units.store');
+    Route::put('/requisitions/units/{id}', [UnitController::class, 'update'])->name('requisitions.units.update');
+    Route::delete('/requisitions/units/{id}', [UnitController::class, 'destroy'])->name('requisitions.units.destroy');
     Route::get('/recipients', [RecipientController::class, 'index'])->name('recipients.index');
     Route::post('/recipients', [RecipientController::class, 'store'])->name('recipients.store');
     Route::put('/recipients/{id}', [RecipientController::class, 'update'])->name('recipients.update');

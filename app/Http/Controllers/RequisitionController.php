@@ -20,6 +20,7 @@ use App\Models\Recipient;
 use App\Models\Requisition;
 use App\Models\RequisitionCategory;
 use App\Models\StockLocation;
+use App\Models\Unit;
 use App\Services\MoneyAccountService;
 use App\Services\ReportService;
 use App\Services\RequisitionRegisterService;
@@ -215,6 +216,9 @@ class RequisitionController extends Controller
                         : ['scope' => 'organization']
                 )['cash_on_hand'],
             'cashAvailability' => $this->requisitionService->cashAvailability($requisition),
+            'units' => $this->activeUnits(
+                collect($requisition->items ?? [])->pluck('unit')->filter()->all()
+            ),
         ]);
     }
 
@@ -314,6 +318,7 @@ class RequisitionController extends Controller
                 'requisition_id' => $request->input('requisition_id'),
             ]),
             'focusRequisitionId' => $request->integer('requisition_id') ?: null,
+            'units' => $this->activeUnits(),
         ]);
     }
 
@@ -491,6 +496,13 @@ class RequisitionController extends Controller
             }
         }
 
+        $lineUnits = [];
+        if ($requisition) {
+            $lineUnits = $requisition->relationLoaded('items')
+                ? $requisition->items->pluck('unit')->filter()->all()
+                : $requisition->items()->pluck('unit')->filter()->all();
+        }
+
         return [
             'projects' => Project::orderBy('name')->get(['id', 'code', 'name']),
             'boqItems' => $boqItems,
@@ -498,6 +510,7 @@ class RequisitionController extends Controller
             'categories' => $categories,
             'departments' => $departments,
             'positions' => $positions,
+            'units' => $this->activeUnits($lineUnits),
             'employees' => Employee::query()
                 ->with('project:id,code,name')
                 ->orderBy('name')
@@ -516,5 +529,60 @@ class RequisitionController extends Controller
                 ->orderBy('name')
                 ->get(['id', 'name', 'phone', 'email', 'address', 'national_id', 'status']),
         ];
+    }
+
+    /**
+     * Active units for dropdowns, optionally including orphan labels still used on lines.
+     *
+     * @param  array<int, string|null>  $extraNames
+     * @return list<array{id: int|null, name: string, description: string|null, is_active: bool}>
+     */
+    private function activeUnits(array $extraNames = []): array
+    {
+        $units = Unit::query()
+            ->active()
+            ->ordered()
+            ->get(['id', 'name', 'description', 'is_active'])
+            ->map(fn (Unit $unit) => [
+                'id' => $unit->id,
+                'name' => $unit->name,
+                'description' => $unit->description,
+                'is_active' => $unit->is_active,
+            ])
+            ->values();
+
+        foreach ($extraNames as $name) {
+            $name = trim((string) $name);
+            if ($name === '') {
+                continue;
+            }
+
+            if ($units->contains(fn (array $unit) => strcasecmp($unit['name'], $name) === 0)) {
+                continue;
+            }
+
+            $current = Unit::query()
+                ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($name)])
+                ->first(['id', 'name', 'description', 'is_active']);
+
+            if ($current) {
+                $units = $units->prepend([
+                    'id' => $current->id,
+                    'name' => $current->name,
+                    'description' => $current->description,
+                    'is_active' => $current->is_active,
+                ])->values();
+                continue;
+            }
+
+            $units = $units->prepend([
+                'id' => null,
+                'name' => $name,
+                'description' => null,
+                'is_active' => false,
+            ])->values();
+        }
+
+        return $units->all();
     }
 }

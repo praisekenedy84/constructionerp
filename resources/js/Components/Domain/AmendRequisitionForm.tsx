@@ -3,7 +3,7 @@ import { Button } from '@/Components/ui/button';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
 import { formatCurrency } from '@/lib/formatters';
-import { RequisitionItem } from '@/types';
+import { RequisitionItem, Unit } from '@/types';
 import { useForm } from '@inertiajs/react';
 import { FormEvent, useEffect, useMemo } from 'react';
 
@@ -21,6 +21,7 @@ type AmendFormProps = {
     originalAmount: string;
     resolveUrl: string;
     showOverride?: boolean;
+    units?: Unit[];
     onSuccess?: () => void;
 };
 
@@ -58,6 +59,7 @@ export default function AmendRequisitionForm({
     originalAmount,
     resolveUrl,
     showOverride = false,
+    units = [],
     onSuccess,
 }: AmendFormProps) {
     const form = useForm({
@@ -149,10 +151,31 @@ export default function AmendRequisitionForm({
                             <div className="grid gap-3 sm:grid-cols-5">
                                 <div className="space-y-2">
                                     <Label>Unit</Label>
-                                    <Input
+                                    <select
+                                        className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
                                         value={item.unit}
                                         onChange={(e) => updateLine(index, { unit: e.target.value })}
-                                    />
+                                    >
+                                        <option value="">Select unit</option>
+                                        {units.length === 0 && (
+                                            <option value="" disabled>
+                                                No units defined
+                                            </option>
+                                        )}
+                                        {units.map((unit) => (
+                                            <option key={unit.id ?? unit.name} value={unit.name}>
+                                                {unit.name}
+                                            </option>
+                                        ))}
+                                        {item.unit &&
+                                            !units.some(
+                                                (unit) =>
+                                                    unit.name.toLowerCase() ===
+                                                    item.unit.toLowerCase(),
+                                            ) && (
+                                                <option value={item.unit}>{item.unit}</option>
+                                            )}
+                                    </select>
                                 </div>
                                 <div className="space-y-2">
                                     <Label>Qty</Label>

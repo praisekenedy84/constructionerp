@@ -400,6 +400,14 @@ export interface Position {
     sort_order?: number;
 }
 
+export interface Unit {
+    id: number;
+    name: string;
+    description?: string | null;
+    is_active?: boolean;
+    sort_order?: number;
+}
+
 export interface RequisitionRecipient {
     id?: number;
     recipient_id?: number | null;
@@ -487,6 +495,7 @@ export type CashAllocationStatus = 'pending' | 'approved' | 'rejected' | 'receiv
 export interface MoneyAccount {
     id: number;
     name: string;
+    bank_name?: string | null;
     type: 'manager' | 'finance';
     balance: string;
     is_active: boolean;

@@ -67,6 +67,7 @@ class MenuCatalog
                     ['key' => 'requisitions.categories', 'label' => 'Categories', 'href' => '/requisitions/categories', 'permission' => null],
                     ['key' => 'requisitions.departments', 'label' => 'Departments', 'href' => '/requisitions/departments', 'permission' => null],
                     ['key' => 'requisitions.positions', 'label' => 'Positions', 'href' => '/requisitions/positions', 'permission' => null],
+                    ['key' => 'requisitions.units', 'label' => 'Units', 'href' => '/requisitions/units', 'permission' => null],
                     ['key' => 'requisitions.recipients', 'label' => 'Recipients', 'href' => '/recipients', 'permission' => null],
                     ['key' => 'requisitions.recipient_attendance', 'label' => 'Recipient Attendance', 'href' => '/recipients/attendance', 'permission' => null],
                     ['key' => 'requisitions.review_queue', 'label' => 'Review Queue', 'href' => '/requisitions/review-queue', 'permission' => 'requisitions:approve'],

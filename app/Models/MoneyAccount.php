@@ -14,6 +14,7 @@ class MoneyAccount extends Model
 
     protected $fillable = [
         'name',
+        'bank_name',
         'type',
         'balance',
         'is_active',

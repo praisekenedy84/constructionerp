@@ -34,7 +34,7 @@ class MoneyAccountService
     }
 
     /**
-     * @param  array{notes?: string|null}  $opts
+     * @param  array{bank_name?: string|null, notes?: string|null}  $opts
      */
     public function createManagerAccount(string $name, User $creator, array $opts = []): MoneyAccount
     {
@@ -43,8 +43,11 @@ class MoneyAccountService
             throw new \InvalidArgumentException('Account name is required.');
         }
 
+        $bankName = isset($opts['bank_name']) ? trim((string) $opts['bank_name']) : '';
+
         return MoneyAccount::create([
             'name' => $trimmed,
+            'bank_name' => $bankName !== '' ? $bankName : null,
             'type' => MoneyAccountType::Manager,
             'balance' => '0.00',
             'is_active' => true,
@@ -340,6 +343,7 @@ class MoneyAccountService
         return [
             'id' => $account->id,
             'name' => $account->name,
+            'bank_name' => $account->bank_name,
             'type' => $account->type->value,
             'balance' => (string) $account->balance,
             'is_active' => $account->is_active,

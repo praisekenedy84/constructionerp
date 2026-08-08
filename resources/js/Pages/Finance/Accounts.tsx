@@ -24,7 +24,7 @@ export default function Accounts() {
     const [createOpen, setCreateOpen] = useState(false);
     const [depositAccount, setDepositAccount] = useState<MoneyAccount | null>(null);
 
-    const createForm = useForm({ name: '', notes: '' });
+    const createForm = useForm({ name: '', bank_name: '', notes: '' });
     const depositForm = useForm({
         amount: '',
         description: '',
@@ -132,7 +132,8 @@ export default function Accounts() {
                             <table className="w-full text-sm">
                                 <thead>
                                     <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs text-slate-500">
-                                        <th className="px-4 py-3 font-medium">Name</th>
+                                        <th className="px-4 py-3 font-medium">Account name</th>
+                                        <th className="px-4 py-3 font-medium">Bank name</th>
                                         <th className="px-4 py-3 text-right font-medium">Balance</th>
                                         <th className="px-4 py-3 font-medium">Notes</th>
                                         <th className="px-4 py-3 text-right font-medium">Actions</th>
@@ -143,6 +144,9 @@ export default function Accounts() {
                                         <tr key={account.id}>
                                             <td className="px-4 py-4 font-medium text-slate-900">
                                                 {account.name}
+                                            </td>
+                                            <td className="px-4 py-4 text-slate-700">
+                                                {account.bank_name || '—'}
                                             </td>
                                             <td className="px-4 py-4 text-right font-medium">
                                                 {formatCurrency(account.balance)}
@@ -203,11 +207,24 @@ export default function Accounts() {
                                 id="account-name"
                                 value={createForm.data.name}
                                 onChange={(e) => createForm.setData('name', e.target.value)}
-                                placeholder="e.g. CRDB Main"
+                                placeholder="e.g. Operating Account"
                                 required
                             />
                             {createForm.errors.name && (
                                 <p className="text-sm text-red-600">{createForm.errors.name}</p>
+                            )}
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="bank-name">Bank name</Label>
+                            <Input
+                                id="bank-name"
+                                value={createForm.data.bank_name}
+                                onChange={(e) => createForm.setData('bank_name', e.target.value)}
+                                placeholder="e.g. CRDB Bank"
+                                required
+                            />
+                            {createForm.errors.bank_name && (
+                                <p className="text-sm text-red-600">{createForm.errors.bank_name}</p>
                             )}
                         </div>
                         <div className="space-y-2">

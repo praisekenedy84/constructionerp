@@ -15,6 +15,7 @@ class StoreMoneyAccountRequest extends FormRequest
     {
         return [
             'name' => ['required', 'string', 'max:120'],
+            'bank_name' => ['required', 'string', 'max:120'],
             'notes' => ['nullable', 'string', 'max:2000'],
         ];
     }

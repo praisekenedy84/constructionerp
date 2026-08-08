@@ -48,7 +48,10 @@ class MoneyAccountController extends Controller
         $account = $this->moneyAccountService->createManagerAccount(
             $validated['name'],
             $request->user(),
-            ['notes' => $validated['notes'] ?? null],
+            [
+                'bank_name' => $validated['bank_name'] ?? null,
+                'notes' => $validated['notes'] ?? null,
+            ],
         );
 
         return back()->with('success', "Account \"{$account->name}\" created.");

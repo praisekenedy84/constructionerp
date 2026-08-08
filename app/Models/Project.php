@@ -211,6 +211,14 @@ class Project extends Model
         return $this->hasMany(ProjectPhase::class);
     }
 
+    public function sales(): HasMany
+    {
+        return $this->hasMany(Sale::class);
+    }
+
+    /**
+     * Legacy single-sale accessor (first sale for the project). Prefer sales().
+     */
     public function sale(): HasOne
     {
         return $this->hasOne(Sale::class);

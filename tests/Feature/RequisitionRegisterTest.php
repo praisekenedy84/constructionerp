@@ -125,6 +125,7 @@ class RequisitionRegisterTest extends TestCase
             ->assertInertia(fn ($page) => $page
                 ->component('Requisitions/Index')
                 ->has('rows.data', 3)
+                ->has('finance_balance')
                 ->where('summary.total_requested', '180000.00')
                 ->where('summary.total_paid', '150000.00')
                 ->where('summary.total_pending', '30000.00')

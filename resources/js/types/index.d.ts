@@ -158,8 +158,16 @@ export interface Sale {
     converted_at?: string | null;
     can_convert: boolean;
     can_collect: boolean;
+    remaining_budget?: string;
+    recognized_amount?: string;
+    recognizable_amount?: string;
+    phase_share_pct?: string;
     customer?: string | null;
     project?: Pick<Project, 'id' | 'code' | 'name' | 'client' | 'contract_amount' | 'net_budget' | 'status'> | null;
+    phase?: Pick<
+        ProjectPhase,
+        'id' | 'sequence_no' | 'name' | 'status' | 'disbursed_amount' | 'phase_net_budget'
+    > | null;
     converter?: { id: number; name: string } | null;
 }
 

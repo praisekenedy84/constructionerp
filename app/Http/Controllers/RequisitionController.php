@@ -20,6 +20,7 @@ use App\Models\Recipient;
 use App\Models\Requisition;
 use App\Models\RequisitionCategory;
 use App\Models\StockLocation;
+use App\Services\MoneyAccountService;
 use App\Services\ReportService;
 use App\Services\RequisitionRegisterService;
 use App\Services\RequisitionService;
@@ -37,6 +38,7 @@ class RequisitionController extends Controller
     public function __construct(
         private RequisitionService $requisitionService,
         private RequisitionRegisterService $registerService,
+        private MoneyAccountService $moneyAccountService,
     ) {}
 
     public function index(Request $request): Response
@@ -62,6 +64,7 @@ class RequisitionController extends Controller
         return Inertia::render('Requisitions/Index', [
             'rows' => $this->registerService->paginate($request->user(), $request),
             'summary' => $this->registerService->summary($request->user(), $request),
+            'finance_balance' => $this->moneyAccountService->financeBalance(),
             'filterOptions' => $this->registerService->filterOptions(),
             'filters' => array_filter($filters, fn ($value) => $value !== null && $value !== ''),
         ]);

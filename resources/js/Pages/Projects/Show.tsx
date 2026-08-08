@@ -60,7 +60,7 @@ interface ContractSummary {
 
 interface ProjectsShowProps extends PageProps {
     project: Project;
-    sale?: Sale | null;
+    sales?: Sale[];
     phases: ProjectPhase[];
     compliance_items?: ProjectComplianceItemRow[];
     contract_summary?: ContractSummary;
@@ -98,7 +98,7 @@ function emptyIpc(): PhaseIpcForm {
 export default function ProjectsShow() {
     const {
         project,
-        sale = null,
+        sales = [],
         phases,
         compliance_items = [],
         contract_summary,
@@ -111,6 +111,7 @@ export default function ProjectsShow() {
     } = usePage<ProjectsShowProps & { errors?: Record<string, string> }>().props;
     const canUpdate = hasPermission(auth.user, 'projects', 'update');
     const canDelete = hasPermission(auth.user, 'projects', 'delete-soft');
+    const canReadSales = hasPermission(auth.user, 'sales', 'read');
     const nextPhaseNo = (phases[phases.length - 1]?.sequence_no ?? 0) + 1;
     const hasPhases = contract_summary?.has_phases ?? phases.length > 0;
     const contractItems = compliance_items.filter((item) => item.allocation_level === 'contract');
@@ -287,11 +288,11 @@ export default function ProjectsShow() {
                                     IPCs
                                 </Button>
                             </Link>
-                            {sale && (
-                                <Link href={`/sales/${sale.id}`}>
+                            {canReadSales && sales.length > 0 && (
+                                <Link href="/sales">
                                     <Button variant="outline" size="sm">
                                         <ShoppingCart className="h-4 w-4" />
-                                        Sale
+                                        Sales
                                     </Button>
                                 </Link>
                             )}
@@ -748,6 +749,26 @@ export default function ProjectsShow() {
                                                         View
                                                     </Button>
                                                 </Link>
+                                                {canUpdate && phase.status !== 'closed' && (
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        onClick={() => {
+                                                            if (
+                                                                !confirm(
+                                                                    `Close Phase ${phase.sequence_no}: ${phase.name}?`,
+                                                                )
+                                                            ) {
+                                                                return;
+                                                            }
+                                                            router.post(
+                                                                `/projects/${project.id}/phases/${phase.id}/close`,
+                                                            );
+                                                        }}
+                                                    >
+                                                        Close
+                                                    </Button>
+                                                )}
                                                 <Button
                                                     variant="outline"
                                                     size="sm"

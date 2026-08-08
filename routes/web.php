@@ -94,6 +94,7 @@ Route::middleware('auth')->group(function () {
         Route::delete('/projects/{id}/valuations/{valuationId}', [ValuationController::class, 'destroy'])->name('projects.valuations.destroy');
         Route::get('/projects/{id}/phases/{phaseId}', [ProjectPhaseController::class, 'show'])->name('projects.phases.show');
         Route::post('/projects/{id}/phases', [ProjectPhaseController::class, 'store'])->name('projects.phases.store');
+        Route::post('/projects/{id}/phases/{phaseId}/close', [ProjectPhaseController::class, 'close'])->name('projects.phases.close');
         Route::post('/projects/{id}/phases/{phaseId}/retention/release', [ProjectPhaseController::class, 'releaseRetention'])->name('projects.phases.retention.release');
         Route::post('/projects/{id}/phases/{phaseId}/retention/forfeit', [ProjectPhaseController::class, 'forfeitRetention'])->name('projects.phases.retention.forfeit');
         Route::post('/projects/{id}/compliance', [ProjectComplianceController::class, 'store'])->name('projects.compliance.store');

@@ -55,7 +55,7 @@ export default function SalesShow() {
     function convertToReceivable() {
         if (
             !confirm(
-                `Convert profit of ${formatCurrency(sale.profit_amount)} into a receivable for ${sale.sale_code}?`,
+                `Convert this phase's profit share of ${formatCurrency(sale.profit_amount)} into a receivable for ${sale.sale_code}?`,
             )
         ) {
             return;
@@ -104,6 +104,10 @@ export default function SalesShow() {
                     title={sale.sale_code}
                     description={`${sale.customer ?? sale.project?.client ?? 'Customer'} · ${
                         sale.project ? `${sale.project.code} — ${sale.project.name}` : 'Project'
+                    }${
+                        sale.phase
+                            ? ` · Phase ${sale.phase.sequence_no}: ${sale.phase.name}`
+                            : ''
                     }`}
                     actions={
                         <div className="flex flex-wrap items-center gap-2">
@@ -117,6 +121,15 @@ export default function SalesShow() {
                                 <Link href={`/projects/${sale.project.id}`}>
                                     <Button variant="outline" size="sm">
                                         Open project
+                                    </Button>
+                                </Link>
+                            )}
+                            {sale.project && sale.phase && (
+                                <Link
+                                    href={`/projects/${sale.project.id}/phases/${sale.phase.id}`}
+                                >
+                                    <Button variant="outline" size="sm">
+                                        Open phase
                                     </Button>
                                 </Link>
                             )}
@@ -148,18 +161,18 @@ export default function SalesShow() {
                             {sale.customer ?? sale.project?.client ?? '—'}
                         </p>
                     </DataPanel>
-                    <DataPanel title="Contract Amount">
+                    <DataPanel title="Phase Disbursed">
                         <p className="text-2xl font-bold text-slate-900">
                             {formatCurrency(sale.contract_amount)}
                         </p>
                     </DataPanel>
-                    <DataPanel title="Profit">
+                    <DataPanel title="Profit Share">
                         <p className="text-2xl font-bold text-green-700">
                             {formatCurrency(sale.profit_amount)}
                         </p>
                         <p className="mt-1 text-xs text-slate-500">
                             {sale.status === 'open'
-                                ? 'Live net operating profit'
+                                ? 'Estimated share of remaining project profit'
                                 : 'Snapshotted at conversion'}
                         </p>
                     </DataPanel>
@@ -179,6 +192,44 @@ export default function SalesShow() {
                             <div className="flex justify-between gap-4">
                                 <dt className="text-slate-500">Sale ID</dt>
                                 <dd className="font-mono text-slate-900">{sale.sale_code}</dd>
+                            </div>
+                            <div className="flex justify-between gap-4">
+                                <dt className="text-slate-500">Phase</dt>
+                                <dd className="text-right text-slate-900">
+                                    {sale.phase
+                                        ? `Phase ${sale.phase.sequence_no}: ${sale.phase.name}`
+                                        : 'Legacy (project)'}
+                                </dd>
+                            </div>
+                            <div className="flex justify-between gap-4">
+                                <dt className="text-slate-500">Phase status</dt>
+                                <dd>
+                                    {sale.phase ? (
+                                        <StatusBadge status={sale.phase.status} />
+                                    ) : (
+                                        '—'
+                                    )}
+                                </dd>
+                            </div>
+                            <div className="flex justify-between gap-4">
+                                <dt className="text-slate-500">Remaining budget</dt>
+                                <dd className="text-slate-900">
+                                    {formatCurrency(sale.remaining_budget ?? '0')}
+                                </dd>
+                            </div>
+                            <div className="flex justify-between gap-4">
+                                <dt className="text-slate-500">Already recognized</dt>
+                                <dd className="text-slate-900">
+                                    {formatCurrency(sale.recognized_amount ?? '0')}
+                                </dd>
+                            </div>
+                            <div className="flex justify-between gap-4">
+                                <dt className="text-slate-500">Phase share</dt>
+                                <dd className="text-slate-900">
+                                    {sale.status === 'open'
+                                        ? `${sale.phase_share_pct ?? '0.00'}%`
+                                        : '—'}
+                                </dd>
                             </div>
                             <div className="flex justify-between gap-4">
                                 <dt className="text-slate-500">Collected</dt>

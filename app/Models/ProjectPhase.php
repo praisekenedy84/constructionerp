@@ -8,6 +8,7 @@ use App\Traits\LogsActivity;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class ProjectPhase extends Model
@@ -60,5 +61,10 @@ class ProjectPhase extends Model
     public function invoices(): HasMany
     {
         return $this->hasMany(Invoice::class, 'phase_id');
+    }
+
+    public function sale(): HasOne
+    {
+        return $this->hasOne(Sale::class, 'phase_id');
     }
 }

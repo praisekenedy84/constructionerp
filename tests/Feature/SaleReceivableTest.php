@@ -5,18 +5,21 @@ namespace Tests\Feature;
 use App\Enums\AccountTransactionType;
 use App\Enums\BudgetTransactionType;
 use App\Enums\MoneyAccountType;
+use App\Enums\PhaseStatus;
 use App\Enums\ProjectStatus;
 use App\Enums\SaleStatus;
 use App\Models\AccountTransaction;
 use App\Models\BudgetTransaction;
 use App\Models\MoneyAccount;
 use App\Models\Project;
+use App\Models\ProjectPhase;
 use App\Models\Sale;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Services\AuthService;
 use App\Services\MoneyAccountService;
 use App\Services\PermissionService;
+use App\Services\PhaseService;
 use App\Services\SaleService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -49,13 +52,16 @@ class SaleReceivableTest extends TestCase
     }
 
     /**
-     * @return array{project: Project, sale: Sale, userId: int}
+     * @return array{project: Project, phase: ProjectPhase, sale: Sale, userId: int}
      */
-    private function createClosedProjectWithProfit(Tenant $tenant, string $profit = '600.00'): array
-    {
+    private function createProjectWithClosedPhaseAndProfit(
+        Tenant $tenant,
+        string $profit = '600.00',
+        string $disbursed = '1000.00',
+    ): array {
         $result = [];
 
-        $tenant->run(function () use (&$result, $profit) {
+        $tenant->run(function () use (&$result, $profit, $disbursed) {
             $userId = (int) User::query()->value('id');
 
             $project = Project::create([
@@ -63,16 +69,24 @@ class SaleReceivableTest extends TestCase
                 'name' => 'Highway Extension',
                 'client' => 'Ministry of Works',
                 'location' => 'Dar',
-                'contract_amount' => '1000.00',
+                'contract_amount' => $disbursed,
                 'wht_percentage' => '0',
-                'net_budget' => '1000.00',
+                'net_budget' => $disbursed,
                 'physical_progress_pct' => '100',
                 'start_date' => now()->subYear(),
                 'end_date' => now(),
-                'status' => ProjectStatus::Closed,
+                'status' => ProjectStatus::Active,
             ]);
 
-            $spend = bcsub('1000.00', $profit, 2);
+            $phase = app(PhaseService::class)->create($project, [
+                'name' => 'Phase 1',
+                'disbursed_amount' => $disbursed,
+            ]);
+
+            app(PhaseService::class)->close($phase);
+            $phase = $phase->fresh();
+
+            $spend = bcsub($disbursed, $profit, 2);
             if (bccomp($spend, '0', 2) === 1) {
                 BudgetTransaction::create([
                     'project_id' => $project->id,
@@ -84,10 +98,11 @@ class SaleReceivableTest extends TestCase
                 ]);
             }
 
-            $sale = app(SaleService::class)->ensureForProject($project);
+            $sale = app(SaleService::class)->ensureForPhase($phase->fresh());
 
             $result = [
-                'project' => $project,
+                'project' => $project->fresh(),
+                'phase' => $phase,
                 'sale' => $sale,
                 'userId' => $userId,
             ];
@@ -96,7 +111,7 @@ class SaleReceivableTest extends TestCase
         return $result;
     }
 
-    public function test_sales_index_lists_projects_as_sales_with_stable_ids(): void
+    public function test_sales_index_lists_phase_sales_with_stable_ids(): void
     {
         $tenant = $this->seedTenant('sales-list');
 
@@ -115,7 +130,10 @@ class SaleReceivableTest extends TestCase
                 'status' => ProjectStatus::Active,
             ]);
 
-            app(SaleService::class)->ensureForProject($project);
+            app(PhaseService::class)->create($project, [
+                'name' => 'Foundation',
+                'disbursed_amount' => '5000.00',
+            ]);
         });
 
         $this->post('/login', [
@@ -130,6 +148,7 @@ class SaleReceivableTest extends TestCase
                 ->has('sales.data', 1)
                 ->where('sales.data.0.customer', 'City Council')
                 ->where('sales.data.0.contract_amount', '5000.00')
+                ->where('sales.data.0.phase.name', 'Foundation')
                 ->where('sales.data.0.sale_code', fn ($code) => str_starts_with((string) $code, 'SALE-'))
             );
 
@@ -164,7 +183,10 @@ class SaleReceivableTest extends TestCase
                 'status' => ProjectStatus::Active,
             ]);
 
-            app(SaleService::class)->ensureForProject($archived);
+            app(PhaseService::class)->create($archived, [
+                'name' => 'Phase 1',
+                'disbursed_amount' => '1000.00',
+            ]);
             $archived->delete();
         });
 
@@ -197,15 +219,15 @@ class SaleReceivableTest extends TestCase
             );
     }
 
-    public function test_open_project_cannot_convert_and_closed_project_can(): void
+    public function test_open_phase_cannot_convert_and_closed_phase_can(): void
     {
         $tenant = $this->seedTenant('sales-convert');
 
         $openSaleId = null;
         $closedSaleId = null;
 
-        $tenant->run(function () use (&$openSaleId, &$closedSaleId) {
-            $open = Project::create([
+        $tenant->run(function () use (&$openSaleId) {
+            $project = Project::create([
                 'code' => 'OPEN-1',
                 'name' => 'Open Job',
                 'client' => 'Client A',
@@ -218,10 +240,16 @@ class SaleReceivableTest extends TestCase
                 'end_date' => now()->addYear(),
                 'status' => ProjectStatus::Active,
             ]);
-            $openSaleId = app(SaleService::class)->ensureForProject($open)->id;
+
+            $phase = app(PhaseService::class)->create($project, [
+                'name' => 'Open Phase',
+                'disbursed_amount' => '1000.00',
+            ]);
+
+            $openSaleId = app(SaleService::class)->ensureForPhase($phase)->id;
         });
 
-        $closed = $this->createClosedProjectWithProfit($tenant, '600.00');
+        $closed = $this->createProjectWithClosedPhaseAndProfit($tenant, '600.00');
         $closedSaleId = $closed['sale']->id;
 
         $this->post('/login', [
@@ -252,10 +280,169 @@ class SaleReceivableTest extends TestCase
             ->assertSessionHasErrors('convert');
     }
 
+    public function test_closing_phase_endpoint_sets_closed_status(): void
+    {
+        $tenant = $this->seedTenant('sales-close-phase');
+
+        $projectId = null;
+        $phaseId = null;
+
+        $tenant->run(function () use (&$projectId, &$phaseId) {
+            $project = Project::create([
+                'code' => 'CLOSE-1',
+                'name' => 'Closable',
+                'client' => 'Client',
+                'location' => 'Site',
+                'contract_amount' => '2000.00',
+                'wht_percentage' => '0',
+                'net_budget' => '2000.00',
+                'physical_progress_pct' => '0',
+                'start_date' => now(),
+                'end_date' => now()->addYear(),
+                'status' => ProjectStatus::Active,
+            ]);
+
+            $phase = app(PhaseService::class)->create($project, [
+                'name' => 'Works',
+                'disbursed_amount' => '2000.00',
+            ]);
+
+            $projectId = $project->id;
+            $phaseId = $phase->id;
+        });
+
+        $this->post('/login', [
+            'email' => 'admin@sales-close-phase.local',
+            'password' => 'password',
+        ]);
+
+        $this->from("/projects/{$projectId}/phases/{$phaseId}")
+            ->post("/projects/{$projectId}/phases/{$phaseId}/close")
+            ->assertRedirect("/projects/{$projectId}/phases/{$phaseId}")
+            ->assertSessionHasNoErrors();
+
+        $tenant->run(function () use ($phaseId) {
+            $this->assertSame(PhaseStatus::Closed, ProjectPhase::findOrFail($phaseId)->status);
+        });
+    }
+
+    public function test_two_phases_convert_pro_rata_of_recognizable_profit(): void
+    {
+        $tenant = $this->seedTenant('sales-prorata');
+
+        $sale1Id = null;
+        $sale2Id = null;
+        $userId = null;
+
+        $tenant->run(function () use (&$sale1Id, &$sale2Id, &$userId) {
+            $userId = (int) User::query()->value('id');
+
+            $project = Project::create([
+                'code' => 'PRORATA',
+                'name' => 'Two Phase Job',
+                'client' => 'Client',
+                'location' => 'Site',
+                'contract_amount' => '1000.00',
+                'wht_percentage' => '0',
+                'net_budget' => '1000.00',
+                'physical_progress_pct' => '50',
+                'start_date' => now(),
+                'end_date' => now()->addYear(),
+                'status' => ProjectStatus::Active,
+            ]);
+
+            $phase1 = app(PhaseService::class)->create($project, [
+                'name' => 'Phase A',
+                'disbursed_amount' => '400.00',
+            ]);
+            $phase2 = app(PhaseService::class)->create($project, [
+                'name' => 'Phase B',
+                'disbursed_amount' => '600.00',
+            ]);
+
+            // Remaining profit = 1000 (no spend).
+            app(PhaseService::class)->close($phase1);
+            app(PhaseService::class)->close($phase2);
+
+            $sale1 = app(SaleService::class)->ensureForPhase($phase1->fresh());
+            $sale2 = app(SaleService::class)->ensureForPhase($phase2->fresh());
+            $sale1Id = $sale1->id;
+            $sale2Id = $sale2->id;
+
+            $actor = User::findOrFail($userId);
+            app(SaleService::class)->convertToReceivable($sale1, $actor);
+        });
+
+        $tenant->run(function () use ($sale1Id, $sale2Id, $userId) {
+            $sale1 = Sale::findOrFail($sale1Id);
+            $this->assertSame('400.00', (string) $sale1->profit_amount);
+
+            $actor = User::findOrFail($userId);
+            app(SaleService::class)->convertToReceivable(Sale::findOrFail($sale2Id), $actor);
+
+            $sale2 = Sale::findOrFail($sale2Id);
+            $this->assertSame('600.00', (string) $sale2->profit_amount);
+        });
+    }
+
+    public function test_mid_stream_spend_reduces_later_phase_share(): void
+    {
+        $tenant = $this->seedTenant('sales-spend');
+
+        $tenant->run(function () {
+            $userId = (int) User::query()->value('id');
+
+            $project = Project::create([
+                'code' => 'SPEND-1',
+                'name' => 'Spend Job',
+                'client' => 'Client',
+                'location' => 'Site',
+                'contract_amount' => '1000.00',
+                'wht_percentage' => '0',
+                'net_budget' => '1000.00',
+                'physical_progress_pct' => '50',
+                'start_date' => now(),
+                'end_date' => now()->addYear(),
+                'status' => ProjectStatus::Active,
+            ]);
+
+            $phase1 = app(PhaseService::class)->create($project, [
+                'name' => 'Phase A',
+                'disbursed_amount' => '400.00',
+            ]);
+            $phase2 = app(PhaseService::class)->create($project, [
+                'name' => 'Phase B',
+                'disbursed_amount' => '600.00',
+            ]);
+
+            app(PhaseService::class)->close($phase1);
+            app(PhaseService::class)->close($phase2);
+
+            $actor = User::findOrFail($userId);
+            $sale1 = app(SaleService::class)->ensureForPhase($phase1->fresh());
+            app(SaleService::class)->convertToReceivable($sale1, $actor);
+            $this->assertSame('400.00', (string) $sale1->fresh()->profit_amount);
+
+            BudgetTransaction::create([
+                'project_id' => $project->id,
+                'type' => BudgetTransactionType::DirectExpense,
+                'amount' => '300.00',
+                'reason' => 'Extra spend',
+                'created_by' => $userId,
+                'created_at' => now(),
+            ]);
+
+            // Remaining 700, recognized 400 → recognizable 300, all to phase 2.
+            $sale2 = app(SaleService::class)->ensureForPhase($phase2->fresh());
+            app(SaleService::class)->convertToReceivable($sale2, $actor);
+            $this->assertSame('300.00', (string) $sale2->fresh()->profit_amount);
+        });
+    }
+
     public function test_partial_and_full_collections_update_account_and_outstanding(): void
     {
         $tenant = $this->seedTenant('sales-collect');
-        $closed = $this->createClosedProjectWithProfit($tenant, '600.00');
+        $closed = $this->createProjectWithClosedPhaseAndProfit($tenant, '600.00');
         $saleId = $closed['sale']->id;
         $accountId = null;
 
@@ -342,7 +529,7 @@ class SaleReceivableTest extends TestCase
     public function test_collection_rejects_overpayment_and_inactive_account(): void
     {
         $tenant = $this->seedTenant('sales-guards');
-        $closed = $this->createClosedProjectWithProfit($tenant, '500.00');
+        $closed = $this->createProjectWithClosedPhaseAndProfit($tenant, '500.00');
         $saleId = $closed['sale']->id;
         $accountId = null;
 
@@ -412,7 +599,7 @@ class SaleReceivableTest extends TestCase
 
         tenancy()->end();
 
-        $closed = $this->createClosedProjectWithProfit($tenant, '300.00');
+        $closed = $this->createProjectWithClosedPhaseAndProfit($tenant, '300.00');
         $saleId = $closed['sale']->id;
 
         $this->post('/login', [
@@ -429,7 +616,7 @@ class SaleReceivableTest extends TestCase
         ])->assertForbidden();
     }
 
-    public function test_project_show_includes_sale_link_payload(): void
+    public function test_project_show_includes_sales_payload(): void
     {
         $tenant = $this->seedTenant('sales-project-link');
 
@@ -448,6 +635,12 @@ class SaleReceivableTest extends TestCase
                 'end_date' => now()->addYear(),
                 'status' => ProjectStatus::Active,
             ]);
+
+            app(PhaseService::class)->create($project, [
+                'name' => 'Phase 1',
+                'disbursed_amount' => '2000.00',
+            ]);
+
             $projectId = $project->id;
         });
 
@@ -462,8 +655,27 @@ class SaleReceivableTest extends TestCase
             ->assertOk()
             ->assertInertia(fn ($page) => $page
                 ->component('Projects/Show')
-                ->has('sale')
-                ->where('sale.project.id', $projectId)
+                ->has('sales', 1)
+                ->where('sales.0.project.id', $projectId)
+                ->where('sales.0.phase.name', 'Phase 1')
             );
+    }
+
+    public function test_convert_does_not_require_project_closed(): void
+    {
+        $tenant = $this->seedTenant('sales-active-ok');
+        $fixture = $this->createProjectWithClosedPhaseAndProfit($tenant, '250.00');
+
+        $tenant->run(function () use ($fixture) {
+            $this->assertSame(ProjectStatus::Active, $fixture['project']->fresh()->status);
+
+            app(SaleService::class)->convertToReceivable(
+                $fixture['sale']->fresh(),
+                User::findOrFail($fixture['userId']),
+            );
+
+            $this->assertSame(SaleStatus::Receivable, $fixture['sale']->fresh()->status);
+            $this->assertSame('250.00', (string) $fixture['sale']->fresh()->profit_amount);
+        });
     }
 }

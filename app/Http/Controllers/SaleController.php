@@ -23,12 +23,15 @@ class SaleController extends Controller
     {
         $this->authorizePermission($request->user(), 'sales', 'read');
 
-        $this->saleService->ensureAllProjectsHaveSales();
+        $this->saleService->ensureAllPhasesHaveSales();
 
         // Archived projects keep their sale history but drop out of the register.
         $query = Sale::query()
             ->whereHas('project')
-            ->with(['project:id,code,name,client,contract_amount,net_budget,status']);
+            ->with([
+                'project:id,code,name,client,contract_amount,net_budget,status',
+                'phase:id,project_id,sequence_no,name,status,disbursed_amount,phase_net_budget',
+            ]);
 
         if ($status = $request->input('status')) {
             if ($status !== 'all') {
@@ -37,7 +40,7 @@ class SaleController extends Controller
         }
 
         $listing = ListingQuery::for($query, $request)
-            ->search(['sale_code', 'project.code', 'project.name', 'project.client'])
+            ->search(['sale_code', 'project.code', 'project.name', 'project.client', 'phase.name'])
             ->dateRange('created_at')
             ->sort(['sale_code', 'status', 'created_at', 'converted_at']);
 
@@ -60,6 +63,7 @@ class SaleController extends Controller
 
         $sale = Sale::with([
             'project:id,code,name,client,contract_amount,net_budget,status,location',
+            'phase:id,project_id,sequence_no,name,status,disbursed_amount,phase_net_budget',
             'converter:id,name',
             'payments' => fn ($q) => $q->orderByDesc('occurred_at')->orderByDesc('id'),
             'payments.account:id,name,type',

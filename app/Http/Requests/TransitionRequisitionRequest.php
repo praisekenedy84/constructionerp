@@ -40,6 +40,7 @@ class TransitionRequisitionRequest extends FormRequest
             'items' => ['nullable', 'array'],
             'items.*.requisition_item_id' => ['required_with:items', 'integer', 'exists:requisition_items,id'],
             'items.*.quantity' => ['required_with:items', 'numeric', 'gt:0'],
+            'items.*.unit_cost' => ['nullable', 'numeric', 'gte:0'],
             'items.*.inventory_item_id' => ['nullable', 'integer', 'exists:inventory_items,id'],
             'items.*.stock_location_id' => ['nullable', 'integer', 'exists:stock_locations,id'],
             'inventory_source' => ['nullable', 'string', 'in:existing,new'],
@@ -66,6 +67,7 @@ class TransitionRequisitionRequest extends FormRequest
                 'exists:requisition_items,id',
             ],
             'payments.*.items.*.quantity' => ['required_with:payments.*.items', 'numeric', 'gt:0'],
+            'payments.*.items.*.unit_cost' => ['nullable', 'numeric', 'gte:0'],
         ];
     }
 

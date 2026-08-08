@@ -14,6 +14,7 @@ class PhaseService
 {
     public function __construct(
         private readonly BudgetService $budgetService,
+        private readonly SaleService $saleService,
     ) {}
 
     public function create(Project $project, array $attributes): ProjectPhase
@@ -69,6 +70,26 @@ class PhaseService
             ]);
 
             $this->budgetService->syncProjectNetBudget($project);
+            $this->saleService->ensureForPhase($phase);
+
+            return $phase->fresh();
+        });
+    }
+
+    public function close(ProjectPhase $phase): ProjectPhase
+    {
+        return DB::transaction(function () use ($phase) {
+            $phase = ProjectPhase::lockForUpdate()->findOrFail($phase->id);
+
+            if ($phase->status === PhaseStatus::Closed) {
+                throw new \InvalidArgumentException('This phase is already closed.');
+            }
+
+            $phase->update([
+                'status' => PhaseStatus::Closed,
+            ]);
+
+            $this->saleService->ensureForPhase($phase);
 
             return $phase->fresh();
         });

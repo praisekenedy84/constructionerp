@@ -838,12 +838,13 @@ class RequisitionService
                     ]);
                 }
 
-                $lineAmount = $item->amountForQuantity($itemQty);
-                $fulfillmentItems[] = array_merge($input, [
+                $unitCost = $this->resolveFulfillmentUnitCost($item, $input);
+                $lineAmount = $item->amountForQuantityAtCost($itemQty, $unitCost);
+                $fulfillmentItems[] = [
                     'requisition_item_id' => $item->id,
                     'quantity' => $itemQty,
-                    'unit_cost' => (string) $item->unit_cost,
-                ]);
+                    'unit_cost' => $unitCost,
+                ];
                 $qty = bcadd($qty, $itemQty, 3);
                 $amount = bcadd($amount, $lineAmount, 2);
             }
@@ -874,7 +875,9 @@ class RequisitionService
             }
         }
 
-        if (bccomp($amount, $remainingAmount, 2) === 1) {
+        // Item-based fulfillment may pay above/under the approved total; only
+        // "by request amount" (whole cash) remains capped to remaining approved money.
+        if ($scope === 'whole' && ! $req->isAddressedToStorekeeper() && bccomp($amount, $remainingAmount, 2) === 1) {
             throw ValidationException::withMessages([
                 'amount' => "This fulfillment exceeds the remaining amount of {$remainingAmount}.",
             ]);
@@ -898,8 +901,12 @@ class RequisitionService
         }
 
         foreach ($fulfillmentItems as $fulfilledItem) {
-            $req->items->firstWhere('id', $fulfilledItem['requisition_item_id'])
-                ?->increment('fulfilled_quantity', $fulfilledItem['quantity']);
+            $line = $req->items->firstWhere('id', $fulfilledItem['requisition_item_id']);
+            if (! $line) {
+                continue;
+            }
+            $line->applyFulfilledUnitCost((string) $fulfilledItem['unit_cost']);
+            $line->increment('fulfilled_quantity', $fulfilledItem['quantity']);
         }
 
         $newFulfilledAmount = bcadd($fulfilledAmount, $amount, 2);
@@ -950,9 +957,7 @@ class RequisitionService
             ]);
         }
 
-        $targetAmount = bcadd((string) ($req->amended_amount ?? $req->original_amount), '0', 2);
         $fulfilledAmount = bcadd((string) $req->fulfilled_amount, '0', 2);
-        $remainingAmount = bcsub($targetAmount, $fulfilledAmount, 2);
 
         $totalAmount = '0.00';
         $totalQty = '0';
@@ -971,8 +976,12 @@ class RequisitionService
                 ? (int) $payment['recipient_id']
                 : null;
 
+            $hasItemsKey = array_key_exists('items', $payment);
             $requestedItems = $payment['items'] ?? null;
-            if (! is_array($requestedItems) || $requestedItems === []) {
+
+            // When items are omitted, fulfill all remaining lines for this recipient.
+            // When items are provided (including []), use only those lines — do not expand.
+            if (! $hasItemsKey || $requestedItems === null) {
                 $requestedItems = $req->items
                     ->filter(function (RequisitionItem $item) use ($recipientId, $recipientKey) {
                         $itemRemaining = bcsub(
@@ -992,11 +1001,15 @@ class RequisitionService
                     ])
                     ->values()
                     ->all();
+            } elseif (! is_array($requestedItems)) {
+                throw ValidationException::withMessages([
+                    "payments.{$index}.items" => 'Payment lines must be a list of item quantities.',
+                ]);
             }
 
             if ($requestedItems === []) {
                 throw ValidationException::withMessages([
-                    "payments.{$index}.items" => 'No remaining request lines for this recipient.',
+                    "payments.{$index}.items" => 'Enter a quantity for at least one request line.',
                 ]);
             }
 
@@ -1030,11 +1043,12 @@ class RequisitionService
                     ]);
                 }
 
-                $lineAmount = $item->amountForQuantity($itemQty);
+                $unitCost = $this->resolveFulfillmentUnitCost($item, $input);
+                $lineAmount = $item->amountForQuantityAtCost($itemQty, $unitCost);
                 $paymentItems[] = [
                     'requisition_item_id' => $item->id,
                     'quantity' => $itemQty,
-                    'unit_cost' => (string) $item->unit_cost,
+                    'unit_cost' => $unitCost,
                 ];
                 $paymentAmount = bcadd($paymentAmount, $lineAmount, 2);
                 $totalQty = bcadd($totalQty, $itemQty, 3);
@@ -1062,8 +1076,11 @@ class RequisitionService
             ]);
 
             foreach ($paymentItems as $fulfilledItem) {
-                $req->items->firstWhere('id', $fulfilledItem['requisition_item_id'])
-                    ?->increment('fulfilled_quantity', $fulfilledItem['quantity']);
+                $line = $req->items->firstWhere('id', $fulfilledItem['requisition_item_id']);
+                if ($line) {
+                    $line->applyFulfilledUnitCost((string) $fulfilledItem['unit_cost']);
+                    $line->increment('fulfilled_quantity', $fulfilledItem['quantity']);
+                }
                 $allFulfillmentItems[] = $fulfilledItem;
             }
 
@@ -1076,12 +1093,6 @@ class RequisitionService
             );
 
             $totalAmount = bcadd($totalAmount, $paymentAmount, 2);
-        }
-
-        if (bccomp($totalAmount, $remainingAmount, 2) === 1) {
-            throw ValidationException::withMessages([
-                'payments' => "These payments exceed the remaining amount of {$remainingAmount}.",
-            ]);
         }
 
         if ($req->boq_item_id && bccomp($totalQty, '0', 3) === 1) {
@@ -1103,6 +1114,15 @@ class RequisitionService
         return $fullyFulfilled
             ? RequisitionStatus::Fulfilled->value
             : RequisitionStatus::PartiallyFulfilled->value;
+    }
+
+    private function resolveFulfillmentUnitCost(RequisitionItem $item, array $input): string
+    {
+        if (array_key_exists('unit_cost', $input) && $input['unit_cost'] !== null && $input['unit_cost'] !== '') {
+            return bcadd((string) $input['unit_cost'], '0', 2);
+        }
+
+        return bcadd((string) $item->unit_cost, '0', 2);
     }
 
     private function itemMatchesRecipient(

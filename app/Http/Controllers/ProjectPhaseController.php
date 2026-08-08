@@ -8,6 +8,7 @@ use App\Models\Project;
 use App\Models\ProjectPhase;
 use App\Services\PhaseService;
 use App\Services\ProjectComplianceService;
+use App\Services\SaleService;
 use App\Services\ValuationService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -21,6 +22,7 @@ class ProjectPhaseController extends Controller
         private readonly PhaseService $phaseService,
         private readonly ValuationService $valuationService,
         private readonly ProjectComplianceService $projectComplianceService,
+        private readonly SaleService $saleService,
     ) {}
 
     public function show(Request $request, int $projectId, int $phaseId): Response
@@ -29,6 +31,7 @@ class ProjectPhaseController extends Controller
 
         $project = Project::findOrFail($projectId);
         $phase = ProjectPhase::where('project_id', $project->id)->findOrFail($phaseId);
+        $sale = $this->saleService->ensureForPhase($phase);
         $valuations = $phase->valuations()
             ->with('deductions')
             ->orderBy('certificate_no')
@@ -39,6 +42,7 @@ class ProjectPhaseController extends Controller
         return Inertia::render('Projects/Phases/Show', [
             'project' => $project,
             'phase' => $phase,
+            'sale' => $this->saleService->formatSale($sale),
             'valuations' => $valuations,
             'summary' => [
                 'contract_amount' => (string) $project->contract_amount,
@@ -125,5 +129,20 @@ class ProjectPhaseController extends Controller
         }
 
         return back()->with('success', 'Retention forfeited and excluded from budget.');
+    }
+
+    public function close(Request $request, int $projectId, int $phaseId): RedirectResponse
+    {
+        $this->authorizePermission($request->user(), 'projects', 'update');
+        $project = Project::findOrFail($projectId);
+        $phase = ProjectPhase::where('project_id', $project->id)->findOrFail($phaseId);
+
+        try {
+            $this->phaseService->close($phase);
+        } catch (\InvalidArgumentException $e) {
+            return back()->withErrors(['phase' => $e->getMessage()]);
+        }
+
+        return back()->with('success', 'Phase closed. Its profit share can now be converted to a receivable.');
     }
 }

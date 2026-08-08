@@ -11,6 +11,7 @@ use App\Models\Customer;
 use App\Models\Project;
 use App\Models\ProjectComplianceItem;
 use App\Models\Recipient;
+use App\Models\Sale;
 use App\Services\BudgetService;
 use App\Services\PhaseService;
 use App\Services\ProjectComplianceService;
@@ -101,8 +102,6 @@ class ProjectController extends Controller
                 $this->budgetService->syncProjectNetBudget($project);
             }
 
-            $this->saleService->ensureForProject($project);
-
             return $project->fresh();
         });
 
@@ -122,8 +121,8 @@ class ProjectController extends Controller
 
     public function show(Request $request, int $id): Response
     {
-        $project = Project::with(['withholdingTaxRates', 'sale', 'customer', 'recipients'])->findOrFail($id);
-        $sale = $this->saleService->ensureForProject($project);
+        $project = Project::with(['withholdingTaxRates', 'sales.phase', 'customer', 'recipients'])->findOrFail($id);
+        $this->saleService->ensurePhasesHaveSalesForProject($project);
         $budget = $this->budgetService->summary($project);
 
         $complianceItems = ProjectComplianceItem::query()
@@ -159,10 +158,17 @@ class ProjectController extends Controller
 
         return Inertia::render('Projects/Show', [
             'project' => $this->withBudgetSummary($project, $budget),
-            'sale' => $this->saleService->formatSale($sale),
+            'sales' => $project->sales()
+                ->with('phase:id,project_id,sequence_no,name,status,disbursed_amount,phase_net_budget')
+                ->orderBy('id')
+                ->get()
+                ->map(fn (Sale $sale) => $this->saleService->formatSale($sale))
+                ->values()
+                ->all(),
             'phases' => $project->phases()
                 ->withCount('valuations')
                 ->withSum('valuations', 'total_deductions')
+                ->with('sale:id,phase_id,sale_code,status')
                 ->orderBy('sequence_no')
                 ->get(),
             'compliance_items' => $complianceItems,

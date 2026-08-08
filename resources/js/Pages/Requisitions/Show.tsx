@@ -30,6 +30,18 @@ interface CategoryOption {
     label: string;
 }
 
+type RecipientPaymentLineDraft = {
+    requisition_item_id: number;
+    description: string;
+    unit: string | null;
+    remaining_quantity: number;
+    /** Editable fulfill unit cost (defaults to requested rate). */
+    unit_cost: string;
+    days: number;
+    /** Quantity to fulfill in this payment; empty or 0 skips the line. */
+    quantity: string;
+};
+
 type RecipientPaymentDraft = {
     recipient_key: string;
     recipient_id: number | null;
@@ -41,20 +53,39 @@ type RecipientPaymentDraft = {
     payment_date: string;
     reference_no: string;
     remaining_amount: number;
-    items: { requisition_item_id: number; quantity: string }[];
+    items: RecipientPaymentLineDraft[];
 };
+
+function lineDays(item: NonNullable<Requisition['items']>[number]): number {
+    const daysRaw = item.details?.days;
+    return daysRaw != null && Number(daysRaw) > 0 ? Number(daysRaw) : 1;
+}
 
 function lineRemainingAmount(item: NonNullable<Requisition['items']>[number]): {
     quantity: number;
     amount: number;
+    days: number;
 } {
     const quantity = Math.max(
         0,
         Number(item.quantity) - Number(item.fulfilled_quantity ?? 0),
     );
-    const daysRaw = item.details?.days;
-    const days = daysRaw != null && Number(daysRaw) > 0 ? Number(daysRaw) : 1;
-    return { quantity, amount: quantity * Number(item.unit_cost) * days };
+    const days = lineDays(item);
+    return { quantity, amount: quantity * Number(item.unit_cost) * days, days };
+}
+
+function lineFulfillAmount(item: RecipientPaymentLineDraft): number {
+    const quantity = Number(item.quantity);
+    const unitCost = Number(item.unit_cost);
+    if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(unitCost) || unitCost < 0) {
+        return 0;
+    }
+    const days = item.days > 0 ? item.days : 1;
+    return quantity * unitCost * days;
+}
+
+function recipientPaymentAmount(payment: RecipientPaymentDraft): number {
+    return payment.items.reduce((sum, item) => sum + lineFulfillAmount(item), 0);
 }
 
 function buildRecipientPaymentDrafts(
@@ -77,14 +108,20 @@ function buildRecipientPaymentDrafts(
             item.recipient?.name ??
             'Unassigned';
         const key = recipientId ? `id:${recipientId}` : `name:${name}`;
+        const line: RecipientPaymentLineDraft = {
+            requisition_item_id: item.id,
+            description: item.description,
+            unit: item.unit ?? null,
+            remaining_quantity: remaining.quantity,
+            unit_cost: String(item.unit_cost),
+            days: remaining.days,
+            quantity: String(remaining.quantity),
+        };
 
         const existing = groups.get(key);
         if (existing) {
             existing.remaining_amount += remaining.amount;
-            existing.items.push({
-                requisition_item_id: item.id,
-                quantity: String(remaining.quantity),
-            });
+            existing.items.push(line);
             continue;
         }
 
@@ -99,12 +136,7 @@ function buildRecipientPaymentDrafts(
             payment_date: paymentDate,
             reference_no: '',
             remaining_amount: remaining.amount,
-            items: [
-                {
-                    requisition_item_id: item.id,
-                    quantity: String(remaining.quantity),
-                },
-            ],
+            items: [line],
         });
     }
 
@@ -197,6 +229,7 @@ export default function RequisitionsShow() {
         items: (requisition.items ?? []).map((item) => ({
             requisition_item_id: item.id,
             quantity: '',
+            unit_cost: String(item.unit_cost),
         })),
         inventory_source: 'existing' as 'existing' | 'new',
         inventory_item_id: String(
@@ -218,7 +251,7 @@ export default function RequisitionsShow() {
             method: string;
             payment_date: string;
             reference_no: string;
-            items: { requisition_item_id: number; quantity: string }[];
+            items: { requisition_item_id: number; quantity: string; unit_cost: string }[];
         }>,
         new_inventory_item: {
             name: '',
@@ -247,7 +280,10 @@ export default function RequisitionsShow() {
         transitionForm.transform((data) => {
             const selectedPayments = usePerRecipientPayments
                 ? recipientPayments
-                      .filter((payment) => payment.selected)
+                      .filter(
+                          (payment) =>
+                              payment.selected && recipientPaymentAmount(payment) > 0,
+                      )
                       .map((payment) => ({
                           recipient_key: payment.recipient_key,
                           recipient_id: payment.recipient_id,
@@ -257,7 +293,13 @@ export default function RequisitionsShow() {
                           method: payment.method,
                           payment_date: payment.payment_date,
                           reference_no: payment.reference_no,
-                          items: payment.items,
+                          items: payment.items
+                              .filter((item) => Number(item.quantity) > 0)
+                              .map((item) => ({
+                                  requisition_item_id: item.requisition_item_id,
+                                  quantity: item.quantity,
+                                  unit_cost: item.unit_cost,
+                              })),
                       }))
                 : [];
 
@@ -273,7 +315,13 @@ export default function RequisitionsShow() {
                     toStatus === 'fulfilled' &&
                     data.fulfillment_scope === 'items' &&
                     !usePerRecipientPayments
-                        ? data.items.filter((item) => Number(item.quantity) > 0)
+                        ? data.items
+                              .filter((item) => Number(item.quantity) > 0)
+                              .map((item) => ({
+                                  requisition_item_id: item.requisition_item_id,
+                                  quantity: item.quantity,
+                                  unit_cost: item.unit_cost,
+                              }))
                         : [],
             };
         });
@@ -336,12 +384,19 @@ export default function RequisitionsShow() {
 
     const amount = requisition.amended_amount ?? requisition.original_amount;
     const fulfilledAmount = Number(requisition.fulfilled_amount ?? 0);
-    const remainingAmount = Math.max(0, Number(amount) - fulfilledAmount);
+    const approvedRemaining = Number(amount) - fulfilledAmount;
+    const remainingAmount = Math.max(0, approvedRemaining);
     const itemFulfillmentAmount = (requisition.items ?? []).reduce((total, item, index) => {
         const quantity = Number(transitionForm.data.items[index]?.quantity ?? 0);
+        const unitCost = Number(
+            transitionForm.data.items[index]?.unit_cost ?? item.unit_cost,
+        );
+        if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(unitCost)) {
+            return total;
+        }
         const daysRaw = item.details?.days;
         const days = daysRaw != null && Number(daysRaw) > 0 ? Number(daysRaw) : 1;
-        return total + quantity * Number(item.unit_cost) * days;
+        return total + quantity * unitCost * days;
     }, 0);
     const variance =
         requisition.amended_amount != null
@@ -363,7 +418,7 @@ export default function RequisitionsShow() {
     );
     const selectedRecipientPaymentTotal = recipientPayments
         .filter((payment) => payment.selected)
-        .reduce((sum, payment) => sum + payment.remaining_amount, 0);
+        .reduce((sum, payment) => sum + recipientPaymentAmount(payment), 0);
 
     return (
         <AppShell title={requisition.requisition_no}>
@@ -861,22 +916,31 @@ export default function RequisitionsShow() {
                             <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
                                 <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
                                     <span>
-                                        Fulfilled {formatCurrency(fulfilledAmount)} of{' '}
+                                        Paid {formatCurrency(fulfilledAmount)} of approved{' '}
                                         {formatCurrency(amount)}
                                     </span>
                                     <span className="font-medium text-slate-900">
-                                        Remaining {formatCurrency(remainingAmount)}
+                                        {approvedRemaining >= 0
+                                            ? `Approved remaining ${formatCurrency(remainingAmount)}`
+                                            : `Paid ${formatCurrency(Math.abs(approvedRemaining))} over approved`}
                                     </span>
                                 </div>
+                                <p className="mt-1 text-xs text-slate-500">
+                                    Unit costs can be adjusted to match what was actually paid;
+                                    totals may end above or under the approved amount. Completion
+                                    still follows remaining quantities.
+                                </p>
                             </div>
 
                             {usePerRecipientPayments ? (
                                 <div className="space-y-4">
                                     <p className="text-sm text-slate-600">
-                                        Record a separate payment for each recipient according to
-                                        their request lines. Select who to pay now.
+                                        Record a separate payment for each recipient. Select who to
+                                        pay, then enter quantity and unit cost for each line.
                                     </p>
-                                    {recipientPayments.map((payment, index) => (
+                                    {recipientPayments.map((payment, index) => {
+                                        const payingNow = recipientPaymentAmount(payment);
+                                        return (
                                         <div
                                             key={payment.recipient_key}
                                             className="space-y-3 rounded-lg border border-slate-200 p-4"
@@ -901,12 +965,121 @@ export default function RequisitionsShow() {
                                                     </p>
                                                     <p className="text-sm text-slate-500">
                                                         {payment.items.length} line
-                                                        {payment.items.length === 1 ? '' : 's'} ·{' '}
+                                                        {payment.items.length === 1 ? '' : 's'} ·
+                                                        remaining{' '}
                                                         {formatCurrency(payment.remaining_amount)}
+                                                        {payment.selected && (
+                                                            <>
+                                                                {' '}
+                                                                · paying{' '}
+                                                                {formatCurrency(payingNow)}
+                                                            </>
+                                                        )}
                                                     </p>
                                                 </div>
                                             </label>
                                             {payment.selected && (
+                                                <>
+                                                <div className="overflow-hidden rounded-md border border-slate-200">
+                                                    <table className="w-full text-sm">
+                                                        <thead className="bg-slate-50 text-left text-xs text-slate-500">
+                                                            <tr>
+                                                                <th className="px-3 py-2 font-medium">
+                                                                    Item
+                                                                </th>
+                                                                <th className="px-3 py-2 text-right font-medium">
+                                                                    Remaining
+                                                                </th>
+                                                                <th className="px-3 py-2 font-medium">
+                                                                    Fulfill now
+                                                                </th>
+                                                                <th className="px-3 py-2 font-medium">
+                                                                    Unit cost
+                                                                </th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody className="divide-y divide-slate-100">
+                                                            {payment.items.map((item, itemIndex) => (
+                                                                <tr key={item.requisition_item_id}>
+                                                                    <td className="px-3 py-2 text-slate-800">
+                                                                        {item.description}
+                                                                    </td>
+                                                                    <td className="px-3 py-2 text-right text-slate-600">
+                                                                        {formatQuantity(
+                                                                            item.remaining_quantity,
+                                                                        )}{' '}
+                                                                        {item.unit ?? ''}
+                                                                    </td>
+                                                                    <td className="px-3 py-2">
+                                                                        <AmountInput
+                                                                            value={item.quantity}
+                                                                            onValueChange={(value) => {
+                                                                                const next = [
+                                                                                    ...recipientPayments,
+                                                                                ];
+                                                                                const items = [
+                                                                                    ...payment.items,
+                                                                                ];
+                                                                                items[itemIndex] = {
+                                                                                    ...item,
+                                                                                    quantity: value,
+                                                                                };
+                                                                                next[index] = {
+                                                                                    ...payment,
+                                                                                    items,
+                                                                                };
+                                                                                setRecipientPayments(
+                                                                                    next,
+                                                                                );
+                                                                            }}
+                                                                            max={
+                                                                                item.remaining_quantity
+                                                                            }
+                                                                        />
+                                                                    </td>
+                                                                    <td className="px-3 py-2">
+                                                                        <AmountInput
+                                                                            value={item.unit_cost}
+                                                                            onValueChange={(value) => {
+                                                                                const next = [
+                                                                                    ...recipientPayments,
+                                                                                ];
+                                                                                const items = [
+                                                                                    ...payment.items,
+                                                                                ];
+                                                                                items[itemIndex] = {
+                                                                                    ...item,
+                                                                                    unit_cost: value,
+                                                                                };
+                                                                                next[index] = {
+                                                                                    ...payment,
+                                                                                    items,
+                                                                                };
+                                                                                setRecipientPayments(
+                                                                                    next,
+                                                                                );
+                                                                            }}
+                                                                        />
+                                                                    </td>
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                    <p className="border-t border-slate-200 px-3 py-2 text-right text-sm font-medium">
+                                                        This payment: {formatCurrency(payingNow)}
+                                                    </p>
+                                                    {transitionForm.errors[
+                                                        `payments.${index}.items`
+                                                    ] && (
+                                                        <p className="px-3 pb-2 text-sm text-red-600">
+                                                            {
+                                                                transitionForm.errors[
+                                                                    `payments.${index}.items`
+                                                                ]
+                                                            }
+                                                        </p>
+                                                    )}
+                                                </div>
                                                 <div className="grid gap-3 sm:grid-cols-2">
                                                     <div className="space-y-2">
                                                         <Label>Account name</Label>
@@ -1008,13 +1181,15 @@ export default function RequisitionsShow() {
                                                     <div className="space-y-2">
                                                         <Label>Amount</Label>
                                                         <p className="flex h-10 items-center text-sm font-medium text-slate-900">
-                                                            {formatCurrency(payment.remaining_amount)}
+                                                            {formatCurrency(payingNow)}
                                                         </p>
                                                     </div>
                                                 </div>
+                                                </>
                                             )}
                                         </div>
-                                    ))}
+                                        );
+                                    })}
                                     <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
                                         <span className="text-slate-500">
                                             Cash on hand: {formatCurrency(cashOnHand)}
@@ -1091,6 +1266,7 @@ export default function RequisitionsShow() {
                                                 <th className="px-3 py-2 font-medium">
                                                     Fulfill now
                                                 </th>
+                                                <th className="px-3 py-2 font-medium">Unit cost</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
@@ -1129,6 +1305,29 @@ export default function RequisitionsShow() {
                                                                     );
                                                                 }}
                                                                 max={remaining}
+                                                                disabled={remaining <= 0}
+                                                            />
+                                                        </td>
+                                                        <td className="px-3 py-2">
+                                                            <AmountInput
+                                                                value={
+                                                                    transitionForm.data.items[index]
+                                                                        ?.unit_cost ??
+                                                                    String(item.unit_cost)
+                                                                }
+                                                                onValueChange={(value) => {
+                                                                    const items = [
+                                                                        ...transitionForm.data.items,
+                                                                    ];
+                                                                    items[index] = {
+                                                                        ...items[index],
+                                                                        unit_cost: value,
+                                                                    };
+                                                                    transitionForm.setData(
+                                                                        'items',
+                                                                        items,
+                                                                    );
+                                                                }}
                                                                 disabled={remaining <= 0}
                                                             />
                                                         </td>
@@ -1526,7 +1725,11 @@ export default function RequisitionsShow() {
                                 disabled={
                                     transitionForm.processing ||
                                     (usePerRecipientPayments &&
-                                        !recipientPayments.some((payment) => payment.selected))
+                                        !recipientPayments.some(
+                                            (payment) =>
+                                                payment.selected &&
+                                                recipientPaymentAmount(payment) > 0,
+                                        ))
                                 }
                             >
                                 Record Fulfillment

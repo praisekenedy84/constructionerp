@@ -55,6 +55,7 @@ interface FilterOptions {
 interface RequisitionsIndexProps extends PageProps {
     rows: Paginated<RegisterRow>;
     summary: RegisterSummary;
+    finance_balance: string;
     filterOptions: FilterOptions;
     filters: ListingFilters & {
         status?: string;
@@ -97,7 +98,7 @@ function exportHref(filters: Record<string, string | undefined>): string {
 }
 
 export default function RequisitionsIndex() {
-    const { rows, summary, filterOptions, filters, auth, uiSettings } =
+    const { rows, summary, finance_balance, filterOptions, filters, auth, uiSettings } =
         usePage<RequisitionsIndexProps>().props;
     const lines = rows.data ?? [];
     const canCreate = hasPermission(auth.user, 'requisitions', 'create');
@@ -130,7 +131,16 @@ export default function RequisitionsIndex() {
                     }
                 />
 
-                <div className="grid gap-4 sm:grid-cols-3">
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                            Available Funds
+                        </p>
+                        <p className="mt-1 text-2xl font-semibold text-slate-900">
+                            {formatCurrency(finance_balance)}
+                        </p>
+                        <p className="mt-1 text-sm text-slate-500">Finance wallet balance</p>
+                    </div>
                     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                         <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
                             Total Requested

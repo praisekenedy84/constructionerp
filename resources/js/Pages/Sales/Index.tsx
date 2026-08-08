@@ -25,13 +25,13 @@ export default function SalesIndex() {
             <div className="space-y-6">
                 <PageHeader
                     title="Sales"
-                    description="Net sales by project — convert closed-project profit into receivables and collect into company accounts."
+                    description="Net sales by phase — close a phase, convert its share of project profit into a receivable, and collect into company accounts."
                 />
 
                 <ListToolbar
                     baseUrl="/sales"
                     filters={filters}
-                    searchPlaceholder="Search sale ID, customer, project…"
+                    searchPlaceholder="Search sale ID, customer, project, phase…"
                     sortOptions={[
                         { value: 'created_at', label: 'Date created' },
                         { value: 'sale_code', label: 'Sale ID' },
@@ -61,8 +61,9 @@ export default function SalesIndex() {
                                     <th className="px-6 py-3 font-medium">Sale ID</th>
                                     <th className="px-6 py-3 font-medium">Customer</th>
                                     <th className="px-6 py-3 font-medium">Project</th>
-                                    <th className="px-6 py-3 text-right font-medium">Contract Amount</th>
-                                    <th className="px-6 py-3 text-right font-medium">Profit</th>
+                                    <th className="px-6 py-3 font-medium">Phase</th>
+                                    <th className="px-6 py-3 text-right font-medium">Phase Disbursed</th>
+                                    <th className="px-6 py-3 text-right font-medium">Profit Share</th>
                                     <th className="px-6 py-3 text-right font-medium">Outstanding</th>
                                     <th className="px-6 py-3 font-medium">Status</th>
                                     <th className="px-6 py-3 text-right font-medium">Actions</th>
@@ -71,8 +72,8 @@ export default function SalesIndex() {
                             <tbody className="divide-y divide-slate-100">
                                 {rows.length === 0 ? (
                                     <tr>
-                                        <td colSpan={8} className="px-6 py-12 text-center text-slate-500">
-                                            No sales yet. Create a project to generate a net sale.
+                                        <td colSpan={9} className="px-6 py-12 text-center text-slate-500">
+                                            No sales yet. Add a project phase to generate a net sale.
                                         </td>
                                     </tr>
                                 ) : (
@@ -88,6 +89,11 @@ export default function SalesIndex() {
                                                 {sale.project
                                                     ? `${sale.project.code} — ${sale.project.name}`
                                                     : '—'}
+                                            </td>
+                                            <td className="px-6 py-4 text-slate-600">
+                                                {sale.phase
+                                                    ? `Phase ${sale.phase.sequence_no}: ${sale.phase.name}`
+                                                    : 'Legacy'}
                                             </td>
                                             <td className="px-6 py-4 text-right text-slate-900">
                                                 {formatCurrency(sale.contract_amount)}

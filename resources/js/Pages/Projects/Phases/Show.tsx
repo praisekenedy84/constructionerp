@@ -5,7 +5,7 @@ import StatusBadge from '@/Components/Shared/StatusBadge';
 import { Button } from '@/Components/ui/button';
 import { formatCurrency, formatDate } from '@/lib/formatters';
 import { hasPermission } from '@/lib/permissions';
-import { PageProps, Project, ProjectPhase, Valuation, ValuationDeduction } from '@/types';
+import { PageProps, Project, ProjectPhase, Sale, Valuation, ValuationDeduction } from '@/types';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 
 interface PhaseShowProps extends PageProps {
@@ -14,6 +14,7 @@ interface PhaseShowProps extends PageProps {
         retention_released_at?: string | null;
         retention_forfeited_at?: string | null;
     };
+    sale?: Sale | null;
     valuations: Array<
         Valuation & {
             deductions: ValuationDeduction[];
@@ -27,11 +28,14 @@ interface PhaseShowProps extends PageProps {
 }
 
 export default function PhaseShow() {
-    const { project, phase, valuations, summary, auth } = usePage<PhaseShowProps>().props;
+    const { project, phase, sale = null, valuations, summary, auth } =
+        usePage<PhaseShowProps>().props;
     const canUpdateProject = hasPermission(auth.user, 'projects', 'update');
     const canCreateValuation = hasPermission(auth.user, 'valuations', 'create');
+    const canReadSales = hasPermission(auth.user, 'sales', 'read');
     const phaseLabel = `Phase ${phase.sequence_no}: ${phase.name}`;
     const hasHeldRetention = Number(phase.retention_held_amount) > 0;
+    const isClosed = phase.status === 'closed';
 
     function releaseRetention() {
         if (!confirm(`Release held retention for ${phaseLabel} into the project budget?`)) {
@@ -49,6 +53,17 @@ export default function PhaseShow() {
             return;
         }
         router.post(`/projects/${project.id}/phases/${phase.id}/retention/forfeit`);
+    }
+
+    function closePhase() {
+        if (
+            !confirm(
+                `Close ${phaseLabel}? After closing, its share of project profit can be converted to a receivable.`,
+            )
+        ) {
+            return;
+        }
+        router.post(`/projects/${project.id}/phases/${phase.id}/close`);
     }
 
     return (
@@ -69,6 +84,16 @@ export default function PhaseShow() {
                                 >
                                     <Button>Add IPC</Button>
                                 </Link>
+                            )}
+                            {canReadSales && sale && (
+                                <Link href={`/sales/${sale.id}`}>
+                                    <Button variant="outline">View sale</Button>
+                                </Link>
+                            )}
+                            {canUpdateProject && !isClosed && (
+                                <Button variant="outline" onClick={closePhase}>
+                                    Close phase
+                                </Button>
                             )}
                             {canUpdateProject && hasHeldRetention && (
                                 <>

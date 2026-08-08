@@ -82,9 +82,46 @@ class RequisitionItem extends Model
      */
     public function amountForQuantity(string $quantity): string
     {
-        $base = bcmul(bcadd($quantity, '0', 3), (string) $this->unit_cost, 4);
+        return $this->amountForQuantityAtCost($quantity, (string) $this->unit_cost);
+    }
+
+    /**
+     * Amount for a quantity at an explicit unit cost (e.g. fulfillment override).
+     */
+    public function amountForQuantityAtCost(string $quantity, string $unitCost): string
+    {
+        $base = bcmul(bcadd($quantity, '0', 3), bcadd($unitCost, '0', 2), 4);
 
         return bcmul($base, $this->daysMultiplier(), 2);
+    }
+
+    /**
+     * Persist the actual fulfilled unit cost on the line (keeps original_* once).
+     */
+    public function applyFulfilledUnitCost(string $unitCost): void
+    {
+        $unitCost = bcadd($unitCost, '0', 2);
+        $current = bcadd((string) $this->unit_cost, '0', 2);
+
+        if (bccomp($unitCost, $current, 2) === 0) {
+            return;
+        }
+
+        $updates = [
+            'unit_cost' => $unitCost,
+            'line_total' => $this->amountForQuantityAtCost((string) $this->quantity, $unitCost),
+        ];
+
+        if ($this->original_unit_cost === null) {
+            $updates['original_unit_cost'] = $current;
+        }
+
+        if ($this->original_line_total === null) {
+            $updates['original_line_total'] = bcadd((string) $this->line_total, '0', 2);
+        }
+
+        $this->update($updates);
+        $this->refresh();
     }
 
     public function requisition(): BelongsTo

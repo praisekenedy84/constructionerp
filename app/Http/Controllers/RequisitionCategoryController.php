@@ -17,14 +17,22 @@ class RequisitionCategoryController extends Controller
     {
         $this->authorizePermission($request->user(), 'requisitions', 'read');
 
-        $listing = ListingQuery::for(RequisitionCategory::query(), $request)
+        $query = RequisitionCategory::query();
+
+        if ($request->filled('expense_type')) {
+            $query->where('expense_type', $request->string('expense_type')->toString());
+        }
+
+        $listing = ListingQuery::for($query, $request)
             ->search(['name', 'description'])
             ->dateRange('created_at')
-            ->sort(['sort_order', 'name', 'created_at', 'is_active'], 'sort_order');
+            ->sort(['sort_order', 'name', 'expense_type', 'created_at', 'is_active'], 'sort_order');
 
         return Inertia::render('Requisitions/Categories/Index', [
             'categories' => $listing->paginate(25),
-            'filters' => $listing->filters(),
+            'filters' => $listing->filters([
+                'expense_type' => $request->input('expense_type'),
+            ]),
         ]);
     }
 

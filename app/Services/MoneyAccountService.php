@@ -250,8 +250,8 @@ class MoneyAccountService
             }
 
             $normalized = bcadd($amount, '0', 2);
-            if (bccomp($normalized, '0', 2) !== 1) {
-                throw new \InvalidArgumentException('Collection amount must be greater than zero.');
+            if (bccomp($normalized, '0', 2) === 0) {
+                throw new \InvalidArgumentException('Collection amount cannot be zero.');
             }
 
             $balance = bcadd((string) $account->balance, $normalized, 2);
@@ -262,7 +262,9 @@ class MoneyAccountService
                 'type' => AccountTransactionType::ReceivablePayment,
                 'amount' => $normalized,
                 'balance_after' => $balance,
-                'description' => $opts['description'] ?? 'Receivable collection',
+                'description' => $opts['description'] ?? (
+                    bccomp($normalized, '0', 2) === -1 ? 'Loss collection' : 'Receivable collection'
+                ),
                 'reference_no' => $opts['reference_no'] ?? null,
                 'method' => $opts['method'] ?? null,
                 'reference_entity_type' => $opts['reference_entity_type'] ?? 'sale',

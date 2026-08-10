@@ -14,10 +14,13 @@ import { Head, router, useForm, usePage } from '@inertiajs/react';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { FormEvent, useState } from 'react';
 
+type ExpenseType = 'direct' | 'indirect';
+
 export interface RequisitionCategoryRow {
     id: number;
     name: string;
     description: string | null;
+    expense_type: ExpenseType;
     is_active: boolean;
     sort_order: number;
     created_at: string;
@@ -25,10 +28,27 @@ export interface RequisitionCategoryRow {
 
 interface CategoriesIndexProps extends PageProps {
     categories: Paginated<RequisitionCategoryRow>;
-    filters: ListingFilters;
+    filters: ListingFilters & { expense_type?: string };
 }
 
 type FormMode = 'create' | 'edit';
+
+const EXPENSE_TYPE_OPTIONS: { value: ExpenseType; label: string; hint: string }[] = [
+    {
+        value: 'direct',
+        label: 'Project — Direct expense',
+        hint: 'Shown when creating project requisitions',
+    },
+    {
+        value: 'indirect',
+        label: 'Administrative — Indirect expense',
+        hint: 'Shown when creating administrative requisitions',
+    },
+];
+
+function expenseTypeLabel(type: ExpenseType): string {
+    return EXPENSE_TYPE_OPTIONS.find((option) => option.value === type)?.label ?? type;
+}
 
 export default function RequisitionCategoriesIndex() {
     const { categories, filters, auth } = usePage<CategoriesIndexProps>().props;
@@ -43,6 +63,7 @@ export default function RequisitionCategoriesIndex() {
     const { data, setData, post, put, processing, errors, reset, clearErrors, isDirty } = useForm({
         name: '',
         description: '',
+        expense_type: 'direct' as ExpenseType,
         is_active: true as boolean,
         sort_order: 0,
     });
@@ -55,6 +76,7 @@ export default function RequisitionCategoriesIndex() {
         setData({
             name: '',
             description: '',
+            expense_type: 'direct',
             is_active: true,
             sort_order: 0,
         });
@@ -68,6 +90,7 @@ export default function RequisitionCategoriesIndex() {
         setData({
             name: category.name,
             description: category.description ?? '',
+            expense_type: category.expense_type ?? 'direct',
             is_active: category.is_active,
             sort_order: category.sort_order,
         });
@@ -126,7 +149,7 @@ export default function RequisitionCategoriesIndex() {
             <div className="space-y-6">
                 <PageHeader
                     title="Requisition Categories"
-                    description="Define the category labels staff pick when creating requisitions. All categories use the same flexible line form."
+                    description="Define category labels for project (direct) or administrative (indirect) requisitions. The create form only shows categories matching the request scope."
                     actions={
                         canCreate ? (
                             <Button onClick={openCreate}>
@@ -144,8 +167,20 @@ export default function RequisitionCategoriesIndex() {
                     sortOptions={[
                         { value: 'sort_order', label: 'Sort order' },
                         { value: 'name', label: 'Name' },
+                        { value: 'expense_type', label: 'Expense type' },
                         { value: 'is_active', label: 'Status' },
                         { value: 'created_at', label: 'Date created' },
+                    ]}
+                    selectFilters={[
+                        {
+                            key: 'expense_type',
+                            label: 'Expense type',
+                            emptyLabel: 'All types',
+                            options: EXPENSE_TYPE_OPTIONS.map((option) => ({
+                                value: option.value,
+                                label: option.label,
+                            })),
+                        },
                     ]}
                 />
 
@@ -154,6 +189,7 @@ export default function RequisitionCategoriesIndex() {
                         <thead>
                             <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs text-slate-500">
                                 <th className="px-6 py-3 font-medium">Name</th>
+                                <th className="px-6 py-3 font-medium">Type</th>
                                 <th className="px-6 py-3 font-medium">Description</th>
                                 <th className="px-6 py-3 font-medium">Status</th>
                                 <th className="px-6 py-3 text-right font-medium">Actions</th>
@@ -162,7 +198,7 @@ export default function RequisitionCategoriesIndex() {
                         <tbody className="divide-y divide-slate-100">
                             {rows.length === 0 ? (
                                 <tr>
-                                    <td colSpan={4} className="px-6 py-12 text-center text-slate-500">
+                                    <td colSpan={5} className="px-6 py-12 text-center text-slate-500">
                                         No categories yet. Create the options staff should see when
                                         raising a requisition.
                                     </td>
@@ -172,6 +208,9 @@ export default function RequisitionCategoriesIndex() {
                                     <tr key={category.id}>
                                         <td className="px-6 py-4 font-medium text-slate-900">
                                             {category.name}
+                                        </td>
+                                        <td className="px-6 py-4 text-slate-600">
+                                            {expenseTypeLabel(category.expense_type)}
                                         </td>
                                         <td className="px-6 py-4 text-slate-600">
                                             {category.description || '—'}
@@ -226,7 +265,7 @@ export default function RequisitionCategoriesIndex() {
                 open={open}
                 onOpenChange={(next) => (next ? undefined : closeDialog())}
                 title={mode === 'create' ? 'New Category' : 'Edit Category'}
-                description="The category name appears in the requisition form dropdown."
+                description="The category name appears in the requisition form dropdown for the matching request scope."
             >
                 <form onSubmit={submit} className="space-y-4">
                     <div className="space-y-2">
@@ -239,6 +278,34 @@ export default function RequisitionCategoriesIndex() {
                             required
                         />
                         {errors.name && <p className="text-sm text-red-600">{errors.name}</p>}
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="category_expense_type">Expense type</Label>
+                        <select
+                            id="category_expense_type"
+                            className="flex h-10 w-full rounded-md border border-slate-200 px-3 text-sm"
+                            value={data.expense_type}
+                            onChange={(e) =>
+                                setData('expense_type', e.target.value as ExpenseType)
+                            }
+                            required
+                        >
+                            {EXPENSE_TYPE_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                    {option.label}
+                                </option>
+                            ))}
+                        </select>
+                        <p className="text-xs text-slate-500">
+                            {
+                                EXPENSE_TYPE_OPTIONS.find(
+                                    (option) => option.value === data.expense_type,
+                                )?.hint
+                            }
+                        </p>
+                        {errors.expense_type && (
+                            <p className="text-sm text-red-600">{errors.expense_type}</p>
+                        )}
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="category_description">Description (optional)</Label>

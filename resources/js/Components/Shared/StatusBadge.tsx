@@ -16,6 +16,7 @@ const statusMap: Record<string, StatusVariant> = {
     active: 'success',
     on_hold: 'warning',
     closed: 'neutral',
+    loss: 'danger',
     draft: 'neutral',
     submitted: 'info',
     under_review: 'warning',

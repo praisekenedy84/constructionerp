@@ -9,6 +9,7 @@ use App\Models\Expense;
 use App\Models\Project;
 use App\Models\Recipient;
 use App\Models\Requisition;
+use App\Models\RequisitionCategory;
 use App\Models\RequisitionItem;
 use App\Models\Tenant;
 use App\Models\WorkflowConfig;
@@ -85,6 +86,17 @@ class RequisitionExpenseRecordingTest extends TestCase
     {
         $this->seedTenant();
 
+        $categoryId = null;
+        Tenant::where('slug', 'req-expense-co')->first()->run(function () use (&$categoryId) {
+            $categoryId = RequisitionCategory::create([
+                'name' => 'Office Stationery',
+                'expense_type' => ExpenseCategory::Indirect,
+                'is_active' => true,
+                'sort_order' => 20,
+            ])->id;
+        });
+        tenancy()->end();
+
         $this->post('/login', [
             'email' => 'engineer@reqexpense.local',
             'password' => 'password',
@@ -98,6 +110,7 @@ class RequisitionExpenseRecordingTest extends TestCase
             'addressed_to' => 'finance',
             'items' => [
                 [
+                    'requisition_category_id' => $categoryId,
                     'description' => 'Office stationery',
                     'unit' => 'lump',
                     'quantity' => '1',

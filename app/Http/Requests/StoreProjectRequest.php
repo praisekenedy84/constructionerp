@@ -79,7 +79,15 @@ class StoreProjectRequest extends FormRequest
             'wht_percentage' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'start_date' => ['nullable', 'date'],
             'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
-            'status' => ['nullable', Rule::enum(ProjectStatus::class)],
+            'status' => [
+                'nullable',
+                Rule::in([
+                    ProjectStatus::Planning->value,
+                    ProjectStatus::Active->value,
+                    ProjectStatus::OnHold->value,
+                    ProjectStatus::Closed->value,
+                ]),
+            ],
             'recipient_ids' => ['nullable', 'array'],
             'recipient_ids.*' => ['integer', 'exists:recipients,id'],
             'initial_phase_name' => ['nullable', 'string', 'max:255'],

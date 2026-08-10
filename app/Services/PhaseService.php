@@ -8,6 +8,7 @@ use App\Enums\RetentionStatus;
 use App\Models\Project;
 use App\Models\ProjectComplianceItem;
 use App\Models\ProjectPhase;
+use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
 class PhaseService
@@ -76,9 +77,9 @@ class PhaseService
         });
     }
 
-    public function close(ProjectPhase $phase): ProjectPhase
+    public function close(ProjectPhase $phase, ?User $actor = null): ProjectPhase
     {
-        return DB::transaction(function () use ($phase) {
+        return DB::transaction(function () use ($phase, $actor) {
             $phase = ProjectPhase::lockForUpdate()->findOrFail($phase->id);
 
             if ($phase->status === PhaseStatus::Closed) {
@@ -89,7 +90,12 @@ class PhaseService
                 'status' => PhaseStatus::Closed,
             ]);
 
-            $this->saleService->ensureForPhase($phase);
+            $sale = $this->saleService->ensureForPhase($phase);
+
+            // Convert surplus after absorbing pending deficit, or carry deficit to later phases.
+            if ($actor !== null && ! $sale->isConverted()) {
+                $this->saleService->applyPhaseCloseReceivable($sale, $actor);
+            }
 
             return $phase->fresh();
         });

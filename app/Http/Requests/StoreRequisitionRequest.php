@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\ExpenseCategory;
 use App\Enums\FulfillmentType;
 use App\Enums\RequisitionAddressedTo;
 use App\Enums\RequisitionResourceType;
@@ -50,7 +51,15 @@ class StoreRequisitionRequest extends FormRequest
             $departmentName = Department::query()->whereKey($departmentId)->value('name');
         }
 
-        $fallbackCategoryId = RequisitionCategory::query()->active()->ordered()->value('id');
+        $expectedExpenseType = $this->filled('project_id')
+            ? ExpenseCategory::Direct
+            : ExpenseCategory::Indirect;
+
+        $fallbackCategoryId = RequisitionCategory::query()
+            ->active()
+            ->forExpenseType($expectedExpenseType)
+            ->ordered()
+            ->value('id');
 
         // Legacy header-only category / recipient → applied to lines that omit them.
         $legacyCategoryIds = collect($this->input('requisition_category_ids', []))
@@ -67,6 +76,7 @@ class StoreRequisitionRequest extends FormRequest
             if ($label) {
                 $mapped = RequisitionCategory::query()
                     ->where('name', $label)
+                    ->forExpenseType($expectedExpenseType)
                     ->active()
                     ->ordered()
                     ->value('id');
@@ -313,6 +323,10 @@ class StoreRequisitionRequest extends FormRequest
                     ->all()
                 : [];
 
+            $expectedExpenseType = $this->filled('project_id')
+                ? ExpenseCategory::Direct
+                : ExpenseCategory::Indirect;
+
             foreach ($this->input('items', []) as $index => $item) {
                 $categoryId = (int) ($item['requisition_category_id'] ?? 0);
                 if ($categoryId > 0) {
@@ -321,6 +335,18 @@ class StoreRequisitionRequest extends FormRequest
                         $validator->errors()->add(
                             "items.{$index}.requisition_category_id",
                             'Select an active requisition category.'
+                        );
+                    }
+                    if (
+                        $category
+                        && $category->expense_type !== $expectedExpenseType
+                        && ! in_array($categoryId, $existingCategoryIds, true)
+                    ) {
+                        $validator->errors()->add(
+                            "items.{$index}.requisition_category_id",
+                            $expectedExpenseType === ExpenseCategory::Direct
+                                ? 'Select a project (direct expense) category for this requisition.'
+                                : 'Select an administrative (indirect expense) category for this requisition.'
                         );
                     }
                 }

@@ -16,7 +16,7 @@ class CollectSaleReceivableRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'amount' => ['required', 'numeric', 'gt:0'],
+            'amount' => ['required', 'numeric', 'not_in:0'],
             'money_account_id' => ['required', 'integer', 'exists:money_accounts,id'],
             'method' => ['nullable', Rule::enum(PaymentMethod::class)],
             'reference_no' => ['nullable', 'string', 'max:100'],

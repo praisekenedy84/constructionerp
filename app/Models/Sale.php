@@ -61,9 +61,12 @@ class Sale extends Model
             return '0.00';
         }
 
-        $outstanding = bcsub((string) $this->profit_amount, (string) $this->collected_amount, 2);
+        return bcsub((string) $this->profit_amount, (string) $this->collected_amount, 2);
+    }
 
-        return bccomp($outstanding, '0', 2) === -1 ? '0.00' : $outstanding;
+    public function isLossReceivable(): bool
+    {
+        return $this->isConverted() && bccomp((string) $this->profit_amount, '0', 2) === -1;
     }
 
     public function isConverted(): bool

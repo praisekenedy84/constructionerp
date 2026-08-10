@@ -48,7 +48,7 @@ export interface Paginated<T> {
     links?: Array<{ url: string | null; label: string; active: boolean }>;
 }
 
-export type ProjectStatus = 'planning' | 'active' | 'on_hold' | 'closed';
+export type ProjectStatus = 'planning' | 'active' | 'on_hold' | 'closed' | 'loss';
 
 export interface Project {
     id: number;
@@ -61,6 +61,9 @@ export interface Project {
     contract_amount: string;
     wht_percentage: string;
     net_budget: string;
+    pending_deficit?: string;
+    live_remaining?: string;
+    can_mark_loss?: boolean;
     remaining_budget?: string;
     profit_percentage?: string;
     utilization_percentage?: string;
@@ -156,14 +159,19 @@ export interface Sale {
     collected_amount: string;
     outstanding_amount: string;
     converted_at?: string | null;
+    is_loss?: boolean;
     can_convert: boolean;
     can_collect: boolean;
     remaining_budget?: string;
     recognized_amount?: string;
+    live_remaining?: string;
     recognizable_amount?: string;
+    pending_deficit?: string;
     phase_share_pct?: string;
     customer?: string | null;
-    project?: Pick<Project, 'id' | 'code' | 'name' | 'client' | 'contract_amount' | 'net_budget' | 'status'> | null;
+    project?: (Pick<Project, 'id' | 'code' | 'name' | 'client' | 'contract_amount' | 'net_budget' | 'status'> & {
+        pending_deficit?: string;
+    }) | null;
     phase?: Pick<
         ProjectPhase,
         'id' | 'sequence_no' | 'name' | 'status' | 'disbursed_amount' | 'phase_net_budget'
@@ -380,6 +388,7 @@ export interface RequisitionCategory {
     id: number;
     name: string;
     description?: string | null;
+    expense_type?: 'direct' | 'indirect';
     is_active?: boolean;
     sort_order?: number;
 }

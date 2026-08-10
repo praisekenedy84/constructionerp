@@ -58,7 +58,7 @@ export default function PhaseShow() {
     function closePhase() {
         if (
             !confirm(
-                `Close ${phaseLabel}? After closing, its share of project profit can be converted to a receivable.`,
+                `Close ${phaseLabel}? Surplus becomes a receivable; a deficit carries to the next phase.`,
             )
         ) {
             return;

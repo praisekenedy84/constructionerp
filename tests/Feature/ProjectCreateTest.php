@@ -95,12 +95,7 @@ class ProjectCreateTest extends TestCase
     {
         $this->loginAsTenantAdmin();
 
-        $this->post('/projects/compliance-rules', [
-            'name' => 'Retention',
-            'rule_type' => 'retention',
-            'is_active' => true,
-        ])->assertRedirect();
-
+        // Retention is seeded for every tenant via migration.
         $this->post('/projects/compliance-rules', [
             'name' => 'Material test',
             'rule_type' => 'material_test',

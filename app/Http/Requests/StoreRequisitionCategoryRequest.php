@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\ExpenseCategory;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreRequisitionCategoryRequest extends FormRequest
 {
@@ -26,8 +28,15 @@ class StoreRequisitionCategoryRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'name' => ['required', 'string', 'max:255', 'unique:requisition_categories,name'],
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('requisition_categories', 'name')
+                    ->where(fn ($query) => $query->where('expense_type', $this->input('expense_type'))),
+            ],
             'description' => ['nullable', 'string', 'max:1000'],
+            'expense_type' => ['required', Rule::enum(ExpenseCategory::class)],
             'is_active' => ['boolean'],
             'sort_order' => ['integer', 'min:0', 'max:9999'],
         ];

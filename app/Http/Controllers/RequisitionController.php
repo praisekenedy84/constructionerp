@@ -423,7 +423,7 @@ class RequisitionController extends Controller
         $categories = RequisitionCategory::query()
             ->active()
             ->ordered()
-            ->get(['id', 'name', 'description', 'is_active']);
+            ->get(['id', 'name', 'description', 'expense_type', 'is_active']);
 
         $selectedCategoryIds = collect();
         if ($requisition) {
@@ -443,7 +443,7 @@ class RequisitionController extends Controller
 
             $current = RequisitionCategory::query()
                 ->whereKey($categoryId)
-                ->first(['id', 'name', 'description', 'is_active']);
+                ->first(['id', 'name', 'description', 'expense_type', 'is_active']);
 
             if ($current) {
                 $categories = $categories->prepend($current)->values();

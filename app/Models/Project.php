@@ -24,10 +24,13 @@ class Project extends Model
         'contract_amount',
         'wht_percentage',
         'net_budget',
+        'pending_deficit',
         'physical_progress_pct',
         'start_date',
         'end_date',
         'status',
+        'marked_loss_at',
+        'marked_loss_by',
     ];
 
     protected function casts(): array
@@ -36,10 +39,12 @@ class Project extends Model
             'contract_amount' => 'decimal:2',
             'wht_percentage' => 'decimal:2',
             'net_budget' => 'decimal:2',
+            'pending_deficit' => 'decimal:2',
             'physical_progress_pct' => 'decimal:2',
             'start_date' => 'date',
             'end_date' => 'date',
             'status' => ProjectStatus::class,
+            'marked_loss_at' => 'datetime',
         ];
     }
 
@@ -214,6 +219,11 @@ class Project extends Model
     public function sales(): HasMany
     {
         return $this->hasMany(Sale::class);
+    }
+
+    public function markedLossBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'marked_loss_by');
     }
 
     /**

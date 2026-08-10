@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\ExpenseCategory;
 use App\Traits\LogsActivity;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -16,6 +17,7 @@ class RequisitionCategory extends Model
     protected $fillable = [
         'name',
         'description',
+        'expense_type',
         'is_active',
         'sort_order',
     ];
@@ -23,6 +25,7 @@ class RequisitionCategory extends Model
     protected function casts(): array
     {
         return [
+            'expense_type' => ExpenseCategory::class,
             'is_active' => 'boolean',
             'sort_order' => 'integer',
         ];
@@ -36,6 +39,13 @@ class RequisitionCategory extends Model
     public function scopeOrdered(Builder $query): Builder
     {
         return $query->orderBy('sort_order')->orderBy('name');
+    }
+
+    public function scopeForExpenseType(Builder $query, ExpenseCategory|string $type): Builder
+    {
+        $value = $type instanceof ExpenseCategory ? $type->value : $type;
+
+        return $query->where('expense_type', $value);
     }
 
     public function requisitions(): BelongsToMany

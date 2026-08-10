@@ -311,8 +311,15 @@ class PayrollService
             ->first();
 
         if ($existing) {
+            $updates = [];
             if (! $existing->is_active) {
-                $existing->update(['is_active' => true]);
+                $updates['is_active'] = true;
+            }
+            if ($existing->expense_type !== ExpenseCategory::Indirect) {
+                $updates['expense_type'] = ExpenseCategory::Indirect;
+            }
+            if ($updates !== []) {
+                $existing->update($updates);
             }
 
             return $existing;
@@ -321,6 +328,7 @@ class PayrollService
         return RequisitionCategory::create([
             'name' => OrganizationFundUse::SALARIES,
             'description' => 'Staff payroll / salaries (administrative overhead)',
+            'expense_type' => ExpenseCategory::Indirect,
             'is_active' => true,
             'sort_order' => 10,
         ]);

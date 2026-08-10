@@ -295,6 +295,23 @@ class ProjectController extends Controller
         return back()->with('success', 'Project progress updated.');
     }
 
+    public function markLoss(Request $request, int $id): RedirectResponse
+    {
+        $this->authorizePermission($request->user(), 'projects', 'update');
+
+        $project = Project::findOrFail($id);
+
+        try {
+            $sale = $this->saleService->markProjectAsLoss($project, $request->user());
+        } catch (\InvalidArgumentException $e) {
+            return back()->withErrors(['loss' => $e->getMessage()]);
+        }
+
+        return redirect()
+            ->route('sales.show', $sale->id)
+            ->with('success', 'Project marked as a loss. Collect the negative receivable against a company account.');
+    }
+
     private function withBudgetSummary(Project $project, ?array $budget = null): Project
     {
         $budget ??= $this->budgetService->summary($project);
@@ -303,11 +320,22 @@ class ProjectController extends Controller
             ? '0.00'
             : bcmul(bcdiv($remainingBudget, (string) $project->net_budget, 4), '100', 2);
 
+        $liveRemaining = $this->saleService->liveRemaining($project);
+        $pendingDeficit = bcadd((string) $project->pending_deficit, '0', 2);
+        $canMarkLoss = $project->status !== \App\Enums\ProjectStatus::Loss
+            && (
+                bccomp($pendingDeficit, '0', 2) === 1
+                || bccomp($liveRemaining, '0', 2) === -1
+            );
+
         $project->setAttribute('remaining_budget', $remainingBudget);
         $project->setAttribute('profit_percentage', $profitPercentage);
         $project->setAttribute('utilization_percentage', $budget['utilization_percentage']);
         $project->setAttribute('remaining_contract_value', $budget['remaining_contract_value']);
         $project->setAttribute('contract_compliance_total', $budget['contract_compliance_total']);
+        $project->setAttribute('pending_deficit', $pendingDeficit);
+        $project->setAttribute('live_remaining', $liveRemaining);
+        $project->setAttribute('can_mark_loss', $canMarkLoss);
 
         return $project;
     }

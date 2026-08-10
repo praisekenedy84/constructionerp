@@ -6,6 +6,7 @@ use App\Enums\ApprovalStepStatus;
 use App\Enums\BoqItemCategory;
 use App\Enums\BudgetTransactionType;
 use App\Enums\CashAllocationStatus;
+use App\Enums\ComplianceRuleType;
 use App\Enums\FulfillmentType;
 use App\Enums\ProjectStatus;
 use App\Enums\RequisitionResourceType;
@@ -84,10 +85,22 @@ class SeedDemoCommand extends Command
                 ],
             );
 
-            foreach (['Retention', 'Advance Recovery', 'WHT', 'Defect Liability', 'Material Test'] as $ruleName) {
+            $demoRules = [
+                'Retention' => ComplianceRuleType::Retention,
+                'Advance Recovery' => ComplianceRuleType::AdvanceRecovery,
+                'WHT' => ComplianceRuleType::Wht,
+                'Defect Liability' => ComplianceRuleType::DefectLiability,
+                'Material Test' => ComplianceRuleType::MaterialTest,
+            ];
+
+            foreach ($demoRules as $ruleName => $ruleType) {
                 ComplianceRule::firstOrCreate(
                     ['name' => $ruleName],
-                    ['description' => null, 'is_active' => true],
+                    [
+                        'description' => null,
+                        'rule_type' => $ruleType,
+                        'is_active' => true,
+                    ],
                 );
             }
 

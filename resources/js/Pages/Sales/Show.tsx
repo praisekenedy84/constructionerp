@@ -52,10 +52,13 @@ export default function SalesShow() {
         occurred_at: '',
     });
 
+    const isLoss = Boolean(sale.is_loss);
+    const collectLabel = isLoss ? 'Record loss' : 'Collect';
+
     function convertToReceivable() {
         if (
             !confirm(
-                `Convert this phase's profit share of ${formatCurrency(sale.profit_amount)} into a receivable for ${sale.sale_code}?`,
+                `Convert this phase's surplus of ${formatCurrency(sale.profit_amount)} into a receivable for ${sale.sale_code}?`,
             )
         ) {
             return;
@@ -142,16 +145,16 @@ export default function SalesShow() {
                             {canCollect && sale.can_collect && (
                                 <Button size="sm" onClick={openCollectDialog}>
                                     <Banknote className="mr-1 h-4 w-4" />
-                                    Collect
+                                    {collectLabel}
                                 </Button>
                             )}
                         </div>
                     }
                 />
 
-                {(errors.convert || errors.amount) && (
+                {(errors.convert || errors.amount || errors.loss) && (
                     <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                        {errors.convert ?? errors.amount}
+                        {errors.convert ?? errors.amount ?? errors.loss}
                     </div>
                 )}
 
@@ -166,14 +169,20 @@ export default function SalesShow() {
                             {formatCurrency(sale.contract_amount)}
                         </p>
                     </DataPanel>
-                    <DataPanel title="Profit Share">
-                        <p className="text-2xl font-bold text-green-700">
+                    <DataPanel title={isLoss ? 'Loss amount' : 'Profit Share'}>
+                        <p
+                            className={`text-2xl font-bold ${
+                                isLoss ? 'text-red-700' : 'text-green-700'
+                            }`}
+                        >
                             {formatCurrency(sale.profit_amount)}
                         </p>
                         <p className="mt-1 text-xs text-slate-500">
-                            {sale.status === 'open'
-                                ? 'Estimated share of remaining project profit'
-                                : 'Snapshotted at conversion'}
+                            {isLoss
+                                ? 'Company loss recorded from project deficit'
+                                : sale.status === 'open'
+                                  ? 'Estimated surplus after carried deficits'
+                                  : 'Snapshotted at conversion'}
                         </p>
                     </DataPanel>
                     <DataPanel title="Outstanding">
@@ -326,8 +335,12 @@ export default function SalesShow() {
             <Dialog
                 open={collectOpen}
                 onOpenChange={(next) => (next ? openCollectDialog() : closeCollectDialog())}
-                title="Collect receivable"
-                description={`Outstanding: ${formatCurrency(sale.outstanding_amount)}`}
+                title={isLoss ? 'Record loss against company account' : 'Collect receivable'}
+                description={
+                    isLoss
+                        ? `Outstanding loss: ${formatCurrency(sale.outstanding_amount)} (negative amount debits the company account)`
+                        : `Outstanding: ${formatCurrency(sale.outstanding_amount)}`
+                }
             >
                 <form onSubmit={submitCollection} className="space-y-4">
                     <div className="space-y-2">
@@ -353,12 +366,21 @@ export default function SalesShow() {
 
                     <div className="space-y-2">
                         <Label htmlFor="amount">Amount</Label>
-                        <AmountInput
-                            id="amount"
-                            value={data.amount}
-                            onValueChange={(value) => setData('amount', value)}
-                            required
-                        />
+                        {isLoss ? (
+                            <Input
+                                id="amount"
+                                value={data.amount}
+                                onChange={(e) => setData('amount', e.target.value)}
+                                required
+                            />
+                        ) : (
+                            <AmountInput
+                                id="amount"
+                                value={data.amount}
+                                onValueChange={(value) => setData('amount', value)}
+                                required
+                            />
+                        )}
                         {formErrors.amount && (
                             <p className="text-sm text-red-600">{formErrors.amount}</p>
                         )}

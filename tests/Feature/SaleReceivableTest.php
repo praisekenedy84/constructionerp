@@ -280,14 +280,17 @@ class SaleReceivableTest extends TestCase
             ->assertSessionHasErrors('convert');
     }
 
-    public function test_closing_phase_endpoint_sets_closed_status(): void
+    public function test_closing_phase_endpoint_sets_closed_status_and_converts_receivable(): void
     {
         $tenant = $this->seedTenant('sales-close-phase');
 
         $projectId = null;
         $phaseId = null;
+        $saleId = null;
 
-        $tenant->run(function () use (&$projectId, &$phaseId) {
+        $tenant->run(function () use (&$projectId, &$phaseId, &$saleId) {
+            $userId = (int) User::query()->value('id');
+
             $project = Project::create([
                 'code' => 'CLOSE-1',
                 'name' => 'Closable',
@@ -307,8 +310,18 @@ class SaleReceivableTest extends TestCase
                 'disbursed_amount' => '2000.00',
             ]);
 
+            BudgetTransaction::create([
+                'project_id' => $project->id,
+                'type' => BudgetTransactionType::DirectExpense,
+                'amount' => '500.00',
+                'reason' => 'Site spend',
+                'created_by' => $userId,
+                'created_at' => now(),
+            ]);
+
             $projectId = $project->id;
             $phaseId = $phase->id;
+            $saleId = app(SaleService::class)->ensureForPhase($phase)->id;
         });
 
         $this->post('/login', [
@@ -321,9 +334,387 @@ class SaleReceivableTest extends TestCase
             ->assertRedirect("/projects/{$projectId}/phases/{$phaseId}")
             ->assertSessionHasNoErrors();
 
-        $tenant->run(function () use ($phaseId) {
+        $tenant->run(function () use ($phaseId, $saleId) {
             $this->assertSame(PhaseStatus::Closed, ProjectPhase::findOrFail($phaseId)->status);
+
+            $sale = Sale::findOrFail($saleId);
+            $this->assertSame(SaleStatus::Receivable, $sale->status);
+            $this->assertSame('1500.00', (string) $sale->profit_amount);
+            $this->assertSame('0.00', (string) $sale->collected_amount);
+            $this->assertNotNull($sale->converted_at);
+            $this->assertNotNull($sale->converted_by);
         });
+    }
+
+    public function test_closing_phase_with_deficit_carries_to_pending_deficit(): void
+    {
+        $tenant = $this->seedTenant('sales-close-zero');
+
+        $phaseId = null;
+        $saleId = null;
+        $projectId = null;
+
+        $tenant->run(function () use (&$phaseId, &$saleId, &$projectId) {
+            $userId = (int) User::query()->value('id');
+            $actor = User::findOrFail($userId);
+
+            $project = Project::create([
+                'code' => 'CLOSE-0',
+                'name' => 'Break-even',
+                'client' => 'Client',
+                'location' => 'Site',
+                'contract_amount' => '1000.00',
+                'wht_percentage' => '0',
+                'net_budget' => '1000.00',
+                'physical_progress_pct' => '0',
+                'start_date' => now(),
+                'end_date' => now()->addYear(),
+                'status' => ProjectStatus::Active,
+            ]);
+
+            $phase = app(PhaseService::class)->create($project, [
+                'name' => 'Works',
+                'disbursed_amount' => '1000.00',
+            ]);
+
+            BudgetTransaction::create([
+                'project_id' => $project->id,
+                'type' => BudgetTransactionType::DirectExpense,
+                'amount' => '1000.00',
+                'reason' => 'Full spend',
+                'created_by' => $userId,
+                'created_at' => now(),
+            ]);
+
+            $saleId = app(SaleService::class)->ensureForPhase($phase)->id;
+            app(PhaseService::class)->close($phase, $actor);
+            $phaseId = $phase->id;
+            $projectId = $project->id;
+        });
+
+        $tenant->run(function () use ($phaseId, $saleId, $projectId) {
+            $this->assertSame(PhaseStatus::Closed, ProjectPhase::findOrFail($phaseId)->status);
+            $sale = Sale::findOrFail($saleId);
+            $this->assertSame(SaleStatus::Open, $sale->status);
+            $this->assertNull($sale->profit_amount);
+            // Break-even: no positive remaining, pending deficit stays 0.
+            $this->assertSame('0.00', (string) Project::findOrFail($projectId)->pending_deficit);
+        });
+    }
+
+    public function test_closing_overspent_phase_sets_pending_deficit_without_receivable(): void
+    {
+        $tenant = $this->seedTenant('sales-close-overspend');
+
+        $saleId = null;
+        $projectId = null;
+
+        $tenant->run(function () use (&$saleId, &$projectId) {
+            $userId = (int) User::query()->value('id');
+            $actor = User::findOrFail($userId);
+
+            $project = Project::create([
+                'code' => 'OVER-1',
+                'name' => 'Overspent',
+                'client' => 'Client',
+                'location' => 'Site',
+                'contract_amount' => '1000.00',
+                'wht_percentage' => '0',
+                'net_budget' => '1000.00',
+                'physical_progress_pct' => '0',
+                'start_date' => now(),
+                'end_date' => now()->addYear(),
+                'status' => ProjectStatus::Active,
+            ]);
+
+            $phase = app(PhaseService::class)->create($project, [
+                'name' => 'Works',
+                'disbursed_amount' => '1000.00',
+            ]);
+
+            BudgetTransaction::create([
+                'project_id' => $project->id,
+                'type' => BudgetTransactionType::DirectExpense,
+                'amount' => '1001.00',
+                'reason' => 'Overspend',
+                'created_by' => $userId,
+                'created_at' => now(),
+            ]);
+
+            $saleId = app(SaleService::class)->ensureForPhase($phase)->id;
+            app(PhaseService::class)->close($phase, $actor);
+            $projectId = $project->id;
+        });
+
+        $tenant->run(function () use ($saleId, $projectId) {
+            $sale = Sale::findOrFail($saleId);
+            $this->assertSame(SaleStatus::Open, $sale->status);
+            $this->assertNull($sale->profit_amount);
+            $this->assertSame('1.00', (string) Project::findOrFail($projectId)->pending_deficit);
+            $this->assertSame(ProjectStatus::Active, Project::findOrFail($projectId)->status);
+        });
+    }
+
+    public function test_deficit_from_first_phase_reduces_second_phase_receivable(): void
+    {
+        $tenant = $this->seedTenant('sales-carry-deficit');
+
+        $tenant->run(function () {
+            $userId = (int) User::query()->value('id');
+            $actor = User::findOrFail($userId);
+
+            $project = Project::create([
+                'code' => 'CARRY-1',
+                'name' => 'Carry Job',
+                'client' => 'Client',
+                'location' => 'Site',
+                'contract_amount' => '2000.00',
+                'wht_percentage' => '0',
+                'net_budget' => '2000.00',
+                'physical_progress_pct' => '0',
+                'start_date' => now(),
+                'end_date' => now()->addYear(),
+                'status' => ProjectStatus::Active,
+            ]);
+
+            $phase1 = app(PhaseService::class)->create($project, [
+                'name' => 'Phase A',
+                'disbursed_amount' => '1000.00',
+            ]);
+            $phase2 = app(PhaseService::class)->create($project, [
+                'name' => 'Phase B',
+                'disbursed_amount' => '1000.00',
+            ]);
+
+            // Spend 1500 against 2000 budget → remaining 500.
+            // Close phase 1 while both open: gross share = 250, converts 250, clears deficit.
+            // Better scenario: overspend first so close P1 carries deficit, then add budget recovery... 
+            // Simpler: spend 1200 so remaining 800. Close P1 alone with both open → share 400.
+            // We need P1 close with underwater, then later remaining becomes positive for P2.
+            BudgetTransaction::create([
+                'project_id' => $project->id,
+                'type' => BudgetTransactionType::DirectExpense,
+                'amount' => '2100.00',
+                'reason' => 'Overspend early',
+                'created_by' => $userId,
+                'created_at' => now(),
+            ]);
+
+            app(PhaseService::class)->close($phase1, $actor);
+            $this->assertSame(SaleStatus::Open, app(SaleService::class)->ensureForPhase($phase1->fresh())->status);
+            $this->assertSame('100.00', (string) $project->fresh()->pending_deficit);
+
+            // Reverse 600 of spend → remaining = 2000 - 1500 = 500; pending still 100.
+            BudgetTransaction::create([
+                'project_id' => $project->id,
+                'type' => BudgetTransactionType::ManualAdjustment,
+                'amount' => '-600.00',
+                'reason' => 'Recover spend',
+                'created_by' => $userId,
+                'created_at' => now(),
+            ]);
+
+            app(PhaseService::class)->close($phase2, $actor);
+            $sale2 = app(SaleService::class)->ensureForPhase($phase2->fresh());
+            // Only P2 open among unconverted when closing P2? P1 still open.
+            // liveRemaining = 500. Both P1 and P2 open → P2 gross = 250. net = 250 - 100 = 150.
+            $this->assertSame(SaleStatus::Receivable, $sale2->fresh()->status);
+            $this->assertSame('150.00', (string) $sale2->fresh()->profit_amount);
+            $this->assertSame('0.00', (string) $project->fresh()->pending_deficit);
+        });
+    }
+
+    public function test_mark_project_as_loss_creates_negative_receivable(): void
+    {
+        $tenant = $this->seedTenant('sales-mark-loss');
+
+        $projectId = null;
+        $saleId = null;
+
+        $tenant->run(function () use (&$projectId, &$saleId) {
+            $userId = (int) User::query()->value('id');
+            $actor = User::findOrFail($userId);
+
+            $project = Project::create([
+                'code' => 'LOSS-1',
+                'name' => 'Loss Job',
+                'client' => 'Client',
+                'location' => 'Site',
+                'contract_amount' => '1000.00',
+                'wht_percentage' => '0',
+                'net_budget' => '1000.00',
+                'physical_progress_pct' => '0',
+                'start_date' => now(),
+                'end_date' => now()->addYear(),
+                'status' => ProjectStatus::Active,
+            ]);
+
+            $phase = app(PhaseService::class)->create($project, [
+                'name' => 'Works',
+                'disbursed_amount' => '1000.00',
+            ]);
+
+            BudgetTransaction::create([
+                'project_id' => $project->id,
+                'type' => BudgetTransactionType::DirectExpense,
+                'amount' => '1300.00',
+                'reason' => 'Overspend',
+                'created_by' => $userId,
+                'created_at' => now(),
+            ]);
+
+            app(PhaseService::class)->close($phase, $actor);
+            $saleId = app(SaleService::class)->ensureForPhase($phase->fresh())->id;
+            $projectId = $project->id;
+
+            $this->assertSame('300.00', (string) $project->fresh()->pending_deficit);
+        });
+
+        $this->post('/login', [
+            'email' => 'admin@sales-mark-loss.local',
+            'password' => 'password',
+        ]);
+
+        $this->from("/projects/{$projectId}")
+            ->post("/projects/{$projectId}/mark-loss")
+            ->assertRedirect("/sales/{$saleId}")
+            ->assertSessionHasNoErrors();
+
+        $tenant->run(function () use ($projectId, $saleId) {
+            $project = Project::findOrFail($projectId);
+            $this->assertSame(ProjectStatus::Loss, $project->status);
+            $this->assertSame('0.00', (string) $project->pending_deficit);
+            $this->assertNotNull($project->marked_loss_at);
+
+            $sale = Sale::findOrFail($saleId);
+            $this->assertSame(SaleStatus::Receivable, $sale->status);
+            $this->assertSame('-300.00', (string) $sale->profit_amount);
+            $this->assertTrue($sale->isLossReceivable());
+        });
+    }
+
+    public function test_collect_negative_loss_debits_company_account(): void
+    {
+        $tenant = $this->seedTenant('sales-loss-collect');
+
+        $saleId = null;
+        $accountId = null;
+
+        $tenant->run(function () use (&$saleId, &$accountId) {
+            $userId = (int) User::query()->value('id');
+            $actor = User::findOrFail($userId);
+
+            $project = Project::create([
+                'code' => 'LOSS-C',
+                'name' => 'Loss Collect',
+                'client' => 'Client',
+                'location' => 'Site',
+                'contract_amount' => '1000.00',
+                'wht_percentage' => '0',
+                'net_budget' => '1000.00',
+                'physical_progress_pct' => '0',
+                'start_date' => now(),
+                'end_date' => now()->addYear(),
+                'status' => ProjectStatus::Active,
+            ]);
+
+            $phase = app(PhaseService::class)->create($project, [
+                'name' => 'Works',
+                'disbursed_amount' => '1000.00',
+            ]);
+
+            BudgetTransaction::create([
+                'project_id' => $project->id,
+                'type' => BudgetTransactionType::DirectExpense,
+                'amount' => '1250.00',
+                'reason' => 'Overspend',
+                'created_by' => $userId,
+                'created_at' => now(),
+            ]);
+
+            app(PhaseService::class)->close($phase, $actor);
+            $sale = app(SaleService::class)->markProjectAsLoss($project->fresh(), $actor);
+            $saleId = $sale->id;
+
+            $account = app(MoneyAccountService::class)->createManagerAccount(
+                'Company Main',
+                User::query()->first(),
+            );
+            $account->update(['balance' => '5000.00']);
+            $accountId = $account->id;
+        });
+
+        $this->post('/login', [
+            'email' => 'admin@sales-loss-collect.local',
+            'password' => 'password',
+        ]);
+
+        $this->from("/sales/{$saleId}")
+            ->post("/sales/{$saleId}/collect", [
+                'amount' => '-250.00',
+                'money_account_id' => $accountId,
+            ])
+            ->assertRedirect("/sales/{$saleId}")
+            ->assertSessionHasNoErrors();
+
+        $tenant->run(function () use ($saleId, $accountId) {
+            $sale = Sale::findOrFail($saleId);
+            $this->assertSame(SaleStatus::Paid, $sale->status);
+            $this->assertSame('-250.00', (string) $sale->collected_amount);
+            $this->assertSame('0.00', $sale->outstandingAmount());
+            $this->assertSame('4750.00', (string) MoneyAccount::findOrFail($accountId)->balance);
+
+            $tx = AccountTransaction::query()
+                ->where('money_account_id', $accountId)
+                ->where('type', AccountTransactionType::ReceivablePayment)
+                ->latest('id')
+                ->first();
+            $this->assertNotNull($tx);
+            $this->assertSame('-250.00', (string) $tx->amount);
+        });
+    }
+
+    public function test_mark_loss_rejected_when_no_deficit(): void
+    {
+        $tenant = $this->seedTenant('sales-mark-loss-none');
+
+        $projectId = null;
+
+        $tenant->run(function () use (&$projectId) {
+            $userId = (int) User::query()->value('id');
+            $actor = User::findOrFail($userId);
+
+            $project = Project::create([
+                'code' => 'LOSS-0',
+                'name' => 'Healthy',
+                'client' => 'Client',
+                'location' => 'Site',
+                'contract_amount' => '1000.00',
+                'wht_percentage' => '0',
+                'net_budget' => '1000.00',
+                'physical_progress_pct' => '0',
+                'start_date' => now(),
+                'end_date' => now()->addYear(),
+                'status' => ProjectStatus::Active,
+            ]);
+
+            $phase = app(PhaseService::class)->create($project, [
+                'name' => 'Works',
+                'disbursed_amount' => '1000.00',
+            ]);
+            app(PhaseService::class)->close($phase, $actor);
+            $projectId = $project->id;
+        });
+
+        $this->post('/login', [
+            'email' => 'admin@sales-mark-loss-none.local',
+            'password' => 'password',
+        ]);
+
+        $this->from("/projects/{$projectId}")
+            ->post("/projects/{$projectId}/mark-loss")
+            ->assertRedirect("/projects/{$projectId}")
+            ->assertSessionHasErrors('loss');
     }
 
     public function test_two_phases_convert_pro_rata_of_recognizable_profit(): void

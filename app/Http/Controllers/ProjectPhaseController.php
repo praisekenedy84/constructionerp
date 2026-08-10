@@ -138,11 +138,11 @@ class ProjectPhaseController extends Controller
         $phase = ProjectPhase::where('project_id', $project->id)->findOrFail($phaseId);
 
         try {
-            $this->phaseService->close($phase);
+            $this->phaseService->close($phase, $request->user());
         } catch (\InvalidArgumentException $e) {
             return back()->withErrors(['phase' => $e->getMessage()]);
         }
 
-        return back()->with('success', 'Phase closed. Its profit share can now be converted to a receivable.');
+        return back()->with('success', 'Phase closed. Surplus converted to a receivable; any deficit carries to the next phase.');
     }
 }

@@ -18,7 +18,7 @@ import { hasPermission } from '@/lib/permissions';
 import { PageProps, Project, ProjectPhase, Sale } from '@/types';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { cn } from '@/lib/utils';
-import { Pencil, Plus, ShoppingCart, Trash2 } from 'lucide-react';
+import { Pencil, Plus, ShoppingCart, Trash2, TriangleAlert } from 'lucide-react';
 import { FormEvent, useState } from 'react';
 
 type Tab = 'overview' | 'boq' | 'budget' | 'requisitions' | 'finance' | 'reports';
@@ -159,6 +159,18 @@ export default function ProjectsShow() {
         router.delete(`/projects/${project.id}`);
     }
 
+    function markProjectAsLoss() {
+        if (
+            !confirm(
+                `Mark project "${project.code}" as a LOSS? The pending deficit will become a negative receivable against a company account.`,
+            )
+        ) {
+            return;
+        }
+
+        router.post(`/projects/${project.id}/mark-loss`);
+    }
+
     function openPhaseDialog() {
         clearErrors();
         reset();
@@ -271,6 +283,18 @@ export default function ProjectsShow() {
                                     </Button>
                                 </Link>
                             )}
+                            {canUpdate && project.can_mark_loss && (
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="border-red-200 text-red-700 hover:bg-red-50"
+                                    onClick={markProjectAsLoss}
+                                >
+                                    <TriangleAlert className="h-4 w-4" />
+                                    Mark as Loss
+                                </Button>
+                            )}
                             {canDelete && (
                                 <Button
                                     type="button"
@@ -369,6 +393,11 @@ export default function ProjectsShow() {
                 </nav>
 
                 <DataPanel title="Project Overview">
+                    {pageErrors.loss && (
+                        <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                            {pageErrors.loss}
+                        </p>
+                    )}
                     <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                         <div>
                             <dt className="text-xs text-slate-500">Status</dt>
@@ -376,6 +405,18 @@ export default function ProjectsShow() {
                                 <StatusBadge status={String(project.status)} />
                             </dd>
                         </div>
+                        {(Number(project.pending_deficit) > 0 || Number(project.live_remaining) < 0) && (
+                            <div>
+                                <dt className="text-xs text-slate-500">Pending deficit</dt>
+                                <dd className="mt-1 text-sm font-semibold text-red-700">
+                                    {formatCurrency(
+                                        Number(project.pending_deficit) > 0
+                                            ? project.pending_deficit
+                                            : Math.abs(Number(project.live_remaining ?? 0)).toFixed(2),
+                                    )}
+                                </dd>
+                            </div>
+                        )}
                         <div>
                             <dt className="text-xs text-slate-500">Start Date</dt>
                             <dd className="mt-1 text-sm text-slate-900">
@@ -756,7 +797,7 @@ export default function ProjectsShow() {
                                                         onClick={() => {
                                                             if (
                                                                 !confirm(
-                                                                    `Close Phase ${phase.sequence_no}: ${phase.name}?`,
+                                                                    `Close Phase ${phase.sequence_no}: ${phase.name}? Surplus becomes a receivable; a deficit carries to the next phase.`,
                                                                 )
                                                             ) {
                                                                 return;

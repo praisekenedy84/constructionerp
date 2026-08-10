@@ -86,13 +86,7 @@ class ValuationIpcComplianceTest extends TestCase
      */
     private function createRules(): array
     {
-        $this->post('/projects/compliance-rules', [
-            'name' => 'Retention',
-            'description' => 'Retention deduction',
-            'rule_type' => 'retention',
-            'is_active' => true,
-        ])->assertRedirect();
-
+        // Retention is seeded for every tenant via migration.
         $this->post('/projects/compliance-rules', [
             'name' => 'Material test fee',
             'rule_type' => 'material_test',
@@ -130,21 +124,34 @@ class ValuationIpcComplianceTest extends TestCase
         return $ids;
     }
 
-    public function test_compliance_rule_catalog_can_be_created(): void
+    public function test_retention_compliance_rule_is_seeded_for_tenant(): void
     {
         $this->loginAsTenantAdmin();
-
-        $this->post('/projects/compliance-rules', [
-            'name' => 'Retention',
-            'description' => 'Standard retention',
-            'rule_type' => 'retention',
-            'is_active' => true,
-        ])->assertRedirect();
 
         tenancy()->initialize(Tenant::where('slug', 'ipc-co')->firstOrFail());
         $this->assertDatabaseHas('compliance_rules', [
             'name' => 'Retention',
             'rule_type' => 'retention',
+            'is_active' => 1,
+            'deleted_at' => null,
+        ]);
+    }
+
+    public function test_compliance_rule_catalog_can_be_created(): void
+    {
+        $this->loginAsTenantAdmin();
+
+        $this->post('/projects/compliance-rules', [
+            'name' => 'Material test fee',
+            'description' => 'Lab testing deduction',
+            'rule_type' => 'material_test',
+            'is_active' => true,
+        ])->assertRedirect();
+
+        tenancy()->initialize(Tenant::where('slug', 'ipc-co')->firstOrFail());
+        $this->assertDatabaseHas('compliance_rules', [
+            'name' => 'Material test fee',
+            'rule_type' => 'material_test',
             'is_active' => 1,
         ]);
     }

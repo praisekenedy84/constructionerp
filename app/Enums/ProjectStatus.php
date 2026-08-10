@@ -8,4 +8,16 @@ enum ProjectStatus: string
     case Active = 'active';
     case OnHold = 'on_hold';
     case Closed = 'closed';
+    case Loss = 'loss';
+
+    public function label(): string
+    {
+        return match ($this) {
+            self::Planning => 'Planning',
+            self::Active => 'Active',
+            self::OnHold => 'On Hold',
+            self::Closed => 'Closed',
+            self::Loss => 'Loss',
+        };
+    }
 }

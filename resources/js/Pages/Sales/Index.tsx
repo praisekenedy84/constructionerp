@@ -25,7 +25,7 @@ export default function SalesIndex() {
             <div className="space-y-6">
                 <PageHeader
                     title="Sales"
-                    description="Net sales by phase — close a phase, convert its share of project profit into a receivable, and collect into company accounts."
+                    description="Net sales by phase — closing a phase converts surplus (after carried deficits); mark an underwater project as Loss to record a company receivable."
                 />
 
                 <ListToolbar

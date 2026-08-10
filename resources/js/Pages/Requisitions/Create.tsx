@@ -165,6 +165,12 @@ export default function RequisitionsCreate() {
     const isEditing = Boolean(requisition);
     const [staffProjectFilter, setStaffProjectFilter] = useState('');
 
+    const initialScope = requisition
+        ? requisition.project_id
+            ? 'project'
+            : 'organization'
+        : 'project';
+
     const initialDepartment =
         departments.find((department) => department.id === requisition?.department_id) ??
         departments.find((department) => department.name === requisition?.department) ??
@@ -172,22 +178,31 @@ export default function RequisitionsCreate() {
         departments[0] ??
         null;
     const salariesCategory =
-        categories.find((category) => category.name.toLowerCase() === 'salaries') ?? null;
+        categories.find(
+            (category) =>
+                category.name.toLowerCase() === 'salaries' &&
+                (category.expense_type ?? 'indirect') === 'indirect',
+        ) ?? null;
+    const categoriesForScope = (scope: 'project' | 'organization') => {
+        const expenseType = scope === 'organization' ? 'indirect' : 'direct';
+        return categories.filter(
+            (category) => (category.expense_type ?? 'direct') === expenseType,
+        );
+    };
+    const initialScopedCategories = categoriesForScope(initialScope);
     const fallbackCategoryId =
         (requisition?.categories?.[0] && String(requisition.categories[0].id)) ||
         (requisition?.requisition_category_id
             ? String(requisition.requisition_category_id)
             : '') ||
-        (salariesCategory ? String(salariesCategory.id) : '') ||
-        (categories[0] ? String(categories[0].id) : '');
+        (initialScope === 'organization' && salariesCategory
+            ? String(salariesCategory.id)
+            : '') ||
+        (initialScopedCategories[0] ? String(initialScopedCategories[0].id) : '');
     const initialAddressedTo = (requisition?.addressed_to ?? 'finance') as RequisitionAddressedTo;
 
     const { data, setData, post, put, processing, errors, transform } = useForm({
-        scope: requisition
-            ? requisition.project_id
-                ? 'project'
-                : 'organization'
-            : 'project',
+        scope: initialScope,
         project_id: requisition?.project_id ? String(requisition.project_id) : '',
         boq_item_id: requisition?.boq_item_id ? String(requisition.boq_item_id) : '',
         department_id: initialDepartment ? String(initialDepartment.id) : '',
@@ -225,6 +240,10 @@ export default function RequisitionsCreate() {
     }));
 
     const isOrganization = data.scope === 'organization';
+    const scopedCategories = categoriesForScope(data.scope);
+    const scopedFallbackCategoryId =
+        (isOrganization && salariesCategory ? String(salariesCategory.id) : '') ||
+        (scopedCategories[0] ? String(scopedCategories[0].id) : '');
     const projectBoqItems = boqItems.filter(
         (item) => !data.project_id || String(item.project_id) === data.project_id,
     );
@@ -242,7 +261,7 @@ export default function RequisitionsCreate() {
     function loadStaffPayrollLines() {
         const salariesId = salariesCategory
             ? String(salariesCategory.id)
-            : fallbackCategoryId;
+            : scopedFallbackCategoryId;
         const filtered = employees.filter(
             (employee) =>
                 !staffProjectFilter || String(employee.project_id) === staffProjectFilter,
@@ -302,7 +321,7 @@ export default function RequisitionsCreate() {
             ...data.items,
             emptyLine({
                 requisition_category_id:
-                    previous?.requisition_category_id || fallbackCategoryId,
+                    previous?.requisition_category_id || scopedFallbackCategoryId,
                 recipient_id: previous?.recipient_id ?? '',
                 recipient_name: previous?.recipient_name ?? '',
                 position_id: previous?.position_id ?? '',
@@ -382,12 +401,30 @@ export default function RequisitionsCreate() {
                                             name="scope"
                                             value="project"
                                             checked={data.scope === 'project'}
-                                            onChange={() =>
+                                            onChange={() => {
+                                                const nextCategories = categoriesForScope('project');
+                                                const nextFallback = nextCategories[0]
+                                                    ? String(nextCategories[0].id)
+                                                    : '';
                                                 setData({
                                                     ...data,
                                                     scope: 'project',
-                                                })
-                                            }
+                                                    items: data.items.map((item) => {
+                                                        const stillValid = nextCategories.some(
+                                                            (category) =>
+                                                                String(category.id) ===
+                                                                item.requisition_category_id,
+                                                        );
+                                                        return stillValid
+                                                            ? item
+                                                            : {
+                                                                  ...item,
+                                                                  requisition_category_id:
+                                                                      nextFallback,
+                                                              };
+                                                    }),
+                                                });
+                                            }}
                                         />
                                         Project (direct expense on fulfill)
                                     </label>
@@ -397,14 +434,37 @@ export default function RequisitionsCreate() {
                                             name="scope"
                                             value="organization"
                                             checked={data.scope === 'organization'}
-                                            onChange={() =>
+                                            onChange={() => {
+                                                const nextCategories =
+                                                    categoriesForScope('organization');
+                                                const nextFallback =
+                                                    (salariesCategory
+                                                        ? String(salariesCategory.id)
+                                                        : '') ||
+                                                    (nextCategories[0]
+                                                        ? String(nextCategories[0].id)
+                                                        : '');
                                                 setData({
                                                     ...data,
                                                     scope: 'organization',
                                                     project_id: '',
                                                     boq_item_id: '',
-                                                })
-                                            }
+                                                    items: data.items.map((item) => {
+                                                        const stillValid = nextCategories.some(
+                                                            (category) =>
+                                                                String(category.id) ===
+                                                                item.requisition_category_id,
+                                                        );
+                                                        return stillValid
+                                                            ? item
+                                                            : {
+                                                                  ...item,
+                                                                  requisition_category_id:
+                                                                      nextFallback,
+                                                              };
+                                                    }),
+                                                });
+                                            }}
                                         />
                                         Administrative (overhead on fulfill)
                                     </label>
@@ -627,10 +687,16 @@ export default function RequisitionsCreate() {
                                                 }
                                                 required
                                             >
-                                                {categories.length === 0 && (
-                                                    <option value="">No categories defined</option>
+                                                {scopedCategories.length === 0 && (
+                                                    <option value="">
+                                                        No{' '}
+                                                        {isOrganization
+                                                            ? 'administrative'
+                                                            : 'project'}{' '}
+                                                        categories defined
+                                                    </option>
                                                 )}
-                                                {categories.map((category) => (
+                                                {scopedCategories.map((category) => (
                                                     <option key={category.id} value={category.id}>
                                                         {category.name}
                                                         {!category.is_active ? ' (inactive)' : ''}

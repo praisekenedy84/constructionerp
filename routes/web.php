@@ -62,6 +62,7 @@ Route::middleware('auth')->group(function () {
     Route::put('/projects/{id}', [ProjectController::class, 'update'])->name('projects.update');
     Route::post('/projects/{id}/recipients', [ProjectController::class, 'syncRecipients'])->name('projects.recipients.sync');
     Route::delete('/projects/{id}', [ProjectController::class, 'destroy'])->name('projects.destroy');
+    Route::post('/projects/{id}/mark-loss', [ProjectController::class, 'markLoss'])->name('projects.mark-loss');
 
     Route::get('/projects/compliance-rules', [ComplianceRuleController::class, 'index'])->name('compliance-rules.index');
     Route::post('/projects/compliance-rules', [ComplianceRuleController::class, 'store'])->name('compliance-rules.store');

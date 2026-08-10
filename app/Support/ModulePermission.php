@@ -161,8 +161,8 @@ class ModulePermission
             'schedule' => 'Configure scheduled report delivery',
             'override' => 'Bypass BOQ quantity or cash-on-hand checks',
             'delete-soft' => 'Archive / soft-delete records',
-            'convert' => 'Recognize closed-phase share of project profit as a receivable',
-            'collect' => 'Transfer receivable collections into a company account',
+            'convert' => 'Manually recognize a closed-phase surplus as a receivable after deficit carry-forward',
+            'collect' => 'Collect a receivable (or record a loss) into a company account',
             'print' => 'Generate printable documents',
             'sign' => 'Attach prepared-by and approved-by signatures',
         ];

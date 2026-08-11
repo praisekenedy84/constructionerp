@@ -112,6 +112,75 @@ class TenantAdminManagementTest extends TestCase
             );
     }
 
+    public function test_tenant_admin_can_create_company_staff_without_project(): void
+    {
+        $this->loginAsTenantAdmin();
+
+        $this->post('/admin/people', [
+            'create_user' => false,
+            'create_staff' => true,
+            'name' => 'Company Worker',
+            'employee_no' => 'EMP-200',
+            'job_role' => 'General Labourer',
+            'pay_structure' => 'daily',
+            'daily_rate' => '35000',
+            'project_ids' => [],
+        ])
+            ->assertRedirect()
+            ->assertSessionHas('success', 'Staff member added.');
+
+        $tenant = Tenant::where('slug', 'admin-co')->firstOrFail();
+        $tenant->run(function (): void {
+            $employee = Employee::where('employee_no', 'EMP-200')->first();
+            $this->assertNotNull($employee);
+            $this->assertNull($employee->project_id);
+            $this->assertCount(0, $employee->projects);
+        });
+    }
+
+    public function test_tenant_admin_can_assign_staff_to_multiple_projects(): void
+    {
+        $this->loginAsTenantAdmin();
+
+        $tenant = Tenant::where('slug', 'admin-co')->firstOrFail();
+        $projectIds = [];
+
+        $tenant->run(function () use (&$projectIds): void {
+            foreach (['PRJ-A', 'PRJ-B'] as $code) {
+                $projectIds[] = Project::create([
+                    'code' => $code,
+                    'name' => "Site {$code}",
+                    'client' => 'Client',
+                    'location' => 'Dar',
+                    'contract_amount' => '1000000',
+                    'wht_percentage' => '5',
+                    'net_budget' => '950000',
+                    'physical_progress_pct' => '0',
+                    'start_date' => now()->toDateString(),
+                    'end_date' => now()->addYear()->toDateString(),
+                    'status' => 'active',
+                ])->id;
+            }
+        });
+
+        $this->post('/admin/people', [
+            'create_user' => false,
+            'create_staff' => true,
+            'name' => 'Multi Site Worker',
+            'employee_no' => 'EMP-201',
+            'job_role' => 'Foreman',
+            'pay_structure' => 'monthly',
+            'monthly_salary' => '900000',
+            'project_ids' => $projectIds,
+        ])->assertRedirect();
+
+        $tenant->run(function () use ($projectIds): void {
+            $employee = Employee::where('employee_no', 'EMP-201')->firstOrFail();
+            $this->assertSame($projectIds[0], $employee->project_id);
+            $this->assertEqualsCanonicalizing($projectIds, $employee->projects()->pluck('projects.id')->all());
+        });
+    }
+
     public function test_tenant_admin_can_create_user_and_staff_together(): void
     {
         $this->loginAsTenantAdmin();
@@ -163,6 +232,7 @@ class TenantAdminManagementTest extends TestCase
             $this->assertSame('Foreman', $employee->role);
             $this->assertSame($user->id, $employee->user_id);
             $this->assertSame($projectId, $employee->project_id);
+            $this->assertSame([$projectId], $employee->projects()->pluck('projects.id')->all());
         });
     }
 

@@ -25,7 +25,7 @@ class PayrollController extends Controller
         $project = Project::findOrFail($projectId);
 
         $employeeListing = ListingQuery::for(
-            Employee::query()->where('project_id', $project->id),
+            Employee::query()->assignedToProject($project->id),
             $request,
         )
             ->search(['name', 'employee_no', 'role'])

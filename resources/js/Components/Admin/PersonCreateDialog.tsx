@@ -22,7 +22,6 @@ function initialData(
     defaultCreateUser: boolean,
     defaultCreateStaff: boolean,
     assignableRoles: string[],
-    projects: Project[],
 ) {
     return {
         create_user: defaultCreateUser,
@@ -37,7 +36,7 @@ function initialData(
         pay_structure: 'monthly' as 'daily' | 'monthly',
         daily_rate: '',
         monthly_salary: '',
-        project_id: projects[0]?.id?.toString() ?? '',
+        project_ids: [] as number[],
         user_id: '',
     };
 }
@@ -52,7 +51,7 @@ export default function PersonCreateDialog({
     linkableUsers = [],
 }: PersonCreateDialogProps) {
     const form = useForm(
-        initialData(defaultCreateUser, defaultCreateStaff, assignableRoles, projects),
+        initialData(defaultCreateUser, defaultCreateStaff, assignableRoles),
     );
 
     useEffect(() => {
@@ -60,15 +59,23 @@ export default function PersonCreateDialog({
             return;
         }
 
-        form.setData(initialData(defaultCreateUser, defaultCreateStaff, assignableRoles, projects));
+        form.setData(initialData(defaultCreateUser, defaultCreateStaff, assignableRoles));
         form.clearErrors();
         // Intentionally reset only when the dialog opens.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open]);
 
     function resetForm() {
-        form.setData(initialData(defaultCreateUser, defaultCreateStaff, assignableRoles, projects));
+        form.setData(initialData(defaultCreateUser, defaultCreateStaff, assignableRoles));
         form.clearErrors();
+    }
+
+    function toggleProject(projectId: number, checked: boolean) {
+        const current = form.data.project_ids;
+        form.setData(
+            'project_ids',
+            checked ? [...current, projectId] : current.filter((id) => id !== projectId),
+        );
     }
 
     function close() {
@@ -84,7 +91,8 @@ export default function PersonCreateDialog({
         e.preventDefault();
         form.transform((data) => ({
             ...data,
-            project_id: data.create_staff && data.project_id ? Number(data.project_id) : null,
+            project_id: null,
+            project_ids: data.create_staff ? data.project_ids : [],
             user_id:
                 data.create_staff && !data.create_user && data.user_id
                     ? Number(data.user_id)
@@ -124,7 +132,7 @@ export default function PersonCreateDialog({
             ? 'Create a login account and payroll staff record together.'
             : form.data.create_user
               ? 'Create a login account and assign a role. Optionally add a payroll staff record.'
-              : 'Create a payroll staff record. Optionally create or link a login account.';
+              : 'Create a company staff record. Assign projects now or later from the staff directory.';
 
     return (
         <Dialog
@@ -267,25 +275,34 @@ export default function PersonCreateDialog({
                             )}
                         </div>
                         <div className="space-y-2">
-                            <Label htmlFor="person-project">Project</Label>
-                            <select
-                                id="person-project"
-                                className="flex h-10 w-full rounded-md border border-slate-200 px-3 text-sm"
-                                value={form.data.project_id}
-                                onChange={(e) => form.setData('project_id', e.target.value)}
-                            >
-                                {projects.length === 0 ? (
-                                    <option value="">No projects available</option>
-                                ) : (
-                                    projects.map((project) => (
-                                        <option key={project.id} value={project.id}>
+                            <Label>Assign to projects (optional)</Label>
+                            <p className="text-xs text-slate-500">
+                                Staff are hired by the company. You can assign them to one or more
+                                projects now, or do it later.
+                            </p>
+                            {projects.length === 0 ? (
+                                <p className="text-sm text-slate-500">No projects available yet.</p>
+                            ) : (
+                                <div className="max-h-36 space-y-2 overflow-y-auto rounded-md border border-slate-200 p-3">
+                                    {projects.map((project) => (
+                                        <label
+                                            key={project.id}
+                                            className="flex items-center gap-2 text-sm"
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                checked={form.data.project_ids.includes(project.id)}
+                                                onChange={(e) =>
+                                                    toggleProject(project.id, e.target.checked)
+                                                }
+                                            />
                                             {project.code} — {project.name}
-                                        </option>
-                                    ))
-                                )}
-                            </select>
-                            {form.errors.project_id && (
-                                <p className="text-sm text-red-600">{form.errors.project_id}</p>
+                                        </label>
+                                    ))}
+                                </div>
+                            )}
+                            {form.errors.project_ids && (
+                                <p className="text-sm text-red-600">{form.errors.project_ids}</p>
                             )}
                         </div>
                         <div className="space-y-2">

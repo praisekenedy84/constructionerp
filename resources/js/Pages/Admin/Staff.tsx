@@ -35,9 +35,35 @@ export default function AdminStaff() {
         pay_structure: 'monthly' as 'daily' | 'monthly',
         daily_rate: '',
         monthly_salary: '',
-        project_id: '',
+        project_ids: [] as number[],
         user_id: '',
     });
+
+    function assignedProjectIds(employee: Employee): number[] {
+        if (employee.projects && employee.projects.length > 0) {
+            return employee.projects.map((project) => project.id);
+        }
+
+        return employee.project_id ? [employee.project_id] : [];
+    }
+
+    function formatProjects(employee: Employee): string {
+        const names = employee.projects?.map((project) => project.name) ?? [];
+
+        if (names.length > 0) {
+            return names.join(', ');
+        }
+
+        return employee.project?.name ?? 'Unassigned';
+    }
+
+    function toggleEditProject(projectId: number, checked: boolean) {
+        const current = editForm.data.project_ids;
+        editForm.setData(
+            'project_ids',
+            checked ? [...current, projectId] : current.filter((id) => id !== projectId),
+        );
+    }
 
     function startEdit(employee: Employee) {
         setEditingId(employee.id);
@@ -48,7 +74,7 @@ export default function AdminStaff() {
             pay_structure: employee.pay_structure,
             daily_rate: employee.daily_rate ?? '',
             monthly_salary: employee.monthly_salary ?? '',
-            project_id: String(employee.project_id),
+            project_ids: assignedProjectIds(employee),
             user_id: employee.user_id ? String(employee.user_id) : '',
         });
     }
@@ -58,7 +84,7 @@ export default function AdminStaff() {
         if (!editingId) return;
         editForm.transform((data) => ({
             ...data,
-            project_id: Number(data.project_id),
+            project_id: data.project_ids[0] ?? null,
             user_id: data.user_id ? Number(data.user_id) : null,
             daily_rate: data.pay_structure === 'daily' ? data.daily_rate : null,
             monthly_salary: data.pay_structure === 'monthly' ? data.monthly_salary : null,
@@ -79,7 +105,7 @@ export default function AdminStaff() {
             <div className="space-y-6">
                 <PageHeader
                     title="Staff & employees"
-                    description="Manage payroll staff records for your company. Optionally create a login account at the same time, or link an existing user."
+                    description="Manage company staff and payroll records. Assign staff to projects when they are deployed to a site."
                     actions={
                         <Button onClick={() => setCreateOpen(true)}>
                             <Plus className="mr-2 h-4 w-4" />
@@ -115,19 +141,27 @@ export default function AdminStaff() {
                                     required
                                 />
                             </div>
-                            <div className="space-y-2">
-                                <Label>Project</Label>
-                                <select
-                                    className="flex h-10 w-full rounded-md border border-slate-200 px-3 text-sm"
-                                    value={editForm.data.project_id}
-                                    onChange={(e) => editForm.setData('project_id', e.target.value)}
-                                >
-                                    {projects.map((p) => (
-                                        <option key={p.id} value={p.id}>
-                                            {p.code} — {p.name}
-                                        </option>
+                            <div className="space-y-2 sm:col-span-2">
+                                <Label>Assigned projects</Label>
+                                <div className="max-h-36 space-y-2 overflow-y-auto rounded-md border border-slate-200 p-3">
+                                    {projects.map((project) => (
+                                        <label
+                                            key={project.id}
+                                            className="flex items-center gap-2 text-sm"
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                checked={editForm.data.project_ids.includes(
+                                                    project.id,
+                                                )}
+                                                onChange={(e) =>
+                                                    toggleEditProject(project.id, e.target.checked)
+                                                }
+                                            />
+                                            {project.code} — {project.name}
+                                        </label>
                                     ))}
-                                </select>
+                                </div>
                             </div>
                             <div className="space-y-2">
                                 <Label>Pay structure</Label>
@@ -214,7 +248,7 @@ export default function AdminStaff() {
                                 <th className="px-6 py-3 font-medium">No.</th>
                                 <th className="px-6 py-3 font-medium">Name</th>
                                 <th className="px-6 py-3 font-medium">Role</th>
-                                <th className="px-6 py-3 font-medium">Project</th>
+                                <th className="px-6 py-3 font-medium">Projects</th>
                                 <th className="px-6 py-3 font-medium">Linked user</th>
                                 <th className="px-6 py-3 text-right font-medium">Actions</th>
                             </tr>
@@ -233,7 +267,7 @@ export default function AdminStaff() {
                                         <td className="px-6 py-4 font-medium">{employee.name}</td>
                                         <td className="px-6 py-4 text-slate-600">{employee.role}</td>
                                         <td className="px-6 py-4 text-slate-600">
-                                            {employee.project?.name ?? '—'}
+                                            {formatProjects(employee)}
                                         </td>
                                         <td className="px-6 py-4 text-slate-600">
                                             {employee.user

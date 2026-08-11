@@ -29,7 +29,9 @@ class UpdateEmployeeRequest extends FormRequest
             'pay_structure' => ['required', Rule::enum(PayStructure::class)],
             'daily_rate' => ['nullable', 'numeric', 'gte:0', 'required_if:pay_structure,daily'],
             'monthly_salary' => ['nullable', 'numeric', 'gte:0', 'required_if:pay_structure,monthly'],
-            'project_id' => ['required', 'integer', 'exists:projects,id'],
+            'project_id' => ['nullable', 'integer', 'exists:projects,id'],
+            'project_ids' => ['nullable', 'array'],
+            'project_ids.*' => ['integer', 'exists:projects,id'],
             'user_id' => [
                 'nullable',
                 'integer',

@@ -111,6 +111,8 @@ class AdminController extends Controller
                     ? $validated['pay_structure']->value
                     : $validated['pay_structure'];
 
+                $projectIds = Employee::resolveProjectIds($validated);
+
                 $employee = Employee::create([
                     'employee_no' => $validated['employee_no'],
                     'name' => $validated['name'],
@@ -122,9 +124,13 @@ class AdminController extends Controller
                     'monthly_salary' => $payStructure === 'monthly'
                         ? ($validated['monthly_salary'] ?? null)
                         : null,
-                    'project_id' => $validated['project_id'],
+                    'project_id' => $projectIds[0] ?? null,
                     'user_id' => $user?->id ?? ($validated['user_id'] ?? null),
                 ]);
+
+                if ($projectIds !== []) {
+                    $employee->syncProjectAssignments($projectIds);
+                }
 
                 $this->auditService->write(
                     'Employee',
@@ -217,7 +223,7 @@ class AdminController extends Controller
         $this->authorizeTenantAdmin($request->user());
 
         $listing = ListingQuery::for(
-            Employee::query()->with(['project', 'user']),
+            Employee::query()->with(['project', 'projects:id,code,name', 'user']),
             $request,
         )
             ->search(['name', 'employee_no', 'role'])
@@ -239,7 +245,17 @@ class AdminController extends Controller
     {
         $this->authorizeTenantAdmin($request->user());
 
-        $employee = Employee::create($request->validated());
+        $validated = $request->validated();
+        $projectIds = Employee::resolveProjectIds($validated);
+
+        $employee = Employee::create([
+            ...collect($validated)->except(['project_ids'])->all(),
+            'project_id' => $projectIds[0] ?? null,
+        ]);
+
+        if ($projectIds !== []) {
+            $employee->syncProjectAssignments($projectIds);
+        }
 
         $this->auditService->write(
             'Employee',
@@ -259,7 +275,14 @@ class AdminController extends Controller
 
         $employee = Employee::findOrFail($id);
         $before = $employee->toArray();
-        $employee->update($request->validated());
+        $validated = $request->validated();
+        $projectIds = Employee::resolveProjectIds($validated);
+
+        $employee->update([
+            ...collect($validated)->except(['project_ids'])->all(),
+            'project_id' => $projectIds[0] ?? null,
+        ]);
+        $employee->syncProjectAssignments($projectIds);
 
         $this->auditService->write(
             'Employee',

@@ -26,7 +26,7 @@ class EmployeeController extends Controller
         $project = Project::findOrFail($projectId);
 
         $employeeListing = ListingQuery::for(
-            Employee::query()->where('project_id', $project->id),
+            Employee::query()->assignedToProject($project->id),
             $request,
         )
             ->search(['name', 'employee_no', 'role'])
@@ -50,7 +50,14 @@ class EmployeeController extends Controller
     {
         $this->authorizePermission($request->user(), 'payroll', 'create');
 
-        Employee::create($request->validated());
+        $validated = $request->validated();
+        $projectIds = Employee::resolveProjectIds($validated);
+
+        $employee = Employee::create([
+            ...collect($validated)->except(['project_ids'])->all(),
+            'project_id' => $projectIds[0] ?? null,
+        ]);
+        $employee->syncProjectAssignments($projectIds);
 
         return back()->with('success', 'Employee created.');
     }
@@ -60,7 +67,14 @@ class EmployeeController extends Controller
         $this->authorizePermission($request->user(), 'payroll', 'update');
 
         $employee = Employee::findOrFail($id);
-        $employee->update($request->validated());
+        $validated = $request->validated();
+        $projectIds = Employee::resolveProjectIds($validated);
+
+        $employee->update([
+            ...collect($validated)->except(['project_ids'])->all(),
+            'project_id' => $projectIds[0] ?? null,
+        ]);
+        $employee->syncProjectAssignments($projectIds);
 
         return back()->with('success', 'Employee updated.');
     }
@@ -69,9 +83,13 @@ class EmployeeController extends Controller
     {
         $this->authorizePermission($request->user(), 'payroll', 'update');
 
-        $employee = Employee::findOrFail($id);
-        $employee->delete();
+        $projectId = $request->integer('project_id')
+            ?: session('current_project_id')
+            ?: Project::query()->orderByDesc('created_at')->value('id');
 
-        return back()->with('success', 'Employee removed.');
+        $employee = Employee::findOrFail($id);
+        $employee->detachFromProject((int) $projectId);
+
+        return back()->with('success', 'Employee removed from project payroll.');
     }
 }

@@ -790,9 +790,10 @@ export interface Employee {
     pay_structure: 'daily' | 'monthly';
     daily_rate: string | null;
     monthly_salary: string | null;
-    project_id: number;
+    project_id: number | null;
     user_id?: number | null;
     project?: Project;
+    projects?: Project[];
     user?: { id: number; name: string; email: string };
 }
 

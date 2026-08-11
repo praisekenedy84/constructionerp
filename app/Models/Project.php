@@ -183,6 +183,13 @@ class Project extends Model
         return $this->hasMany(Employee::class);
     }
 
+    public function assignedEmployees(): BelongsToMany
+    {
+        return $this->belongsToMany(Employee::class, 'employee_project')
+            ->withTimestamps()
+            ->orderBy('employees.name');
+    }
+
     /** Reference-only staff/recipients used on this project (many-to-many). */
     public function recipients(): BelongsToMany
     {

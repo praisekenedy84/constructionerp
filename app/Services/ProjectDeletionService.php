@@ -240,9 +240,8 @@ class ProjectDeletionService
         PayrollItem::query()->whereIn('payroll_run_id', $payrollIds)->delete();
         PayrollRun::withTrashed()->where('project_id', $projectId)->forceDelete();
 
-        $employeeIds = Employee::withTrashed()->where('project_id', $projectId)->pluck('id');
-        Attendance::query()->whereIn('employee_id', $employeeIds)->delete();
-        Employee::withTrashed()->where('project_id', $projectId)->forceDelete();
+        DB::table('employee_project')->where('project_id', $projectId)->delete();
+        Employee::withTrashed()->where('project_id', $projectId)->update(['project_id' => null]);
 
         $assignmentIds = EquipmentAssignment::withTrashed()->where('project_id', $projectId)->pluck('id');
         EquipmentFuelLog::query()->whereIn('assignment_id', $assignmentIds)->delete();

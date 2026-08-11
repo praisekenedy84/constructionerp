@@ -49,7 +49,7 @@ class PayrollService
      */
     public function generatePreview(Project $project, string $periodStart, string $periodEnd): array
     {
-        $employees = Employee::where('project_id', $project->id)->get();
+        $employees = Employee::assignedToProject($project->id)->get();
         $items = [];
         $totalNetPay = '0';
 
@@ -698,7 +698,7 @@ class PayrollService
         $date = $filters['date'] ?? now()->toDateString();
 
         $employees = Employee::query()
-            ->when($filters['project_id'] ?? null, fn ($q, $id) => $q->where('project_id', $id))
+            ->when($filters['project_id'] ?? null, fn ($q, $id) => $q->assignedToProject((int) $id))
             ->orderBy('name')
             ->get();
 

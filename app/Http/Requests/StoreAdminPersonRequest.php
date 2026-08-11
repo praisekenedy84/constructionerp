@@ -74,10 +74,11 @@ class StoreAdminPersonRequest extends FormRequest
             'monthly_salary' => ['nullable', 'numeric', 'gte:0', 'required_if:pay_structure,monthly'],
             'project_id' => [
                 'nullable',
-                'required_if:create_staff,true',
                 'integer',
                 'exists:projects,id',
             ],
+            'project_ids' => ['nullable', 'array'],
+            'project_ids.*' => ['integer', 'exists:projects,id'],
             'user_id' => [
                 'nullable',
                 'prohibited_if:create_user,true',

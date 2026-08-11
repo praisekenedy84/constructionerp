@@ -512,7 +512,7 @@ class RequisitionController extends Controller
             'positions' => $positions,
             'units' => $this->activeUnits($lineUnits),
             'employees' => Employee::query()
-                ->with('project:id,code,name')
+                ->with(['project:id,code,name', 'projects:id,code,name'])
                 ->orderBy('name')
                 ->get([
                     'id',

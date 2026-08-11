@@ -36,23 +36,6 @@ interface AppShellProps {
     children: ReactNode;
 }
 
-const EXPANDED_NAV_STORAGE_KEY = 'crf-sidebar-expanded';
-
-function readExpandedKeys(): string[] {
-    try {
-        const raw = localStorage.getItem(EXPANDED_NAV_STORAGE_KEY);
-        if (!raw) return [];
-        const parsed = JSON.parse(raw);
-        return Array.isArray(parsed) ? parsed.filter((key): key is string => typeof key === 'string') : [];
-    } catch {
-        return [];
-    }
-}
-
-function persistExpandedKeys(keys: string[]) {
-    localStorage.setItem(EXPANDED_NAV_STORAGE_KEY, JSON.stringify(keys));
-}
-
 export default function AppShell({ title, children }: AppShellProps) {
     const page = usePage<PageProps>();
     const { auth, uiSettings, navigation, unreadNotificationCount, flash } = page.props;
@@ -61,48 +44,40 @@ export default function AppShell({ title, children }: AppShellProps) {
     const isImpersonating = Boolean(auth.impersonator_id || auth.platform_impersonator_id);
     const isPlatformImpersonation = Boolean(auth.platform_impersonator_id);
     const [mobileOpen, setMobileOpen] = useState(false);
-    const [expandedKeys, setExpandedKeys] = useState<string[]>(() =>
-        typeof window === 'undefined' ? [] : readExpandedKeys(),
-    );
+    // Accordion: undefined = follow active route; string = user-opened; null = user collapsed all.
+    const [manualExpandedKey, setManualExpandedKey] = useState<string | null | undefined>(undefined);
 
+    const activeParentKey =
+        visibleNav.find(
+            (item) =>
+                item.children?.length &&
+                isNavSectionActive(item.href, url, item.children, item.active_path),
+        )?.key ?? null;
+
+    // On navigation, return to route-driven expansion (closes inactive sections).
     useEffect(() => {
-        const activeParents = visibleNav
-            .filter(
-                (item) =>
-                    item.children?.length &&
-                    isNavSectionActive(item.href, url, item.children, item.active_path),
-            )
-            .map((item) => item.key);
-
-        if (activeParents.length === 0) {
-            return;
-        }
-
-        setExpandedKeys((prev) => {
-            const next = Array.from(new Set([...prev, ...activeParents]));
-            if (next.length === prev.length && next.every((key) => prev.includes(key))) {
-                return prev;
-            }
-            persistExpandedKeys(next);
-            return next;
-        });
-    }, [url, visibleNav]);
+        setManualExpandedKey(undefined);
+    }, [url]);
 
     useEffect(() => {
         setMobileOpen(false);
     }, [url]);
 
+    // Drop legacy multi-expand persistence from earlier sidebar behavior.
+    useEffect(() => {
+        try {
+            localStorage.removeItem('crf-sidebar-expanded');
+        } catch {
+            // ignore
+        }
+    }, []);
+
     function setItemExpanded(key: string, open: boolean) {
-        setExpandedKeys((prev) => {
-            const isOpen = prev.includes(key);
-            if (open === isOpen) {
-                return prev;
-            }
-            const next = open ? [...prev, key] : prev.filter((item) => item !== key);
-            persistExpandedKeys(next);
-            return next;
-        });
+        setManualExpandedKey(open ? key : null);
     }
+
+    const expandedKey = manualExpandedKey === undefined ? activeParentKey : manualExpandedKey;
+    const expandedKeys = expandedKey ? [expandedKey] : [];
 
     const brand = (
         <div className="flex items-center gap-2">
@@ -387,7 +362,7 @@ function NavIcon({ href, active }: { href: string; active: boolean }) {
         '/equipment': Settings,
         '/reports': ClipboardList,
         '/audit': ClipboardList,
-        '/admin/users': Users,
+        '/admin': Users,
     };
 
     const Icon = icons[href] ?? LayoutDashboard;

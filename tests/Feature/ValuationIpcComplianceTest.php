@@ -2,17 +2,25 @@
 
 namespace Tests\Feature;
 
+use App\Enums\AccountTransactionType;
+use App\Enums\DepositSource;
+use App\Enums\SaleStatus;
+use App\Models\AccountTransaction;
 use App\Models\BudgetTransaction;
 use App\Models\CashAllocation;
 use App\Models\ComplianceRule;
 use App\Models\Expense;
+use App\Models\MoneyAccount;
 use App\Models\Project;
 use App\Models\ProjectPhase;
+use App\Models\Sale;
 use App\Models\Tenant;
+use App\Models\User;
 use App\Models\Valuation;
 use App\Models\ValuationDeduction;
 use App\Services\AuthService;
 use App\Services\BudgetService;
+use App\Services\MoneyAccountService;
 use App\Services\ReportService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -203,12 +211,11 @@ class ValuationIpcComplianceTest extends TestCase
             ->where('category', 'direct')
             ->orderBy('id')
             ->get();
-        $this->assertCount(2, $expenses);
-        $this->assertSame('100000.00', (string) $expenses[0]->amount);
-        $this->assertSame('Retention', $expenses[0]->sub_type);
+        // Retention is held on the phase, not mirrored as a direct expense.
+        $this->assertCount(1, $expenses);
+        $this->assertSame('5000.00', (string) $expenses[0]->amount);
+        $this->assertSame('Material test fee', $expenses[0]->sub_type);
         $this->assertSame('IPC-1', $expenses[0]->activity_ref);
-        $this->assertSame('5000.00', (string) $expenses[1]->amount);
-        $this->assertSame('Material test fee', $expenses[1]->sub_type);
         $this->assertEmpty($expenses[0]->cashDisbursements);
     }
 
@@ -478,10 +485,135 @@ class ValuationIpcComplianceTest extends TestCase
         $this->assertSame('900000.00', (string) Project::findOrFail($projectId)->net_budget);
     }
 
-    public function test_releasing_retention_adds_held_amount_back_to_budget(): void
+    public function test_releasing_retention_splits_50_50_and_deposits_to_company_account(): void
     {
         $this->loginAsTenantAdmin();
         $projectId = $this->createProject('REL-RET');
+        $phaseId = $this->createPhase($projectId, '1000000');
+        $rules = $this->createRules();
+
+        tenancy()->initialize(Tenant::where('slug', 'ipc-co')->firstOrFail());
+        $account = app(MoneyAccountService::class)->createManagerAccount(
+            'Company Main',
+            User::query()->first(),
+        );
+        $accountId = $account->id;
+        tenancy()->end();
+
+        $this->post("/projects/{$projectId}/valuations", [
+            'phase_id' => $phaseId,
+            'compliance_items' => [[
+                'compliance_rule_id' => $rules['retention'],
+                'calculation_type' => 'rate_percent',
+                'rate' => '10',
+            ]],
+        ])->assertRedirect();
+
+        $this->post("/projects/{$projectId}/retention/release", [
+            'money_account_id' => $accountId,
+        ])->assertRedirect();
+
+        tenancy()->initialize(Tenant::where('slug', 'ipc-co')->firstOrFail());
+        $project = Project::findOrFail($projectId);
+        $phase = ProjectPhase::findOrFail($phaseId);
+        $account = MoneyAccount::findOrFail($accountId);
+
+        // Both halves leave hold (cash + receivable), so full retention returns to budget.
+        $this->assertSame('1000000.00', (string) $project->net_budget);
+        $this->assertSame('0.00', (string) $phase->retention_held_amount);
+        $this->assertSame('50000.00', (string) $phase->retention_released_amount);
+        $this->assertSame('50000.00', (string) $phase->retention_receivable_amount);
+        $this->assertSame('0.00', (string) $phase->retention_forfeited_amount);
+        $this->assertSame('50000.00', (string) $account->balance);
+
+        $tx = AccountTransaction::query()
+            ->where('money_account_id', $accountId)
+            ->where('type', AccountTransactionType::Deposit)
+            ->firstOrFail();
+        $this->assertSame(DepositSource::RetentionRelease, $tx->deposit_source);
+        $this->assertSame('50000.00', (string) $tx->amount);
+        $this->assertSame('project', $tx->reference_entity_type);
+        $this->assertSame($projectId, (int) $tx->reference_entity_id);
+
+        $retentionSale = Sale::query()
+            ->where('project_id', $projectId)
+            ->whereNull('phase_id')
+            ->where('status', SaleStatus::Receivable)
+            ->firstOrFail();
+        $this->assertSame('50000.00', (string) $retentionSale->profit_amount);
+        $this->assertStringStartsWith('RET-', $retentionSale->sale_code);
+    }
+
+    public function test_releasing_cumulative_retention_across_phases_deposits_half_once(): void
+    {
+        $this->loginAsTenantAdmin();
+        $projectId = $this->createProject('REL-MULTI', '2000000');
+        $phase1Id = $this->createPhase($projectId, '1000000', 'Phase 1');
+        $phase2Id = $this->createPhase($projectId, '1000000', 'Phase 2');
+        $rules = $this->createRules();
+
+        tenancy()->initialize(Tenant::where('slug', 'ipc-co')->firstOrFail());
+        $account = app(MoneyAccountService::class)->createManagerAccount(
+            'Company Main',
+            User::query()->first(),
+        );
+        $accountId = $account->id;
+        tenancy()->end();
+
+        foreach ([$phase1Id, $phase2Id] as $phaseId) {
+            $this->post("/projects/{$projectId}/valuations", [
+                'phase_id' => $phaseId,
+                'compliance_items' => [[
+                    'compliance_rule_id' => $rules['retention'],
+                    'calculation_type' => 'rate_percent',
+                    'rate' => '10',
+                ]],
+            ])->assertRedirect();
+        }
+
+        // Cumulative held = 200,000 → cash 100,000 / receivable 100,000
+        $this->post("/projects/{$projectId}/retention/release", [
+            'money_account_id' => $accountId,
+        ])->assertRedirect();
+
+        tenancy()->initialize(Tenant::where('slug', 'ipc-co')->firstOrFail());
+        $project = Project::findOrFail($projectId);
+        $phase1 = ProjectPhase::findOrFail($phase1Id);
+        $phase2 = ProjectPhase::findOrFail($phase2Id);
+        $account = MoneyAccount::findOrFail($accountId);
+
+        $this->assertSame('0.00', (string) $phase1->retention_held_amount);
+        $this->assertSame('0.00', (string) $phase2->retention_held_amount);
+        $this->assertSame(
+            '100000.00',
+            bcadd((string) $phase1->retention_released_amount, (string) $phase2->retention_released_amount, 2),
+        );
+        $this->assertSame(
+            '100000.00',
+            bcadd((string) $phase1->retention_receivable_amount, (string) $phase2->retention_receivable_amount, 2),
+        );
+        $this->assertSame('2000000.00', (string) $project->net_budget);
+        $this->assertSame('100000.00', (string) $account->balance);
+        $this->assertSame(
+            1,
+            AccountTransaction::query()
+                ->where('money_account_id', $accountId)
+                ->where('type', AccountTransactionType::Deposit)
+                ->count(),
+        );
+        $this->assertSame(
+            '100000.00',
+            (string) Sale::query()
+                ->where('project_id', $projectId)
+                ->whereNull('phase_id')
+                ->value('profit_amount'),
+        );
+    }
+
+    public function test_releasing_retention_requires_company_account(): void
+    {
+        $this->loginAsTenantAdmin();
+        $projectId = $this->createProject('REL-REQ');
         $phaseId = $this->createPhase($projectId, '1000000');
         $rules = $this->createRules();
 
@@ -494,15 +626,15 @@ class ValuationIpcComplianceTest extends TestCase
             ]],
         ])->assertRedirect();
 
-        $this->post("/projects/{$projectId}/phases/{$phaseId}/retention/release")
-            ->assertRedirect();
+        $this->from("/projects/{$projectId}")
+            ->post("/projects/{$projectId}/retention/release")
+            ->assertRedirect("/projects/{$projectId}")
+            ->assertSessionHasErrors('money_account_id');
 
         tenancy()->initialize(Tenant::where('slug', 'ipc-co')->firstOrFail());
-        $project = Project::findOrFail($projectId);
         $phase = ProjectPhase::findOrFail($phaseId);
-        $this->assertSame('1000000.00', (string) $project->net_budget);
-        $this->assertSame('0.00', (string) $phase->retention_held_amount);
-        $this->assertSame('100000.00', (string) $phase->retention_released_amount);
+        $this->assertSame('100000.00', (string) $phase->retention_held_amount);
+        $this->assertSame(0, AccountTransaction::query()->count());
     }
 
     public function test_forfeiting_retention_keeps_budget_reduced(): void
@@ -530,6 +662,50 @@ class ValuationIpcComplianceTest extends TestCase
         $this->assertSame('900000.00', (string) $project->net_budget);
         $this->assertSame('0.00', (string) $phase->retention_held_amount);
         $this->assertSame('100000.00', (string) $phase->retention_forfeited_amount);
+        $this->assertSame(0, AccountTransaction::query()->where('type', AccountTransactionType::Deposit)->count());
+    }
+
+    public function test_project_show_includes_retention_cumulative_totals(): void
+    {
+        $this->loginAsTenantAdmin();
+        $projectId = $this->createProject('CUM-RET');
+        $phaseId = $this->createPhase($projectId, '1000000');
+        $rules = $this->createRules();
+
+        tenancy()->initialize(Tenant::where('slug', 'ipc-co')->firstOrFail());
+        $account = app(MoneyAccountService::class)->createManagerAccount(
+            'Company Main',
+            User::query()->first(),
+        );
+        $accountId = $account->id;
+        tenancy()->end();
+
+        $this->post("/projects/{$projectId}/valuations", [
+            'phase_id' => $phaseId,
+            'compliance_items' => [[
+                'compliance_rule_id' => $rules['retention'],
+                'calculation_type' => 'rate_percent',
+                'rate' => '10',
+            ]],
+        ])->assertRedirect();
+
+        $this->post("/projects/{$projectId}/retention/release", [
+            'money_account_id' => $accountId,
+        ])->assertRedirect();
+
+        $this->get("/projects/{$projectId}")
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Projects/Show')
+                ->where('retention_cumulative.held', '0.00')
+                ->where('retention_cumulative.released', '50000.00')
+                ->where('retention_cumulative.receivable', '50000.00')
+                ->has('manager_accounts')
+                ->where('manager_accounts', fn ($accounts) => collect($accounts)->contains('id', $accountId))
+                ->has('retention_receivables', 1)
+                ->where('retention_receivables.0.outstanding_amount', '50000.00')
+                ->where('retention_receivables.0.can_collect', true)
+            );
     }
 
     public function test_adding_phase_can_include_ipcs_for_that_phase(): void

@@ -63,7 +63,7 @@ class RequisitionRegisterExport implements FromCollection, ShouldAutoSize, WithH
 
         return [
             1 => [
-                'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
+                'font' => ['name' => 'Poppins', 'bold' => true, 'color' => ['rgb' => 'FFFFFF']],
                 'fill' => [
                     'fillType' => Fill::FILL_SOLID,
                     'startColor' => ['rgb' => '1E3A8A'],
@@ -71,6 +71,7 @@ class RequisitionRegisterExport implements FromCollection, ShouldAutoSize, WithH
                 'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
             ],
             "A1:{$lastColumn}{$lastRow}" => [
+                'font' => ['name' => 'Poppins'],
                 'borders' => [
                     'allBorders' => [
                         'borderStyle' => Border::BORDER_THIN,

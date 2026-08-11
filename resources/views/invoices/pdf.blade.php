@@ -4,8 +4,9 @@
     <meta charset="utf-8">
     <title>{{ $invoice->invoice_number }}</title>
     <style>
+        @include('partials.pdf-fonts')
         @page { margin: 34px 42px; }
-        body { color: #172033; font-family: DejaVu Sans, sans-serif; font-size: 12px; }
+        body { color: #172033; font-family: Poppins, DejaVu Sans, sans-serif; font-size: 12px; }
         h1, h2, p { margin: 0; }
         .header { border-bottom: 3px solid #1d4ed8; margin-bottom: 28px; padding-bottom: 16px; }
         .company { font-size: 22px; font-weight: bold; color: #1d4ed8; }
@@ -15,6 +16,7 @@
         .clearfix::after { clear: both; content: ""; display: table; }
         .columns { margin-bottom: 24px; width: 100%; }
         .columns td { vertical-align: top; width: 50%; }
+        .columns td.meta { text-align: right; }
         .label { color: #64748b; font-size: 10px; text-transform: uppercase; }
         .value { font-weight: bold; margin: 3px 0 10px; }
         table.amounts { border-collapse: collapse; margin-top: 16px; width: 100%; }
@@ -56,7 +58,7 @@
                 @if($invoice->customer->tax_information)<div>TIN: {{ $invoice->customer->tax_information }}</div>@endif
                 @if($invoice->customer->address)<div>Location: {{ $invoice->customer->address }}</div>@endif
             </td>
-            <td>
+            <td class="meta">
                 <div class="label">Invoice Number</div>
                 <div class="value">{{ $invoice->invoice_number }}</div>
                 <div class="label">Invoice Date</div>

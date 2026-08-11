@@ -2,12 +2,17 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\MoneyAccountType;
+use App\Enums\ProjectStatus;
+use App\Enums\SaleStatus;
+use App\Http\Requests\DestroyProjectRequest;
 use App\Http\Requests\StoreProjectRequest;
 use App\Http\Requests\SyncProjectRecipientsRequest;
 use App\Http\Requests\UpdateProjectProgressRequest;
 use App\Http\Requests\UpdateProjectRequest;
 use App\Models\ComplianceRule;
 use App\Models\Customer;
+use App\Models\MoneyAccount;
 use App\Models\Project;
 use App\Models\ProjectComplianceItem;
 use App\Models\Recipient;
@@ -15,6 +20,7 @@ use App\Models\Sale;
 use App\Services\BudgetService;
 use App\Services\PhaseService;
 use App\Services\ProjectComplianceService;
+use App\Services\ProjectDeletionService;
 use App\Services\SaleService;
 use App\Services\ValuationService;
 use App\Support\ListingQuery;
@@ -156,6 +162,30 @@ class ProjectController extends Controller
             ->values()
             ->all();
 
+        $phases = $project->phases()
+            ->withCount('valuations')
+            ->withSum('valuations', 'total_deductions')
+            ->with('sale:id,phase_id,sale_code,status')
+            ->orderBy('sequence_no')
+            ->get();
+
+        $retentionCumulative = [
+            'held' => bcadd((string) $phases->sum('retention_held_amount'), '0', 2),
+            'released' => bcadd((string) $phases->sum('retention_released_amount'), '0', 2),
+            'receivable' => bcadd((string) $phases->sum('retention_receivable_amount'), '0', 2),
+            'forfeited' => bcadd((string) $phases->sum('retention_forfeited_amount'), '0', 2),
+        ];
+
+        $retentionReceivables = $project->sales()
+            ->whereNull('phase_id')
+            ->whereIn('status', [SaleStatus::Receivable, SaleStatus::PartiallyPaid])
+            ->orderBy('id')
+            ->get()
+            ->map(fn (Sale $sale) => $this->saleService->formatSale($sale))
+            ->filter(fn (array $sale) => ($sale['can_collect'] ?? false) === true)
+            ->values()
+            ->all();
+
         return Inertia::render('Projects/Show', [
             'project' => $this->withBudgetSummary($project, $budget),
             'sales' => $project->sales()
@@ -165,12 +195,22 @@ class ProjectController extends Controller
                 ->map(fn (Sale $sale) => $this->saleService->formatSale($sale))
                 ->values()
                 ->all(),
-            'phases' => $project->phases()
-                ->withCount('valuations')
-                ->withSum('valuations', 'total_deductions')
-                ->with('sale:id,phase_id,sale_code,status')
-                ->orderBy('sequence_no')
-                ->get(),
+            'phases' => $phases,
+            'retention_cumulative' => $retentionCumulative,
+            'retention_receivables' => $retentionReceivables,
+            'manager_accounts' => MoneyAccount::query()
+                ->where('type', MoneyAccountType::Manager)
+                ->where('is_active', true)
+                ->orderBy('name')
+                ->get(['id', 'name', 'bank_name', 'balance'])
+                ->map(fn (MoneyAccount $account) => [
+                    'id' => $account->id,
+                    'name' => $account->name,
+                    'bank_name' => $account->bank_name,
+                    'balance' => bcadd((string) $account->balance, '0', 2),
+                ])
+                ->values()
+                ->all(),
             'compliance_items' => $complianceItems,
             'contract_summary' => [
                 'contract_amount' => $budget['contract_amount'],
@@ -261,12 +301,17 @@ class ProjectController extends Controller
             ->with('success', 'Project updated successfully.');
     }
 
-    public function destroy(Request $request, int $id): RedirectResponse
+    public function destroy(DestroyProjectRequest $request, int $id): RedirectResponse
     {
         $this->authorizePermission($request->user(), 'projects', 'delete-soft');
 
         $project = Project::findOrFail($id);
-        $project->delete();
+
+        try {
+            app(ProjectDeletionService::class)->purge($project, $request->user());
+        } catch (\InvalidArgumentException $e) {
+            return back()->withErrors(['confirmation_code' => $e->getMessage()]);
+        }
 
         if ((int) session('current_project_id') === $id) {
             session()->forget('current_project_id');
@@ -274,7 +319,7 @@ class ProjectController extends Controller
 
         return redirect()
             ->route('projects.index')
-            ->with('success', 'Project archived.');
+            ->with('success', 'Project permanently deleted.');
     }
 
     public function select(Request $request, int $id): RedirectResponse
@@ -322,7 +367,7 @@ class ProjectController extends Controller
 
         $liveRemaining = $this->saleService->liveRemaining($project);
         $pendingDeficit = bcadd((string) $project->pending_deficit, '0', 2);
-        $canMarkLoss = $project->status !== \App\Enums\ProjectStatus::Loss
+        $canMarkLoss = $project->status !== ProjectStatus::Loss
             && (
                 bccomp($pendingDeficit, '0', 2) === 1
                 || bccomp($liveRemaining, '0', 2) === -1

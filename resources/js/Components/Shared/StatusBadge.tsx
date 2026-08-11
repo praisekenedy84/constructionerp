@@ -44,6 +44,7 @@ const statusMap: Record<string, StatusVariant> = {
     unpaid: 'danger',
     partially_paid: 'warning',
     paid: 'success',
+    cleared: 'success',
     under_maintenance: 'warning',
     retired: 'neutral',
     certified: 'success',

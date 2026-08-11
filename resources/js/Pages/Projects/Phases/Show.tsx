@@ -28,21 +28,21 @@ interface PhaseShowProps extends PageProps {
 }
 
 export default function PhaseShow() {
-    const { project, phase, sale = null, valuations, summary, auth } =
-        usePage<PhaseShowProps>().props;
+    const {
+        project,
+        phase,
+        sale = null,
+        valuations,
+        summary,
+        auth,
+        errors: pageErrors = {},
+    } = usePage<PhaseShowProps & { errors?: Record<string, string> }>().props;
     const canUpdateProject = hasPermission(auth.user, 'projects', 'update');
     const canCreateValuation = hasPermission(auth.user, 'valuations', 'create');
     const canReadSales = hasPermission(auth.user, 'sales', 'read');
     const phaseLabel = `Phase ${phase.sequence_no}: ${phase.name}`;
     const hasHeldRetention = Number(phase.retention_held_amount) > 0;
     const isClosed = phase.status === 'closed';
-
-    function releaseRetention() {
-        if (!confirm(`Release held retention for ${phaseLabel} into the project budget?`)) {
-            return;
-        }
-        router.post(`/projects/${project.id}/phases/${phase.id}/retention/release`);
-    }
 
     function forfeitRetention() {
         if (
@@ -96,22 +96,23 @@ export default function PhaseShow() {
                                 </Button>
                             )}
                             {canUpdateProject && hasHeldRetention && (
-                                <>
-                                    <Button variant="outline" onClick={releaseRetention}>
-                                        Release retention
-                                    </Button>
-                                    <Button
-                                        variant="outline"
-                                        className="text-red-700 hover:bg-red-50"
-                                        onClick={forfeitRetention}
-                                    >
-                                        Forfeit retention
-                                    </Button>
-                                </>
+                                <Button
+                                    variant="outline"
+                                    className="text-red-700 hover:bg-red-50"
+                                    onClick={forfeitRetention}
+                                >
+                                    Forfeit retention
+                                </Button>
                             )}
                         </div>
                     }
                 />
+
+                {pageErrors.phase && (
+                    <p className="rounded-lg border border-red-100 bg-red-50 px-4 py-2 text-sm text-red-700">
+                        {pageErrors.phase}
+                    </p>
+                )}
 
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -124,10 +125,18 @@ export default function PhaseShow() {
                     </div>
                     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                         <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                            Held retention
+                            Retention held
                         </p>
                         <p className="mt-1 text-lg font-semibold text-amber-700">
                             {formatCurrency(phase.retention_held_amount)}
+                        </p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                            Phase net budget
+                        </p>
+                        <p className="mt-1 text-lg font-semibold">
+                            {formatCurrency(phase.phase_net_budget)}
                         </p>
                     </div>
                     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -140,26 +149,18 @@ export default function PhaseShow() {
                     </div>
                     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                         <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                            Retention receivable
+                        </p>
+                        <p className="mt-1 text-lg font-semibold text-blue-700">
+                            {formatCurrency(phase.retention_receivable_amount ?? '0')}
+                        </p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
                             Forfeited
                         </p>
                         <p className="mt-1 text-lg font-semibold text-red-700">
                             {formatCurrency(phase.retention_forfeited_amount)}
-                        </p>
-                    </div>
-                    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                            Other deductions
-                        </p>
-                        <p className="mt-1 text-lg font-semibold text-red-600">
-                            −{formatCurrency(phase.other_deductions_amount)}
-                        </p>
-                    </div>
-                    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                            Phase net budget
-                        </p>
-                        <p className="mt-1 text-lg font-semibold">
-                            {formatCurrency(phase.phase_net_budget)}
                         </p>
                     </div>
                 </div>
@@ -209,9 +210,22 @@ export default function PhaseShow() {
                     </dl>
                     <p className="mt-4 text-sm text-slate-600">
                         Phase net budget = disbursed − held retention − other IPC deductions.
-                        Released retention returns to the phase budget; forfeited retention does
-                        not.
+                        Retention is held per phase (not posted as an expense) until a project-level
+                        cumulative release: 50% to company account / budget, 50% as a collectible
+                        receivable. Use forfeit only when this phase’s retention should be written
+                        off entirely.
                     </p>
+                    {hasHeldRetention && (
+                        <p className="mt-2 text-sm text-slate-600">
+                            <Link
+                                href={`/projects/${project.id}`}
+                                className="font-medium text-blue-700 hover:underline"
+                            >
+                                Open the project
+                            </Link>{' '}
+                            to release cumulative retention across all phases.
+                        </p>
+                    )}
                 </DataPanel>
 
                 <DataPanel title="IPC breakdown" noPadding>
@@ -273,18 +287,6 @@ export default function PhaseShow() {
                                 ))
                             )}
                         </tbody>
-                        {valuations.length > 0 && (
-                            <tfoot>
-                                <tr className="border-t border-slate-200 bg-slate-50">
-                                    <td colSpan={3} className="px-6 py-3 font-semibold">
-                                        Phase compliance total
-                                    </td>
-                                    <td className="px-6 py-3 text-right font-semibold text-red-700">
-                                        −{formatCurrency(summary.phase_compliance_total)}
-                                    </td>
-                                </tr>
-                            </tfoot>
-                        )}
                     </table>
                 </DataPanel>
             </div>

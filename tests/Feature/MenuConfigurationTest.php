@@ -104,6 +104,60 @@ class MenuConfigurationTest extends TestCase
         $this->get('/reports')->assertOk();
     }
 
+    public function test_admin_menu_includes_submenu_children(): void
+    {
+        $tenant = Tenant::create(['name' => 'Admin Nav Co', 'slug' => 'admin-nav-co']);
+
+        app(AuthService::class)->createUser($tenant, [
+            'name' => 'Admin',
+            'email' => 'admin@admin-nav-co.local',
+            'password' => 'password',
+            'role' => 'System Administrator',
+        ]);
+
+        tenancy()->end();
+
+        $this->post('/login', [
+            'email' => 'admin@admin-nav-co.local',
+            'password' => 'password',
+        ]);
+
+        $this->get('/dashboard')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->has('navigation')
+                ->where('navigation', function ($nav) {
+                    $admin = collect($nav)->firstWhere('key', 'admin');
+
+                    if (! $admin) {
+                        return false;
+                    }
+
+                    $childHrefs = collect($admin['children'] ?? [])->pluck('href')->all();
+                    $childLabels = collect($admin['children'] ?? [])->pluck('label')->all();
+
+                    return $admin['href'] === '/admin/users'
+                        && ($admin['active_path'] ?? null) === '/admin'
+                        && $childHrefs === [
+                            '/admin/users',
+                            '/admin/staff',
+                            '/payroll/runs',
+                            '/admin/permissions',
+                            '/admin/menu',
+                            '/settings/ui',
+                        ]
+                        && $childLabels === [
+                            'Users',
+                            'Staff',
+                            'Payroll',
+                            'Permissions',
+                            'Menu',
+                            'Branding',
+                        ];
+                })
+            );
+    }
+
     public function test_finance_menu_includes_submenu_children(): void
     {
         $tenant = Tenant::create(['name' => 'Nav Co', 'slug' => 'nav-co']);

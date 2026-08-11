@@ -4,11 +4,16 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\AdminStoreEmployeeRequest;
 use App\Http\Requests\CreateUserRequest;
+use App\Http\Requests\DestroyRoleRequest;
+use App\Http\Requests\StoreAdminPersonRequest;
+use App\Http\Requests\StoreRoleRequest;
 use App\Http\Requests\UpdateEmployeeRequest;
 use App\Http\Requests\UpdateMenuSettingsRequest;
 use App\Http\Requests\UpdateRolePermissionsRequest;
+use App\Http\Requests\UpdateRoleRequest;
 use App\Http\Requests\UpdateUiSettingsRequest;
 use App\Http\Requests\UpdateUserRequest;
+use App\Models\CentralUser;
 use App\Models\Employee;
 use App\Models\Project;
 use App\Models\SystemSetting;
@@ -24,6 +29,7 @@ use App\Support\ListingQuery;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 use Spatie\Permission\Models\Role;
@@ -60,7 +66,90 @@ class AdminController extends Controller
             'users' => $users,
             'filters' => $listing->filters(),
             'assignable_roles' => MenuCatalog::assignableRoles(),
+            'projects' => Project::orderBy('name')->get(['id', 'code', 'name']),
         ]);
+    }
+
+    public function storePerson(StoreAdminPersonRequest $request): RedirectResponse
+    {
+        $this->authorizeTenantAdmin($request->user());
+
+        $validated = $request->validated();
+        $createUser = (bool) $validated['create_user'];
+        $createStaff = (bool) $validated['create_staff'];
+        $actorId = $request->user()->id;
+        $tenant = Tenant::findOrFail(session('tenant_id'));
+
+        $user = null;
+        $employee = null;
+
+        try {
+            if ($createUser) {
+                $user = $this->authService->createUser($tenant, [
+                    'name' => $validated['name'],
+                    'email' => $validated['email'],
+                    'password' => $validated['password'],
+                    'role' => $validated['access_role'],
+                ]);
+
+                $this->auditService->write(
+                    'User',
+                    $user->id,
+                    'created',
+                    null,
+                    [
+                        'name' => $user->name,
+                        'email' => $user->email,
+                        'roles' => $user->getRoleNames()->values()->all(),
+                    ],
+                    $actorId,
+                );
+            }
+
+            if ($createStaff) {
+                $payStructure = $validated['pay_structure'] instanceof \BackedEnum
+                    ? $validated['pay_structure']->value
+                    : $validated['pay_structure'];
+
+                $employee = Employee::create([
+                    'employee_no' => $validated['employee_no'],
+                    'name' => $validated['name'],
+                    'role' => $validated['job_role'],
+                    'pay_structure' => $payStructure,
+                    'daily_rate' => $payStructure === 'daily'
+                        ? ($validated['daily_rate'] ?? null)
+                        : null,
+                    'monthly_salary' => $payStructure === 'monthly'
+                        ? ($validated['monthly_salary'] ?? null)
+                        : null,
+                    'project_id' => $validated['project_id'],
+                    'user_id' => $user?->id ?? ($validated['user_id'] ?? null),
+                ]);
+
+                $this->auditService->write(
+                    'Employee',
+                    $employee->id,
+                    'created',
+                    null,
+                    $employee->toArray(),
+                    $actorId,
+                );
+            }
+        } catch (\Throwable $e) {
+            if ($user && $createStaff) {
+                $this->rollbackCreatedUser($user);
+            }
+
+            throw $e;
+        }
+
+        $message = match (true) {
+            $createUser && $createStaff => 'User and staff member created.',
+            $createUser => 'User created.',
+            default => 'Staff member added.',
+        };
+
+        return back()->with('success', $message);
     }
 
     public function createUser(CreateUserRequest $request): RedirectResponse
@@ -139,6 +228,7 @@ class AdminController extends Controller
             'employees' => $listing->paginate(25),
             'filters' => $listing->filters(),
             'projects' => Project::orderBy('name')->get(['id', 'code', 'name']),
+            'assignable_roles' => MenuCatalog::assignableRoles(),
             'linkable_users' => User::query()
                 ->orderBy('name')
                 ->get(['id', 'name', 'email']),
@@ -287,17 +377,109 @@ class AdminController extends Controller
             'action_descriptions' => ModulePermission::actionDescriptions(),
             'roles' => $this->formatRolesForPermissions($matrix),
             'editable_roles' => MenuCatalog::editablePermissionRoles(),
+            'locked_roles' => MenuCatalog::lockedRoleNames(),
             'policy_defaults' => $matrix,
+            'template_roles' => array_keys($matrix),
+            'selected_role' => $request->query('role'),
         ]);
+    }
+
+    public function storeRole(StoreRoleRequest $request): RedirectResponse
+    {
+        $this->authorizeTenantAdmin($request->user());
+
+        $validated = $request->validated();
+        $permissions = $validated['permissions'] ?? [];
+
+        if (! empty($validated['copy_from'])) {
+            $source = Role::where('name', $validated['copy_from'])->where('guard_name', 'web')->first();
+            if ($source) {
+                $permissions = $source->permissions->pluck('name')->all();
+            }
+        }
+
+        $role = $this->permissionService->createRole($validated['name'], $permissions);
+
+        $this->auditService->write(
+            'Role',
+            $role->name,
+            'role_created',
+            null,
+            ['permissions' => $role->permissions->pluck('name')->all()],
+            $request->user()->id,
+        );
+
+        return redirect()
+            ->route('admin.permissions', ['role' => $role->name])
+            ->with('success', "Role “{$role->name}” created.");
+    }
+
+    public function updateRole(UpdateRoleRequest $request, string $role): RedirectResponse
+    {
+        $this->authorizeTenantAdmin($request->user());
+
+        $from = urldecode($role);
+        $to = $request->validated('name');
+
+        try {
+            $updated = $this->permissionService->renameRole($from, $to);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return back()->withErrors(['name' => 'Role not found.']);
+        }
+
+        $this->auditService->write(
+            'Role',
+            $updated->name,
+            'role_renamed',
+            ['name' => $from],
+            ['name' => $to],
+            $request->user()->id,
+        );
+
+        return redirect()
+            ->route('admin.permissions', ['role' => $updated->name])
+            ->with('success', "Role renamed to “{$updated->name}”.");
+    }
+
+    public function destroyRole(DestroyRoleRequest $request, string $role): RedirectResponse
+    {
+        $this->authorizeTenantAdmin($request->user());
+
+        $name = urldecode($role);
+
+        try {
+            $this->permissionService->deleteRole($name);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return back()->withErrors(['role' => 'Role not found.']);
+        }
+
+        $this->auditService->write(
+            'Role',
+            $name,
+            'role_deleted',
+            ['name' => $name],
+            null,
+            $request->user()->id,
+        );
+
+        return redirect()
+            ->route('admin.permissions')
+            ->with('success', "Role “{$name}” deleted.");
     }
 
     public function updateRolePermissions(UpdateRolePermissionsRequest $request, string $role): RedirectResponse
     {
         $this->authorizeTenantAdmin($request->user());
 
+        $roleName = urldecode($role);
+
         try {
             $this->permissionService->updateRolePermissions(
-                $role,
+                $roleName,
                 $request->validated('permissions'),
             );
         } catch (\InvalidArgumentException $e) {
@@ -306,47 +488,59 @@ class AdminController extends Controller
 
         $this->auditService->write(
             'Role',
-            $role,
+            $roleName,
             'permissions_updated',
             null,
             ['permissions' => $request->validated('permissions')],
             $request->user()->id,
         );
 
-        return back()->with('success', "Permissions updated for {$role}.");
+        return back()->with('success', "Permissions updated for {$roleName}.");
     }
 
     public function syncPermissions(Request $request): RedirectResponse
     {
         $this->authorizeTenantAdmin($request->user());
 
-        $this->permissionService->syncTenantPermissions();
+        $this->permissionService->syncTenantPermissions(applyTemplateDefaults: true);
 
         $this->auditService->write(
             'Role',
             0,
             'permissions_synced',
             null,
-            ['source' => 'policy_matrix'],
+            ['source' => 'policy_matrix', 'scope' => 'template_roles'],
             $request->user()->id,
         );
 
-        return back()->with('success', 'Role permissions reset from default policy.');
+        return back()->with('success', 'Template role permissions reset from default policy. Custom roles were left unchanged.');
     }
 
     /** @param  array<string, list<string>>  $matrix */
     private function formatRolesForPermissions(array $matrix): array
     {
+        $allPermissions = ModulePermission::allPermissionNames();
+
         return Role::where('guard_name', 'web')
-            ->whereIn('name', array_keys($matrix))
+            ->where('name', '!=', 'Platform Admin')
             ->with('permissions')
             ->orderBy('name')
             ->get()
-            ->map(fn (Role $role) => [
-                'name' => $role->name,
-                'permissions' => $role->permissions->pluck('name')->sort()->values()->all(),
-                'expected_permissions' => $matrix[$role->name] ?? [],
-            ])
+            ->map(function (Role $role) use ($matrix, $allPermissions) {
+                $isLocked = MenuCatalog::isLockedRole($role->name);
+                $permissions = $isLocked
+                    ? $allPermissions
+                    : $role->permissions->pluck('name')->sort()->values()->all();
+
+                return [
+                    'name' => $role->name,
+                    'permissions' => $permissions,
+                    'expected_permissions' => $matrix[$role->name] ?? [],
+                    'is_locked' => $isLocked,
+                    'is_editable' => ! $isLocked,
+                    'user_count' => $this->permissionService->countUsersWithRole($role->name),
+                ];
+            })
             ->values()
             ->all();
     }
@@ -356,5 +550,16 @@ class AdminController extends Controller
         if (! $user->canManagePlatform()) {
             abort(403, 'Tenant administration access required.');
         }
+    }
+
+    private function rollbackCreatedUser(User $user): void
+    {
+        DB::transaction(function () use ($user): void {
+            tenancy()->central(function () use ($user): void {
+                CentralUser::where('email', $user->email)->delete();
+            });
+
+            $user->delete();
+        });
     }
 }

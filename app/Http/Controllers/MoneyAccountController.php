@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\DepositSource;
 use App\Enums\MoneyAccountType;
 use App\Http\Requests\DepositMoneyAccountRequest;
 use App\Http\Requests\StoreMoneyAccountRequest;
@@ -37,6 +38,17 @@ class MoneyAccountController extends Controller
             'can_manage' => $request->user()->hasModulePermission('budgets', 'approve')
                 || $request->user()->hasModulePermission('budgets', 'create')
                 || $request->user()->isSuperUser(),
+            'deposit_sources' => array_map(
+                fn (DepositSource $source) => [
+                    'value' => $source->value,
+                    'label' => $source->label(),
+                    'creates_debt' => $source->createsDebt(),
+                ],
+                array_values(array_filter(
+                    DepositSource::cases(),
+                    fn (DepositSource $source) => $source !== DepositSource::RetentionRelease,
+                )),
+            ),
         ]);
     }
 
@@ -70,6 +82,8 @@ class MoneyAccountController extends Controller
                 (string) $validated['amount'],
                 $request->user(),
                 [
+                    'deposit_source' => $validated['deposit_source'],
+                    'creditor_name' => $validated['creditor_name'] ?? null,
                     'description' => $validated['description'] ?? null,
                     'reference_no' => $validated['reference_no'] ?? null,
                     'method' => $validated['method'] ?? null,

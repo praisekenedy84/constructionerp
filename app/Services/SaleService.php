@@ -40,6 +40,36 @@ class SaleService
         ]);
     }
 
+    /**
+     * Create a project-level receivable for the retention half released as AR
+     * (not tied to a phase sale / phase-close surplus).
+     */
+    public function createRetentionReceivable(Project $project, string $amount, User $actor): Sale
+    {
+        return DB::transaction(function () use ($project, $amount, $actor) {
+            $project = Project::lockForUpdate()->findOrFail($project->id);
+            $normalized = bcadd($amount, '0', 2);
+
+            if (bccomp($normalized, '0', 2) !== 1) {
+                throw new \InvalidArgumentException('Retention receivable amount must be greater than zero.');
+            }
+
+            $sale = Sale::create([
+                'project_id' => $project->id,
+                'phase_id' => null,
+                'sale_code' => $this->generateRetentionSaleCode($project),
+                'status' => SaleStatus::Receivable,
+                'contract_amount' => $normalized,
+                'profit_amount' => $normalized,
+                'collected_amount' => '0.00',
+                'converted_at' => now(),
+                'converted_by' => $actor->id,
+            ]);
+
+            return $sale->fresh(['project', 'converter']);
+        });
+    }
+
     public function ensureAllPhasesHaveSales(): int
     {
         $created = 0;
@@ -466,8 +496,11 @@ class SaleService
 
     public function recognizedProfitForProject(Project $project): string
     {
+        // Retention receivables are separate AR and must not consume the
+        // phase-close surplus pool.
         $sum = Sale::query()
             ->where('project_id', $project->id)
+            ->whereNotNull('phase_id')
             ->whereIn('status', [
                 SaleStatus::Receivable,
                 SaleStatus::PartiallyPaid,
@@ -534,9 +567,11 @@ class SaleService
             'is_loss' => $isLossReceivable,
             'can_convert' => ! $sale->isConverted()
                 && ! $projectIsLoss
-                && $phase?->status === PhaseStatus::Closed
+                && $phase !== null
+                && $phase->status === PhaseStatus::Closed
                 && bccomp($profit, '0', 2) === 1,
             'can_collect' => $sale->status->isCollectable() && bccomp($outstanding, '0', 2) !== 0,
+            'is_retention_receivable' => $sale->phase_id === null && str_starts_with((string) $sale->sale_code, 'RET-'),
             'remaining_budget' => $breakdown['remaining_budget'],
             'recognized_amount' => $breakdown['recognized_amount'],
             'live_remaining' => $breakdown['live_remaining'],
@@ -633,5 +668,13 @@ class SaleService
         $normalized = strtoupper(preg_replace('/[^A-Za-z0-9\-]/', '', $projectCode) ?: 'PRJ');
 
         return 'SALE-'.$normalized.'-P'.$phase->sequence_no.'-'.$phase->id;
+    }
+
+    private function generateRetentionSaleCode(Project $project): string
+    {
+        $normalized = strtoupper(preg_replace('/[^A-Za-z0-9\-]/', '', (string) $project->code) ?: 'PRJ');
+        $suffix = substr((string) $project->id, -4).'-'.substr((string) now()->timestamp, -4);
+
+        return 'RET-'.$normalized.'-'.$suffix;
     }
 }

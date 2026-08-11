@@ -60,7 +60,7 @@ class ExpenseExport implements FromCollection, ShouldAutoSize, WithHeadings, Wit
 
         return [
             1 => [
-                'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
+                'font' => ['name' => 'Poppins', 'bold' => true, 'color' => ['rgb' => 'FFFFFF']],
                 'fill' => [
                     'fillType' => Fill::FILL_SOLID,
                     'startColor' => ['rgb' => '1E3A8A'],
@@ -68,6 +68,7 @@ class ExpenseExport implements FromCollection, ShouldAutoSize, WithHeadings, Wit
                 'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
             ],
             "A1:{$lastColumn}{$lastRow}" => [
+                'font' => ['name' => 'Poppins'],
                 'borders' => [
                     'allBorders' => [
                         'borderStyle' => Border::BORDER_THIN,

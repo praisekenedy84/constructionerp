@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\AccountTransactionType;
+use App\Enums\DepositSource;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -11,6 +12,7 @@ class AccountTransaction extends Model
     protected $fillable = [
         'money_account_id',
         'type',
+        'deposit_source',
         'amount',
         'balance_after',
         'description',
@@ -27,6 +29,7 @@ class AccountTransaction extends Model
     {
         return [
             'type' => AccountTransactionType::class,
+            'deposit_source' => DepositSource::class,
             'amount' => 'decimal:2',
             'balance_after' => 'decimal:2',
             'occurred_at' => 'datetime',

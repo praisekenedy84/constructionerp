@@ -13,6 +13,7 @@ import { Dialog } from '@/Components/ui/dialog';
 import { confirmDiscardIfDirty, DialogFormActions } from '@/Components/ui/dialog-form';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
+import { PaymentMethodSelect } from '@/Components/ui/payment-method-select';
 import { formatCurrency, formatDate, formatPercent } from '@/lib/formatters';
 import { hasPermission } from '@/lib/permissions';
 import { PageProps, Project, ProjectPhase, Sale } from '@/types';
@@ -58,10 +59,27 @@ interface ContractSummary {
     has_phases: boolean;
 }
 
+interface ManagerAccountOption {
+    id: number;
+    name: string;
+    bank_name: string | null;
+    balance: string;
+}
+
+interface RetentionCumulative {
+    held: string;
+    released: string;
+    receivable: string;
+    forfeited?: string;
+}
+
 interface ProjectsShowProps extends PageProps {
     project: Project;
     sales?: Sale[];
     phases: ProjectPhase[];
+    retention_cumulative?: RetentionCumulative;
+    retention_receivables?: Sale[];
+    manager_accounts?: ManagerAccountOption[];
     compliance_items?: ProjectComplianceItemRow[];
     contract_summary?: ContractSummary;
     available_rules: AvailableComplianceRule[];
@@ -82,6 +100,16 @@ interface ProjectsShowProps extends PageProps {
     tab?: Tab;
 }
 
+function halfAmounts(held: string | number): { released: string; fee: string } {
+    const cents = Math.round(Number(held) * 100);
+    const releasedCents = Math.floor(cents / 2);
+    const feeCents = cents - releasedCents;
+    return {
+        released: (releasedCents / 100).toFixed(2),
+        fee: (feeCents / 100).toFixed(2),
+    };
+}
+
 const tabs: { key: Tab; label: string; href: (id: number) => string }[] = [
     { key: 'overview', label: 'Overview', href: (id) => `/projects/${id}` },
     { key: 'boq', label: 'BOQ', href: (id) => `/projects/${id}/boq` },
@@ -100,6 +128,9 @@ export default function ProjectsShow() {
         project,
         sales = [],
         phases,
+        retention_cumulative,
+        retention_receivables = [],
+        manager_accounts = [],
         compliance_items = [],
         contract_summary,
         available_rules = [],
@@ -112,13 +143,48 @@ export default function ProjectsShow() {
     const canUpdate = hasPermission(auth.user, 'projects', 'update');
     const canDelete = hasPermission(auth.user, 'projects', 'delete-soft');
     const canReadSales = hasPermission(auth.user, 'sales', 'read');
+    const canCollectSales = hasPermission(auth.user, 'sales', 'collect');
     const nextPhaseNo = (phases[phases.length - 1]?.sequence_no ?? 0) + 1;
     const hasPhases = contract_summary?.has_phases ?? phases.length > 0;
     const contractItems = compliance_items.filter((item) => item.allocation_level === 'contract');
     const migratedItems = compliance_items.filter((item) => item.allocation_level === 'phase');
+    const cumulative = retention_cumulative ?? {
+        held: phases
+            .reduce((sum, phase) => sum + Number(phase.retention_held_amount), 0)
+            .toFixed(2),
+        released: phases
+            .reduce((sum, phase) => sum + Number(phase.retention_released_amount), 0)
+            .toFixed(2),
+        receivable: phases
+            .reduce((sum, phase) => sum + Number(phase.retention_receivable_amount ?? 0), 0)
+            .toFixed(2),
+        forfeited: phases
+            .reduce((sum, phase) => sum + Number(phase.retention_forfeited_amount), 0)
+            .toFixed(2),
+    };
+    const collectableRetentionReceivables = retention_receivables.filter(
+        (sale) => sale.can_collect && Number(sale.outstanding_amount) > 0,
+    );
+    const retentionOutstandingTotal = collectableRetentionReceivables
+        .reduce((sum, sale) => sum + Number(sale.outstanding_amount), 0)
+        .toFixed(2);
 
     const [phaseDialogOpen, setPhaseDialogOpen] = useState(false);
     const [complianceDialogOpen, setComplianceDialogOpen] = useState(false);
+    const [releaseDialogOpen, setReleaseDialogOpen] = useState(false);
+    const [collectDialogOpen, setCollectDialogOpen] = useState(false);
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    const releaseForm = useForm({ money_account_id: '' });
+    const deleteForm = useForm({ confirmation_code: '' });
+    const collectForm = useForm({
+        sale_id: '',
+        amount: '',
+        money_account_id: '',
+        method: '',
+        reference_no: '',
+        notes: '',
+        occurred_at: '',
+    });
     const {
         data,
         setData,
@@ -151,12 +217,25 @@ export default function ProjectsShow() {
         staffForm.post(`/projects/${project.id}/recipients`);
     }
 
-    function archiveProject() {
-        if (!confirm(`Archive project "${project.code} — ${project.name}"?`)) {
-            return;
-        }
+    function openDeleteDialog() {
+        deleteForm.clearErrors();
+        deleteForm.setData('confirmation_code', '');
+        setDeleteDialogOpen(true);
+    }
 
-        router.delete(`/projects/${project.id}`);
+    function closeDeleteDialog() {
+        setDeleteDialogOpen(false);
+        deleteForm.reset();
+        deleteForm.clearErrors();
+    }
+
+    function submitDelete(e: FormEvent) {
+        e.preventDefault();
+        deleteForm.delete(`/projects/${project.id}`, {
+            onSuccess: () => {
+                closeDeleteDialog();
+            },
+        });
     }
 
     function markProjectAsLoss() {
@@ -216,6 +295,80 @@ export default function ProjectsShow() {
         setComplianceDialogOpen(false);
         complianceForm.reset();
         complianceForm.clearErrors();
+    }
+
+    function openReleaseDialog() {
+        releaseForm.clearErrors();
+        releaseForm.setData(
+            'money_account_id',
+            manager_accounts.length === 1 ? String(manager_accounts[0].id) : '',
+        );
+        setReleaseDialogOpen(true);
+    }
+
+    function closeReleaseDialog() {
+        setReleaseDialogOpen(false);
+        releaseForm.reset();
+        releaseForm.clearErrors();
+    }
+
+    function submitRelease(e: FormEvent) {
+        e.preventDefault();
+        releaseForm.post(`/projects/${project.id}/retention/release`, {
+            onSuccess: () => {
+                closeReleaseDialog();
+            },
+        });
+    }
+
+    const releasePreview = halfAmounts(cumulative.held);
+
+    function openCollectDialog() {
+        const first = collectableRetentionReceivables[0];
+        collectForm.clearErrors();
+        collectForm.setData({
+            sale_id: first ? String(first.id) : '',
+            amount: first?.outstanding_amount ?? '',
+            money_account_id:
+                manager_accounts.length === 1 ? String(manager_accounts[0].id) : '',
+            method: '',
+            reference_no: '',
+            notes: '',
+            occurred_at: '',
+        });
+        setCollectDialogOpen(true);
+    }
+
+    function closeCollectDialog() {
+        if (!confirmDiscardIfDirty(collectForm.isDirty)) {
+            return;
+        }
+        setCollectDialogOpen(false);
+        collectForm.reset();
+        collectForm.clearErrors();
+    }
+
+    function submitCollect(e: FormEvent) {
+        e.preventDefault();
+        if (!collectForm.data.sale_id) {
+            return;
+        }
+        collectForm.post(`/sales/${collectForm.data.sale_id}/collect`, {
+            onSuccess: () => {
+                setCollectDialogOpen(false);
+                collectForm.reset();
+                collectForm.clearErrors();
+            },
+        });
+    }
+
+    function selectCollectSale(saleId: string) {
+        const sale = collectableRetentionReceivables.find((item) => String(item.id) === saleId);
+        collectForm.setData({
+            ...collectForm.data,
+            sale_id: saleId,
+            amount: sale?.outstanding_amount ?? '',
+        });
     }
 
     function submitCompliance(e: FormEvent) {
@@ -301,10 +454,10 @@ export default function ProjectsShow() {
                                     variant="outline"
                                     size="sm"
                                     className="border-red-200 text-red-700 hover:bg-red-50"
-                                    onClick={archiveProject}
+                                    onClick={openDeleteDialog}
                                 >
                                     <Trash2 className="h-4 w-4" />
-                                    Archive
+                                    Delete
                                 </Button>
                             )}
                             <Link href={`/projects/${project.id}/valuations`}>
@@ -698,21 +851,77 @@ export default function ProjectsShow() {
                 </DataPanel>
 
                 <DataPanel title="Phases & Retention" noPadding>
-                    <div className="flex items-center justify-between gap-3 border-b border-slate-200 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-4">
                         <p className="text-sm text-slate-600">
-                            Phases are optional at project start. Add each client disbursement when
-                            it arrives — even after compliance setup or acquisitions have begun.
+                            Retention is recorded on each phase’s IPCs and held until project-end
+                            release (not as an expense). Releasing once splits cumulative held
+                            retention 50/50: half to a company account / budget, half as a
+                            collectible receivable.
                         </p>
-                        {canUpdate && (
-                            <Button type="button" size="sm" onClick={openPhaseDialog}>
-                                <Plus className="h-4 w-4" />
-                                Add Phase
-                            </Button>
-                        )}
+                        <div className="flex flex-wrap gap-2">
+                            {canUpdate && Number(cumulative.held) > 0 && (
+                                <Button type="button" size="sm" onClick={openReleaseDialog}>
+                                    Release cumulative retention
+                                </Button>
+                            )}
+                            {canCollectSales && collectableRetentionReceivables.length > 0 && (
+                                <Button type="button" size="sm" variant="outline" onClick={openCollectDialog}>
+                                    Collect retention receivable
+                                </Button>
+                            )}
+                            {canUpdate && (
+                                <Button type="button" size="sm" variant="outline" onClick={openPhaseDialog}>
+                                    <Plus className="h-4 w-4" />
+                                    Add Phase
+                                </Button>
+                            )}
+                        </div>
                     </div>
+                    {phases.length > 0 && (
+                        <div className="grid gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 sm:grid-cols-3">
+                            <div>
+                                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                                    Cumulative held
+                                </p>
+                                <p className="mt-1 text-sm font-semibold text-amber-700">
+                                    {formatCurrency(cumulative.held)}
+                                </p>
+                            </div>
+                            <div>
+                                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                                    Cumulative released
+                                </p>
+                                <p className="mt-1 text-sm font-semibold text-green-700">
+                                    {formatCurrency(cumulative.released)}
+                                </p>
+                                <p className="text-xs text-slate-500">
+                                    50% deposited to company account + budget
+                                </p>
+                            </div>
+                            <div>
+                                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                                    Cumulative receivable
+                                </p>
+                                <p className="mt-1 text-sm font-semibold text-blue-700">
+                                    {formatCurrency(cumulative.receivable)}
+                                </p>
+                                <p className="text-xs text-slate-500">
+                                    50% recorded as retention receivable
+                                    {Number(retentionOutstandingTotal) > 0
+                                        ? ` · ${formatCurrency(retentionOutstandingTotal)} outstanding`
+                                        : ''}
+                                </p>
+                            </div>
+                        </div>
+                    )}
                     {errors.phase && (
                         <p className="border-b border-red-100 bg-red-50 px-4 py-2 text-sm text-red-700">
                             {errors.phase}
+                        </p>
+                    )}
+                    {pageErrors.phase && (
+                        <p className="border-b border-red-100 bg-red-50 px-4 py-2 text-sm text-red-700">
+                            {pageErrors.phase}
                         </p>
                     )}
                     <table className="w-full text-sm">
@@ -723,6 +932,7 @@ export default function ProjectsShow() {
                                 <th className="px-6 py-3 text-right font-medium">IPC total</th>
                                 <th className="px-6 py-3 text-right font-medium">Held</th>
                                 <th className="px-6 py-3 text-right font-medium">Released</th>
+                                <th className="px-6 py-3 text-right font-medium">Receivable</th>
                                 <th className="px-6 py-3 text-right font-medium">Forfeited</th>
                                 <th className="px-6 py-3 text-right font-medium">Phase budget</th>
                                 <th className="px-6 py-3 text-right font-medium">Actions</th>
@@ -732,7 +942,7 @@ export default function ProjectsShow() {
                             {phases.length === 0 ? (
                                 <tr>
                                     <td
-                                        colSpan={8}
+                                        colSpan={9}
                                         className="px-6 py-10 text-center text-slate-500"
                                     >
                                         No phases yet. Add a phase when the client disburses
@@ -775,6 +985,9 @@ export default function ProjectsShow() {
                                         <td className="px-6 py-3 text-right text-green-700">
                                             {formatCurrency(phase.retention_released_amount)}
                                         </td>
+                                        <td className="px-6 py-3 text-right text-blue-700">
+                                            {formatCurrency(phase.retention_receivable_amount ?? '0')}
+                                        </td>
                                         <td className="px-6 py-3 text-right text-red-700">
                                             {formatCurrency(phase.retention_forfeited_amount)}
                                         </td>
@@ -810,20 +1023,6 @@ export default function ProjectsShow() {
                                                         Close
                                                     </Button>
                                                 )}
-                                                <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                    onClick={() =>
-                                                        router.post(
-                                                            `/projects/${project.id}/phases/${phase.id}/retention/release`,
-                                                        )
-                                                    }
-                                                    disabled={
-                                                        Number(phase.retention_held_amount) <= 0
-                                                    }
-                                                >
-                                                    Release
-                                                </Button>
                                                 <Button
                                                     variant="outline"
                                                     size="sm"
@@ -1010,6 +1209,249 @@ export default function ProjectsShow() {
                         submitLabel="Save Compliance"
                         processingLabel="Saving…"
                         disabled={available_rules.length === 0}
+                    />
+                </form>
+            </Dialog>
+
+            <Dialog
+                open={releaseDialogOpen}
+                onOpenChange={(next) => (next ? undefined : closeReleaseDialog())}
+                title="Release cumulative retention"
+                description="Splits all held retention across every phase 50/50 once: half deposits to a company account and returns to budget; half becomes a collectible retention receivable (not an expense)."
+            >
+                <form onSubmit={submitRelease} className="space-y-5">
+                    <div className="grid gap-3 sm:grid-cols-3">
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                                Cumulative held
+                            </p>
+                            <p className="mt-1 font-semibold">
+                                {formatCurrency(cumulative.held)}
+                            </p>
+                        </div>
+                        <div className="rounded-lg border border-green-200 bg-green-50 p-3">
+                            <p className="text-xs font-medium uppercase tracking-wide text-green-700">
+                                To account (50%)
+                            </p>
+                            <p className="mt-1 font-semibold text-green-800">
+                                {formatCurrency(releasePreview.released)}
+                            </p>
+                        </div>
+                        <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+                            <p className="text-xs font-medium uppercase tracking-wide text-blue-700">
+                                Receivable (50%)
+                            </p>
+                            <p className="mt-1 font-semibold text-blue-800">
+                                {formatCurrency(releasePreview.fee)}
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="space-y-2">
+                        <Label htmlFor="release_money_account_id">Company account</Label>
+                        {manager_accounts.length === 0 ? (
+                            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                                No active company accounts. Create one under Finance → Accounts
+                                before releasing retention.
+                            </p>
+                        ) : (
+                            <select
+                                id="release_money_account_id"
+                                className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                                value={releaseForm.data.money_account_id}
+                                onChange={(e) =>
+                                    releaseForm.setData('money_account_id', e.target.value)
+                                }
+                                required
+                            >
+                                <option value="">Select account…</option>
+                                {manager_accounts.map((account) => (
+                                    <option key={account.id} value={account.id}>
+                                        {account.name}
+                                        {account.bank_name ? ` (${account.bank_name})` : ''} —{' '}
+                                        {formatCurrency(account.balance)}
+                                    </option>
+                                ))}
+                            </select>
+                        )}
+                        {releaseForm.errors.money_account_id && (
+                            <p className="text-sm text-red-600">
+                                {releaseForm.errors.money_account_id}
+                            </p>
+                        )}
+                    </div>
+
+                    <DialogFormActions
+                        onCancel={closeReleaseDialog}
+                        processing={releaseForm.processing}
+                        submitLabel="Release cumulative 50/50"
+                        processingLabel="Releasing…"
+                        disabled={manager_accounts.length === 0 || Number(cumulative.held) <= 0}
+                    />
+                </form>
+            </Dialog>
+
+            <Dialog
+                open={collectDialogOpen}
+                onOpenChange={(next) => (next ? undefined : closeCollectDialog())}
+                title="Collect retention receivable"
+                description={`Outstanding retention receivable: ${formatCurrency(retentionOutstandingTotal)}`}
+            >
+                <form onSubmit={submitCollect} className="space-y-4">
+                    {collectableRetentionReceivables.length > 1 && (
+                        <div className="space-y-2">
+                            <Label htmlFor="retention_collect_sale_id">Retention sale</Label>
+                            <select
+                                id="retention_collect_sale_id"
+                                className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                                value={collectForm.data.sale_id}
+                                onChange={(e) => selectCollectSale(e.target.value)}
+                                required
+                            >
+                                <option value="">Select receivable…</option>
+                                {collectableRetentionReceivables.map((sale) => (
+                                    <option key={sale.id} value={sale.id}>
+                                        {sale.sale_code} — outstanding{' '}
+                                        {formatCurrency(sale.outstanding_amount)}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+
+                    <div className="space-y-2">
+                        <Label htmlFor="retention_collect_account_id">Company account</Label>
+                        {manager_accounts.length === 0 ? (
+                            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                                No active company accounts. Create one under Finance → Accounts
+                                before collecting.
+                            </p>
+                        ) : (
+                            <select
+                                id="retention_collect_account_id"
+                                className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                                value={collectForm.data.money_account_id}
+                                onChange={(e) =>
+                                    collectForm.setData('money_account_id', e.target.value)
+                                }
+                                required
+                            >
+                                <option value="">Select account…</option>
+                                {manager_accounts.map((account) => (
+                                    <option key={account.id} value={account.id}>
+                                        {account.name}
+                                        {account.bank_name ? ` (${account.bank_name})` : ''} —{' '}
+                                        {formatCurrency(account.balance)}
+                                    </option>
+                                ))}
+                            </select>
+                        )}
+                        {collectForm.errors.money_account_id && (
+                            <p className="text-sm text-red-600">
+                                {collectForm.errors.money_account_id}
+                            </p>
+                        )}
+                    </div>
+
+                    <div className="space-y-2">
+                        <Label htmlFor="retention_collect_amount">Amount</Label>
+                        <AmountInput
+                            id="retention_collect_amount"
+                            value={collectForm.data.amount}
+                            onValueChange={(v) => collectForm.setData('amount', v)}
+                            required
+                        />
+                        {collectForm.errors.amount && (
+                            <p className="text-sm text-red-600">{collectForm.errors.amount}</p>
+                        )}
+                    </div>
+
+                    <div className="space-y-2">
+                        <Label htmlFor="retention_collect_method">Method</Label>
+                        <PaymentMethodSelect
+                            id="retention_collect_method"
+                            optional
+                            value={collectForm.data.method}
+                            onChange={(e) => collectForm.setData('method', e.target.value)}
+                        />
+                        {collectForm.errors.method && (
+                            <p className="text-sm text-red-600">{collectForm.errors.method}</p>
+                        )}
+                    </div>
+
+                    <div className="space-y-2">
+                        <Label htmlFor="retention_collect_reference">Reference</Label>
+                        <Input
+                            id="retention_collect_reference"
+                            value={collectForm.data.reference_no}
+                            onChange={(e) =>
+                                collectForm.setData('reference_no', e.target.value)
+                            }
+                        />
+                    </div>
+
+                    <div className="space-y-2">
+                        <Label htmlFor="retention_collect_notes">Notes</Label>
+                        <Input
+                            id="retention_collect_notes"
+                            value={collectForm.data.notes}
+                            onChange={(e) => collectForm.setData('notes', e.target.value)}
+                        />
+                    </div>
+
+                    <DialogFormActions
+                        onCancel={closeCollectDialog}
+                        processing={collectForm.processing}
+                        submitLabel="Collect receivable"
+                        processingLabel="Collecting…"
+                        disabled={
+                            manager_accounts.length === 0 ||
+                            collectableRetentionReceivables.length === 0 ||
+                            !collectForm.data.sale_id
+                        }
+                    />
+                </form>
+            </Dialog>
+
+            <Dialog
+                open={deleteDialogOpen}
+                onOpenChange={(next) => (next ? undefined : closeDeleteDialog())}
+                title="Delete project permanently"
+                description="This cannot be undone. All project data is removed (phases, BOQ, sales, requisitions, IPCs, and related records). Finance disbursements return to accountant cash on hand; company account collections and retention deposits for this project are reversed."
+            >
+                <form onSubmit={submitDelete} className="space-y-5">
+                    <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                        Type the project code{' '}
+                        <span className="font-mono font-semibold">{project.code}</span> to confirm.
+                    </p>
+
+                    <div className="space-y-2">
+                        <Label htmlFor="delete_confirmation_code">Project code</Label>
+                        <Input
+                            id="delete_confirmation_code"
+                            value={deleteForm.data.confirmation_code}
+                            onChange={(e) =>
+                                deleteForm.setData('confirmation_code', e.target.value)
+                            }
+                            autoComplete="off"
+                            placeholder={project.code}
+                            required
+                        />
+                        {deleteForm.errors.confirmation_code && (
+                            <p className="text-sm text-red-600">
+                                {deleteForm.errors.confirmation_code}
+                            </p>
+                        )}
+                    </div>
+
+                    <DialogFormActions
+                        onCancel={closeDeleteDialog}
+                        processing={deleteForm.processing}
+                        submitLabel="Delete permanently"
+                        processingLabel="Deleting…"
+                        disabled={
+                            deleteForm.data.confirmation_code.trim() !== project.code
+                        }
                     />
                 </form>
             </Dialog>

@@ -4,9 +4,10 @@
     <meta charset="UTF-8">
     <title>Fund Requests Report</title>
     <style>
+        @include('partials.pdf-fonts')
         * { box-sizing: border-box; }
         body {
-            font-family: DejaVu Sans, sans-serif;
+            font-family: Poppins, DejaVu Sans, sans-serif;
             font-size: 10px;
             color: #1e293b;
             margin: 24px;

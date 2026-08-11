@@ -3,11 +3,9 @@ import DataPanel from '@/Components/Shared/DataPanel';
 import ListToolbar from '@/Components/Shared/ListToolbar';
 import PaginationLinks from '@/Components/Shared/PaginationLinks';
 import PageHeader from '@/Components/Shared/PageHeader';
-import AdminNav from '@/Components/Admin/AdminNav';
+import PersonCreateDialog from '@/Components/Admin/PersonCreateDialog';
 import { AmountInput } from '@/Components/ui/amount-input';
 import { Button } from '@/Components/ui/button';
-import { Dialog } from '@/Components/ui/dialog';
-import { confirmDiscardIfDirty, DialogFormActions } from '@/Components/ui/dialog-form';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
 import { Employee, ListingFilters, PageProps, Paginated, Project, User } from '@/types';
@@ -19,25 +17,16 @@ interface AdminStaffProps extends PageProps {
     employees: Paginated<Employee>;
     filters: ListingFilters;
     projects: Project[];
+    assignable_roles: string[];
     linkable_users: User[];
 }
 
 export default function AdminStaff() {
-    const { employees, filters, projects, linkable_users } = usePage<AdminStaffProps>().props;
+    const { employees, filters, projects, assignable_roles, linkable_users } =
+        usePage<AdminStaffProps>().props;
     const rows = employees.data ?? [];
     const [editingId, setEditingId] = useState<number | null>(null);
     const [createOpen, setCreateOpen] = useState(false);
-
-    const createForm = useForm({
-        employee_no: '',
-        name: '',
-        role: '',
-        pay_structure: 'monthly' as 'daily' | 'monthly',
-        daily_rate: '',
-        monthly_salary: '',
-        project_id: projects[0]?.id?.toString() ?? '',
-        user_id: '',
-    });
 
     const editForm = useForm({
         employee_no: '',
@@ -49,41 +38,6 @@ export default function AdminStaff() {
         project_id: '',
         user_id: '',
     });
-
-    function openCreateDialog() {
-        createForm.clearErrors();
-        setCreateOpen(true);
-    }
-
-    function closeCreateDialog() {
-        if (!confirmDiscardIfDirty(createForm.isDirty)) {
-            return;
-        }
-        setCreateOpen(false);
-        createForm.reset();
-        createForm.setData('project_id', projects[0]?.id?.toString() ?? '');
-        createForm.setData('pay_structure', 'monthly');
-        createForm.clearErrors();
-    }
-
-    function submitCreate(e: FormEvent) {
-        e.preventDefault();
-        createForm.transform((data) => ({
-            ...data,
-            project_id: Number(data.project_id),
-            user_id: data.user_id ? Number(data.user_id) : null,
-            daily_rate: data.pay_structure === 'daily' ? data.daily_rate : null,
-            monthly_salary: data.pay_structure === 'monthly' ? data.monthly_salary : null,
-        }));
-        createForm.post('/admin/staff', {
-            onSuccess: () => {
-                createForm.reset();
-                createForm.setData('project_id', projects[0]?.id?.toString() ?? '');
-                createForm.setData('pay_structure', 'monthly');
-                setCreateOpen(false);
-            },
-        });
-    }
 
     function startEdit(employee: Employee) {
         setEditingId(employee.id);
@@ -119,64 +73,20 @@ export default function AdminStaff() {
         router.delete(`/admin/staff/${employee.id}`);
     }
 
-    function PayFields({
-        form,
-    }: {
-        form: ReturnType<typeof useForm<typeof createForm.data>>;
-    }) {
-        return (
-            <>
-                <div className="space-y-2">
-                    <Label>Pay structure</Label>
-                    <select
-                        className="flex h-10 w-full rounded-md border border-slate-200 px-3 text-sm"
-                        value={form.data.pay_structure}
-                        onChange={(e) =>
-                            form.setData('pay_structure', e.target.value as 'daily' | 'monthly')
-                        }
-                    >
-                        <option value="monthly">Monthly</option>
-                        <option value="daily">Daily</option>
-                    </select>
-                </div>
-                {form.data.pay_structure === 'daily' ? (
-                    <div className="space-y-2">
-                        <Label>Daily rate</Label>
-                        <AmountInput
-                            value={form.data.daily_rate}
-                            onValueChange={(v) => form.setData('daily_rate', v)}
-                            required
-                        />
-                    </div>
-                ) : (
-                    <div className="space-y-2">
-                        <Label>Monthly salary</Label>
-                        <AmountInput
-                            value={form.data.monthly_salary}
-                            onValueChange={(v) => form.setData('monthly_salary', v)}
-                            required
-                        />
-                    </div>
-                )}
-            </>
-        );
-    }
-
     return (
         <AppShell title="Staff">
             <Head title="Staff" />
             <div className="space-y-6">
                 <PageHeader
                     title="Staff & employees"
-                    description="Manage payroll staff records for your company. Optionally link a staff member to a system user account."
+                    description="Manage payroll staff records for your company. Optionally create a login account at the same time, or link an existing user."
                     actions={
-                        <Button onClick={openCreateDialog}>
+                        <Button onClick={() => setCreateOpen(true)}>
                             <Plus className="mr-2 h-4 w-4" />
                             Add Staff
                         </Button>
                     }
                 />
-                <AdminNav active="staff" />
 
                 {editingId && (
                     <DataPanel title="Edit staff member">
@@ -219,7 +129,41 @@ export default function AdminStaff() {
                                     ))}
                                 </select>
                             </div>
-                            <PayFields form={editForm} />
+                            <div className="space-y-2">
+                                <Label>Pay structure</Label>
+                                <select
+                                    className="flex h-10 w-full rounded-md border border-slate-200 px-3 text-sm"
+                                    value={editForm.data.pay_structure}
+                                    onChange={(e) =>
+                                        editForm.setData(
+                                            'pay_structure',
+                                            e.target.value as 'daily' | 'monthly',
+                                        )
+                                    }
+                                >
+                                    <option value="monthly">Monthly</option>
+                                    <option value="daily">Daily</option>
+                                </select>
+                            </div>
+                            {editForm.data.pay_structure === 'daily' ? (
+                                <div className="space-y-2">
+                                    <Label>Daily rate</Label>
+                                    <AmountInput
+                                        value={editForm.data.daily_rate}
+                                        onValueChange={(v) => editForm.setData('daily_rate', v)}
+                                        required
+                                    />
+                                </div>
+                            ) : (
+                                <div className="space-y-2">
+                                    <Label>Monthly salary</Label>
+                                    <AmountInput
+                                        value={editForm.data.monthly_salary}
+                                        onValueChange={(v) => editForm.setData('monthly_salary', v)}
+                                        required
+                                    />
+                                </div>
+                            )}
                             <div className="space-y-2">
                                 <Label>Link to user (optional)</Label>
                                 <select
@@ -324,81 +268,15 @@ export default function AdminStaff() {
                 </DataPanel>
             </div>
 
-            <Dialog
+            <PersonCreateDialog
                 open={createOpen}
-                onOpenChange={(next) => (next ? openCreateDialog() : closeCreateDialog())}
-                title="Add Staff"
-                description="Create a payroll staff record. Optionally link to a system user account."
-                className="max-w-xl"
-            >
-                <form onSubmit={submitCreate} className="space-y-4">
-                    <div className="space-y-2">
-                        <Label htmlFor="staff-employee-no">Employee no.</Label>
-                        <Input
-                            id="staff-employee-no"
-                            value={createForm.data.employee_no}
-                            onChange={(e) => createForm.setData('employee_no', e.target.value)}
-                            required
-                        />
-                    </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="staff-name">Name</Label>
-                        <Input
-                            id="staff-name"
-                            value={createForm.data.name}
-                            onChange={(e) => createForm.setData('name', e.target.value)}
-                            required
-                        />
-                    </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="staff-role">Job role</Label>
-                        <Input
-                            id="staff-role"
-                            value={createForm.data.role}
-                            onChange={(e) => createForm.setData('role', e.target.value)}
-                            required
-                        />
-                    </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="staff-project">Project</Label>
-                        <select
-                            id="staff-project"
-                            className="flex h-10 w-full rounded-md border border-slate-200 px-3 text-sm"
-                            value={createForm.data.project_id}
-                            onChange={(e) => createForm.setData('project_id', e.target.value)}
-                        >
-                            {projects.map((p) => (
-                                <option key={p.id} value={p.id}>
-                                    {p.code} — {p.name}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-                    <PayFields form={createForm} />
-                    <div className="space-y-2">
-                        <Label htmlFor="staff-user">Link to user (optional)</Label>
-                        <select
-                            id="staff-user"
-                            className="flex h-10 w-full rounded-md border border-slate-200 px-3 text-sm"
-                            value={createForm.data.user_id}
-                            onChange={(e) => createForm.setData('user_id', e.target.value)}
-                        >
-                            <option value="">No linked account</option>
-                            {linkable_users.map((u) => (
-                                <option key={u.id} value={u.id}>
-                                    {u.name} ({u.email})
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-                    <DialogFormActions
-                        onCancel={closeCreateDialog}
-                        processing={createForm.processing}
-                        submitLabel="Add staff"
-                        processingLabel="Adding…"
-                    />
-                </form>
-            </Dialog>
+                onOpenChange={setCreateOpen}
+                defaultCreateUser={false}
+                defaultCreateStaff
+                assignableRoles={assignable_roles}
+                projects={projects}
+                linkableUsers={linkable_users}
+            />
         </AppShell>
     );
 }

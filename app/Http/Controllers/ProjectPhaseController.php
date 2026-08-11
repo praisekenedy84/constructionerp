@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StorePhaseRetentionActionRequest;
 use App\Http\Requests\StoreProjectPhaseRequest;
+use App\Models\MoneyAccount;
 use App\Models\Project;
 use App\Models\ProjectPhase;
 use App\Services\PhaseService;
@@ -101,19 +102,22 @@ class ProjectPhaseController extends Controller
         return back()->with('success', $message);
     }
 
-    public function releaseRetention(StorePhaseRetentionActionRequest $request, int $projectId, int $phaseId): RedirectResponse
+    public function releaseRetention(StorePhaseRetentionActionRequest $request, int $projectId): RedirectResponse
     {
         $this->authorizePermission($request->user(), 'projects', 'update');
         $project = Project::findOrFail($projectId);
-        $phase = ProjectPhase::where('project_id', $project->id)->findOrFail($phaseId);
+        $account = MoneyAccount::findOrFail((int) $request->validated('money_account_id'));
 
         try {
-            $this->phaseService->releaseRetention($phase);
+            $this->phaseService->releaseProjectRetention($project, $account, $request->user());
         } catch (\InvalidArgumentException $e) {
             return back()->withErrors(['phase' => $e->getMessage()]);
         }
 
-        return back()->with('success', 'Retention released into project budget.');
+        return back()->with(
+            'success',
+            'Cumulative retention released 50/50: half deposited to the company account and added to budget; half recorded as a retention receivable.',
+        );
     }
 
     public function forfeitRetention(StorePhaseRetentionActionRequest $request, int $projectId, int $phaseId): RedirectResponse

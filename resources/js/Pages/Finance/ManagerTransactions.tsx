@@ -28,6 +28,8 @@ const typeLabels: Record<string, string> = {
     opening_balance: 'Opening balance',
     adjustment: 'Adjustment',
     disbursement: 'Disbursement',
+    receivable_payment: 'Receivable payment',
+    debt_repayment: 'Debt repayment',
 };
 
 export default function ManagerTransactions() {
@@ -117,6 +119,11 @@ export default function ManagerTransactions() {
                                                 </td>
                                                 <td className="px-4 py-3 text-slate-600">
                                                     {typeLabels[tx.type] ?? tx.type}
+                                                    {tx.deposit_source_label && (
+                                                        <p className="text-xs text-slate-400">
+                                                            Source: {tx.deposit_source_label}
+                                                        </p>
+                                                    )}
                                                     {tx.related_account && (
                                                         <p className="text-xs text-slate-400">
                                                             ↔ {tx.related_account.name}

@@ -202,13 +202,13 @@ class ProjectCreateTest extends TestCase
         $this->assertSame(1, Customer::where('name', 'Client E')->count());
     }
 
-    public function test_project_can_be_soft_deleted(): void
+    public function test_project_can_be_permanently_deleted_with_confirmation_code(): void
     {
         $this->loginAsTenantAdmin();
 
         $this->post('/projects', [
             'code' => 'PRJ-700',
-            'name' => 'Archive Me',
+            'name' => 'Delete Me',
             'client' => 'Client F',
             'client_phone' => '+255 733 000 000',
             'client_tin' => '700-800-900',
@@ -223,10 +223,11 @@ class ProjectCreateTest extends TestCase
         $projectId = Project::where('code', 'PRJ-700')->value('id');
         tenancy()->end();
 
-        $this->delete("/projects/{$projectId}")
-            ->assertRedirect('/projects');
+        $this->delete("/projects/{$projectId}", [
+            'confirmation_code' => 'PRJ-700',
+        ])->assertRedirect('/projects');
 
         tenancy()->initialize(Tenant::where('slug', 'project-co')->firstOrFail());
-        $this->assertSoftDeleted('projects', ['id' => $projectId]);
+        $this->assertDatabaseMissing('projects', ['id' => $projectId]);
     }
 }

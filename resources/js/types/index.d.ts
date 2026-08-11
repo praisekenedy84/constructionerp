@@ -160,6 +160,7 @@ export interface Sale {
     outstanding_amount: string;
     converted_at?: string | null;
     is_loss?: boolean;
+    is_retention_receivable?: boolean;
     can_convert: boolean;
     can_collect: boolean;
     remaining_budget?: string;
@@ -203,6 +204,7 @@ export interface ProjectPhase {
     disbursed_amount: string;
     retention_held_amount: string;
     retention_released_amount: string;
+    retention_receivable_amount?: string;
     retention_forfeited_amount: string;
     other_deductions_amount: string;
     phase_net_budget: string;
@@ -516,6 +518,8 @@ export interface AccountTransaction {
     id: number;
     money_account_id: number;
     type: string;
+    deposit_source?: string | null;
+    deposit_source_label?: string | null;
     amount: string;
     balance_after: string;
     description: string | null;
@@ -525,6 +529,49 @@ export interface AccountTransaction {
     occurred_at: string | null;
     account?: Pick<MoneyAccount, 'id' | 'name' | 'type'> | null;
     related_account?: Pick<MoneyAccount, 'id' | 'name' | 'type'> | null;
+    recorder?: { id: number; name: string } | null;
+}
+
+export type DepositSource =
+    | 'owner_capital'
+    | 'loan'
+    | 'customer_advance'
+    | 'other_income'
+    | 'retention_release'
+    | 'other';
+
+export type CompanyDebtType = 'loan' | 'customer_advance';
+export type CompanyDebtStatus = 'open' | 'partially_paid' | 'cleared';
+
+export interface CompanyDebt {
+    id: number;
+    type: CompanyDebtType;
+    type_label: string;
+    creditor_name: string;
+    original_amount: string;
+    outstanding_amount: string;
+    status: CompanyDebtStatus;
+    status_label: string;
+    money_account_id: number;
+    deposit_transaction_id?: number | null;
+    notes?: string | null;
+    occurred_at: string | null;
+    created_at?: string | null;
+    money_account?: Pick<MoneyAccount, 'id' | 'name' | 'type'> | null;
+    recorder?: { id: number; name: string } | null;
+}
+
+export interface CompanyDebtPayment {
+    id: number;
+    company_debt_id: number;
+    amount: string;
+    money_account_id: number;
+    account_transaction_id?: number | null;
+    notes?: string | null;
+    method?: string | null;
+    reference_no?: string | null;
+    occurred_at: string | null;
+    money_account?: Pick<MoneyAccount, 'id' | 'name' | 'type'> | null;
     recorder?: { id: number; name: string } | null;
 }
 

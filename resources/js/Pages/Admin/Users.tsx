@@ -3,14 +3,12 @@ import DataPanel from '@/Components/Shared/DataPanel';
 import ListToolbar from '@/Components/Shared/ListToolbar';
 import PaginationLinks from '@/Components/Shared/PaginationLinks';
 import PageHeader from '@/Components/Shared/PageHeader';
-import AdminNav from '@/Components/Admin/AdminNav';
+import PersonCreateDialog from '@/Components/Admin/PersonCreateDialog';
 import { Button } from '@/Components/ui/button';
-import { Dialog } from '@/Components/ui/dialog';
-import { confirmDiscardIfDirty, DialogFormActions } from '@/Components/ui/dialog-form';
 import { Input } from '@/Components/ui/input';
 import { PasswordInput } from '@/Components/ui/password-input';
 import { Label } from '@/Components/ui/label';
-import { ListingFilters, PageProps, Paginated, User } from '@/types';
+import { ListingFilters, PageProps, Paginated, Project, User } from '@/types';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
 import { FormEvent, useState } from 'react';
 import { Plus, UserCheck } from 'lucide-react';
@@ -19,21 +17,14 @@ interface AdminUsersProps extends PageProps {
     users: Paginated<User>;
     filters: ListingFilters;
     assignable_roles: string[];
+    projects: Project[];
 }
 
 export default function AdminUsers() {
-    const { users, filters, assignable_roles, auth } = usePage<AdminUsersProps>().props;
+    const { users, filters, assignable_roles, projects, auth } = usePage<AdminUsersProps>().props;
     const rows = users.data ?? [];
     const [editingId, setEditingId] = useState<number | null>(null);
     const [createOpen, setCreateOpen] = useState(false);
-
-    const createForm = useForm({
-        name: '',
-        email: '',
-        password: '',
-        password_confirmation: '',
-        role: assignable_roles[0] ?? 'Site Engineer',
-    });
 
     const editForm = useForm({
         name: '',
@@ -42,30 +33,6 @@ export default function AdminUsers() {
         password_confirmation: '',
         role: '',
     });
-
-    function openCreateDialog() {
-        createForm.clearErrors();
-        setCreateOpen(true);
-    }
-
-    function closeCreateDialog() {
-        if (!confirmDiscardIfDirty(createForm.isDirty)) {
-            return;
-        }
-        setCreateOpen(false);
-        createForm.reset();
-        createForm.clearErrors();
-    }
-
-    function submitCreate(e: FormEvent) {
-        e.preventDefault();
-        createForm.post('/admin/users', {
-            onSuccess: () => {
-                createForm.reset();
-                setCreateOpen(false);
-            },
-        });
-    }
 
     function startEdit(user: User) {
         setEditingId(user.id);
@@ -102,15 +69,14 @@ export default function AdminUsers() {
             <div className="space-y-6">
                 <PageHeader
                     title="User Management"
-                    description="Add, edit, and remove login accounts for your company. Assign roles to control what each person can do."
+                    description="Add, edit, and remove login accounts for your company. Assign roles to control what each person can do. Optionally create a staff payroll record at the same time."
                     actions={
-                        <Button onClick={openCreateDialog}>
+                        <Button onClick={() => setCreateOpen(true)}>
                             <Plus className="mr-2 h-4 w-4" />
                             Add User
                         </Button>
                     }
                 />
-                <AdminNav active="users" />
 
                 {editingId && (
                     <DataPanel title="Edit user">
@@ -253,75 +219,14 @@ export default function AdminUsers() {
                 </DataPanel>
             </div>
 
-            <Dialog
+            <PersonCreateDialog
                 open={createOpen}
-                onOpenChange={(next) => (next ? openCreateDialog() : closeCreateDialog())}
-                title="Add User"
-                description="Create a login account and assign a role."
-            >
-                <form onSubmit={submitCreate} className="space-y-4">
-                    <div className="space-y-2">
-                        <Label htmlFor="user-name">Name</Label>
-                        <Input
-                            id="user-name"
-                            value={createForm.data.name}
-                            onChange={(e) => createForm.setData('name', e.target.value)}
-                            required
-                        />
-                    </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="user-email">Email</Label>
-                        <Input
-                            id="user-email"
-                            type="email"
-                            value={createForm.data.email}
-                            onChange={(e) => createForm.setData('email', e.target.value)}
-                            required
-                        />
-                    </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="user-password">Password</Label>
-                        <PasswordInput
-                            id="user-password"
-                            value={createForm.data.password}
-                            onChange={(e) => createForm.setData('password', e.target.value)}
-                            required
-                        />
-                    </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="user-password-confirm">Confirm password</Label>
-                        <PasswordInput
-                            id="user-password-confirm"
-                            value={createForm.data.password_confirmation}
-                            onChange={(e) =>
-                                createForm.setData('password_confirmation', e.target.value)
-                            }
-                            required
-                        />
-                    </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="user-role">Role</Label>
-                        <select
-                            id="user-role"
-                            className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                            value={createForm.data.role}
-                            onChange={(e) => createForm.setData('role', e.target.value)}
-                        >
-                            {assignable_roles.map((r) => (
-                                <option key={r} value={r}>
-                                    {r}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-                    <DialogFormActions
-                        onCancel={closeCreateDialog}
-                        processing={createForm.processing}
-                        submitLabel="Add user"
-                        processingLabel="Adding…"
-                    />
-                </form>
-            </Dialog>
+                onOpenChange={setCreateOpen}
+                defaultCreateUser
+                defaultCreateStaff={false}
+                assignableRoles={assignable_roles}
+                projects={projects}
+            />
         </AppShell>
     );
 }

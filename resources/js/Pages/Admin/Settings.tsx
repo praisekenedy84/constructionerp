@@ -1,7 +1,6 @@
 import AppShell from '@/Components/Layout/AppShell';
 import DataPanel from '@/Components/Shared/DataPanel';
 import PageHeader from '@/Components/Shared/PageHeader';
-import AdminNav from '@/Components/Admin/AdminNav';
 import { Button } from '@/Components/ui/button';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
@@ -36,7 +35,6 @@ export default function AdminSettings() {
                     title="Tenant branding"
                     description="Application name and tagline shown in the sidebar."
                 />
-                <AdminNav active="settings" />
 
                 <form onSubmit={submit}>
                     <DataPanel title="Branding">

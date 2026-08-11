@@ -12,25 +12,40 @@ import { formatCurrency } from '@/lib/formatters';
 import { MoneyAccount, PageProps } from '@/types';
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import { Plus, Wallet } from 'lucide-react';
-import { FormEvent, useState } from 'react';
+import { FormEvent, useMemo, useState } from 'react';
+
+interface DepositSourceOption {
+    value: string;
+    label: string;
+    creates_debt: boolean;
+}
 
 interface AccountsProps extends PageProps {
     accounts: MoneyAccount[];
     can_manage: boolean;
+    deposit_sources: DepositSourceOption[];
 }
 
 export default function Accounts() {
-    const { accounts, can_manage } = usePage<AccountsProps>().props;
+    const { accounts, can_manage, deposit_sources } = usePage<AccountsProps>().props;
     const [createOpen, setCreateOpen] = useState(false);
     const [depositAccount, setDepositAccount] = useState<MoneyAccount | null>(null);
 
     const createForm = useForm({ name: '', bank_name: '', notes: '' });
     const depositForm = useForm({
         amount: '',
+        deposit_source: '',
+        creditor_name: '',
         description: '',
         reference_no: '',
         method: '',
     });
+
+    const selectedSource = useMemo(
+        () => deposit_sources.find((s) => s.value === depositForm.data.deposit_source),
+        [deposit_sources, depositForm.data.deposit_source],
+    );
+    const needsCreditor = Boolean(selectedSource?.creates_debt);
 
     function closeCreate() {
         if (!confirmDiscardIfDirty(createForm.isDirty)) {
@@ -254,7 +269,7 @@ export default function Accounts() {
                         }
                     }}
                     title={`Deposit — ${depositAccount.name}`}
-                    description="Record money into this company account. No attachment required."
+                    description="Record money into this company account and choose where it came from."
                 >
                     <form onSubmit={submitDeposit} className="space-y-4">
                         <div className="space-y-2">
@@ -268,6 +283,54 @@ export default function Accounts() {
                                 <p className="text-sm text-red-600">{depositForm.errors.amount}</p>
                             )}
                         </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="deposit-source">Source</Label>
+                            <select
+                                id="deposit-source"
+                                className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                                value={depositForm.data.deposit_source}
+                                onChange={(e) => {
+                                    depositForm.setData('deposit_source', e.target.value);
+                                    const next = deposit_sources.find((s) => s.value === e.target.value);
+                                    if (!next?.creates_debt) {
+                                        depositForm.setData('creditor_name', '');
+                                    }
+                                }}
+                                required
+                            >
+                                <option value="">Select source…</option>
+                                {deposit_sources.map((source) => (
+                                    <option key={source.value} value={source.value}>
+                                        {source.label}
+                                    </option>
+                                ))}
+                            </select>
+                            {depositForm.errors.deposit_source && (
+                                <p className="text-sm text-red-600">{depositForm.errors.deposit_source}</p>
+                            )}
+                        </div>
+                        {needsCreditor && (
+                            <div className="space-y-2">
+                                <Label htmlFor="creditor-name">Creditor name</Label>
+                                <Input
+                                    id="creditor-name"
+                                    value={depositForm.data.creditor_name}
+                                    onChange={(e) =>
+                                        depositForm.setData('creditor_name', e.target.value)
+                                    }
+                                    placeholder="Lender or client name"
+                                    required
+                                />
+                                {depositForm.errors.creditor_name && (
+                                    <p className="text-sm text-red-600">
+                                        {depositForm.errors.creditor_name}
+                                    </p>
+                                )}
+                                <p className="text-xs text-slate-500">
+                                    A debt record will be created under Finance → Debts.
+                                </p>
+                            </div>
+                        )}
                         <div className="space-y-2">
                             <Label>Description</Label>
                             <Input

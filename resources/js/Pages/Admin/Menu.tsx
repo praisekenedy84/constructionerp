@@ -1,7 +1,6 @@
 import AppShell from '@/Components/Layout/AppShell';
 import DataPanel from '@/Components/Shared/DataPanel';
 import PageHeader from '@/Components/Shared/PageHeader';
-import AdminNav from '@/Components/Admin/AdminNav';
 import { Button } from '@/Components/ui/button';
 import { cn } from '@/lib/utils';
 import { PageProps } from '@/types';
@@ -213,7 +212,6 @@ export default function AdminMenu() {
                     title="Menu Items"
                     description="Reorder menu and submenu items, and control which links appear per role. Hiding a link does not revoke access — server permissions still enforce actions."
                 />
-                <AdminNav active="menu" />
 
                 <form onSubmit={submit} className="space-y-6">
                     <DataPanel

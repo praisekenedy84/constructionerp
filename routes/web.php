@@ -9,6 +9,7 @@ use App\Http\Controllers\BOQController;
 use App\Http\Controllers\BOQRevisionController;
 use App\Http\Controllers\BudgetController;
 use App\Http\Controllers\CashController;
+use App\Http\Controllers\CompanyDebtController;
 use App\Http\Controllers\ComplianceRuleController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DepartmentController;
@@ -18,14 +19,15 @@ use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\FinanceController;
 use App\Http\Controllers\GoodsReceiptController;
 use App\Http\Controllers\HubController;
+use App\Http\Controllers\IncomeStatementController;
 use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\InvoiceController;
 use App\Http\Controllers\MoneyAccountController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PayrollController;
 use App\Http\Controllers\PositionController;
-use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ProjectComplianceController;
+use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ProjectPhaseController;
 use App\Http\Controllers\PurchaseOrderController;
 use App\Http\Controllers\RecipientAttendanceController;
@@ -34,9 +36,9 @@ use App\Http\Controllers\ReportController;
 use App\Http\Controllers\RequisitionCategoryController;
 use App\Http\Controllers\RequisitionController;
 use App\Http\Controllers\SaleController;
-use App\Http\Controllers\UnitController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SupplierController;
+use App\Http\Controllers\UnitController;
 use App\Http\Controllers\ValuationController;
 use Illuminate\Support\Facades\Route;
 
@@ -97,7 +99,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/projects/{id}/phases/{phaseId}', [ProjectPhaseController::class, 'show'])->name('projects.phases.show');
         Route::post('/projects/{id}/phases', [ProjectPhaseController::class, 'store'])->name('projects.phases.store');
         Route::post('/projects/{id}/phases/{phaseId}/close', [ProjectPhaseController::class, 'close'])->name('projects.phases.close');
-        Route::post('/projects/{id}/phases/{phaseId}/retention/release', [ProjectPhaseController::class, 'releaseRetention'])->name('projects.phases.retention.release');
+        Route::post('/projects/{id}/retention/release', [ProjectPhaseController::class, 'releaseRetention'])->name('projects.retention.release');
         Route::post('/projects/{id}/phases/{phaseId}/retention/forfeit', [ProjectPhaseController::class, 'forfeitRetention'])->name('projects.phases.retention.forfeit');
         Route::post('/projects/{id}/compliance', [ProjectComplianceController::class, 'store'])->name('projects.compliance.store');
         Route::delete('/projects/{id}/compliance/{itemId}', [ProjectComplianceController::class, 'destroy'])->name('projects.compliance.destroy');
@@ -167,6 +169,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/finance/accounts', [MoneyAccountController::class, 'index'])->name('finance.accounts');
     Route::post('/finance/accounts', [MoneyAccountController::class, 'store'])->name('finance.accounts.store');
     Route::post('/finance/accounts/{id}/deposit', [MoneyAccountController::class, 'deposit'])->name('finance.accounts.deposit');
+    Route::get('/finance/debts', [CompanyDebtController::class, 'index'])->name('finance.debts');
+    Route::get('/finance/debts/{debt}', [CompanyDebtController::class, 'show'])->name('finance.debts.show');
+    Route::post('/finance/debts/{debt}/payments', [CompanyDebtController::class, 'storePayment'])->name('finance.debts.payments.store');
     Route::get('/finance/manager-transactions', [MoneyAccountController::class, 'managerTransactions'])->name('finance.manager-transactions');
     Route::get('/finance/finance-transactions', [MoneyAccountController::class, 'financeTransactions'])->name('finance.finance-transactions');
     Route::get('/finance/approvals', [CashController::class, 'fundApprovals'])->name('finance.approvals');
@@ -183,6 +188,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/finance/expenses', [ExpenseController::class, 'index'])->name('finance.expenses.index');
     Route::get('/finance/overhead/export', [ExpenseController::class, 'exportOverhead'])->name('finance.overhead.export');
     Route::get('/finance/overhead', [ExpenseController::class, 'overhead'])->name('finance.overhead');
+    Route::get('/finance/income-statement', [IncomeStatementController::class, 'index'])->name('finance.income-statement');
+    Route::post('/finance/income-statement/finalize', [IncomeStatementController::class, 'finalize'])->name('finance.income-statement.finalize');
+    Route::post('/finance/income-statement/export', [IncomeStatementController::class, 'export'])->name('finance.income-statement.export');
 
     Route::middleware('project.context')->group(function () {
         Route::get('/finance/reconciliation/{projectId}', [CashController::class, 'reconciliation'])
@@ -266,6 +274,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/admin/settings/ui', [AdminController::class, 'updateUI'])->name('admin.settings.ui');
     Route::get('/admin/users', [AdminController::class, 'users'])->name('admin.users');
     Route::post('/admin/users', [AdminController::class, 'createUser'])->name('admin.users.store');
+    Route::post('/admin/people', [AdminController::class, 'storePerson'])->name('admin.people.store');
     Route::patch('/admin/users/{id}', [AdminController::class, 'updateUser'])->name('admin.users.update');
     Route::delete('/admin/users/{id}', [AdminController::class, 'deleteUser'])->name('admin.users.destroy');
     Route::get('/admin/staff', [AdminController::class, 'staff'])->name('admin.staff');
@@ -275,6 +284,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/admin/menu', [AdminController::class, 'menu'])->name('admin.menu');
     Route::post('/admin/menu', [AdminController::class, 'updateMenu'])->name('admin.menu.store');
     Route::get('/admin/permissions', [AdminController::class, 'permissions'])->name('admin.permissions');
+    Route::post('/admin/roles', [AdminController::class, 'storeRole'])->name('admin.roles.store');
+    Route::patch('/admin/roles/{role}', [AdminController::class, 'updateRole'])->name('admin.roles.update');
+    Route::delete('/admin/roles/{role}', [AdminController::class, 'destroyRole'])->name('admin.roles.destroy');
     Route::patch('/admin/permissions/roles/{role}', [AdminController::class, 'updateRolePermissions'])->name('admin.permissions.role.update');
     Route::post('/admin/permissions/sync', [AdminController::class, 'syncPermissions'])->name('admin.permissions.sync');
 });

@@ -3,9 +3,12 @@
 namespace App\Services;
 
 use App\Enums\AccountTransactionType;
+use App\Enums\CompanyDebtStatus;
+use App\Enums\DepositSource;
 use App\Enums\MoneyAccountType;
 use App\Models\AccountTransaction;
 use App\Models\CashAllocation;
+use App\Models\CompanyDebt;
 use App\Models\MoneyAccount;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -57,7 +60,16 @@ class MoneyAccountService
     }
 
     /**
-     * @param  array{description?: string|null, reference_no?: string|null, method?: string|null, occurred_at?: mixed}  $opts
+     * @param  array{
+     *     description?: string|null,
+     *     reference_no?: string|null,
+     *     method?: string|null,
+     *     occurred_at?: mixed,
+     *     deposit_source?: string|DepositSource|null,
+     *     creditor_name?: string|null,
+     *     reference_entity_type?: string|null,
+     *     reference_entity_id?: int|null,
+     * }  $opts
      */
     public function deposit(MoneyAccount $account, string $amount, User $actor, array $opts = []): AccountTransaction
     {
@@ -77,17 +89,123 @@ class MoneyAccountService
                 throw new \InvalidArgumentException('Deposit amount must be greater than zero.');
             }
 
+            $depositSource = $opts['deposit_source'] ?? null;
+            if ($depositSource !== null && ! $depositSource instanceof DepositSource) {
+                $depositSource = DepositSource::tryFrom((string) $depositSource);
+            }
+
+            if ($depositSource instanceof DepositSource && $depositSource->createsDebt()) {
+                $creditor = trim((string) ($opts['creditor_name'] ?? ''));
+                if ($creditor === '') {
+                    throw new \InvalidArgumentException('Creditor name is required for loan and customer advance deposits.');
+                }
+            }
+
             $balance = bcadd((string) $account->balance, $normalized, 2);
+            $account->update(['balance' => $balance]);
+
+            $description = $opts['description'] ?? null;
+            if ($description === null || trim((string) $description) === '') {
+                $description = $depositSource instanceof DepositSource
+                    ? $depositSource->label().' deposit'
+                    : 'Deposit';
+            }
+
+            $transaction = AccountTransaction::create([
+                'money_account_id' => $account->id,
+                'type' => AccountTransactionType::Deposit,
+                'deposit_source' => $depositSource?->value,
+                'amount' => $normalized,
+                'balance_after' => $balance,
+                'description' => $description,
+                'reference_no' => $opts['reference_no'] ?? null,
+                'method' => $opts['method'] ?? null,
+                'reference_entity_type' => $opts['reference_entity_type'] ?? null,
+                'reference_entity_id' => $opts['reference_entity_id'] ?? null,
+                'recorded_by' => $actor->id,
+                'occurred_at' => $opts['occurred_at'] ?? now(),
+            ]);
+
+            if ($depositSource instanceof DepositSource && $depositSource->createsDebt()) {
+                $debtType = $depositSource->toDebtType();
+                $creditor = trim((string) ($opts['creditor_name'] ?? ''));
+
+                $debt = CompanyDebt::create([
+                    'type' => $debtType,
+                    'creditor_name' => $creditor,
+                    'original_amount' => $normalized,
+                    'outstanding_amount' => $normalized,
+                    'status' => CompanyDebtStatus::Open,
+                    'money_account_id' => $account->id,
+                    'deposit_transaction_id' => $transaction->id,
+                    'notes' => $opts['description'] ?? null,
+                    'recorded_by' => $actor->id,
+                    'occurred_at' => $opts['occurred_at'] ?? now(),
+                ]);
+
+                $transaction->update([
+                    'reference_entity_type' => 'company_debt',
+                    'reference_entity_id' => $debt->id,
+                ]);
+            }
+
+            return $transaction->fresh();
+        });
+    }
+
+    /**
+     * Debit a company (manager) account when recording a debt repayment.
+     *
+     * @param  array{
+     *     description?: string|null,
+     *     reference_no?: string|null,
+     *     method?: string|null,
+     *     reference_entity_type?: string|null,
+     *     reference_entity_id?: int|null,
+     *     occurred_at?: mixed
+     * }  $opts
+     */
+    public function repayDebtFromManager(
+        MoneyAccount $account,
+        string $amount,
+        User $actor,
+        array $opts = [],
+    ): AccountTransaction {
+        return DB::transaction(function () use ($account, $amount, $actor, $opts) {
+            $account = MoneyAccount::lockForUpdate()->findOrFail($account->id);
+
+            if (! $account->isManagerAccount()) {
+                throw new \InvalidArgumentException('Debt repayments must be paid from a company account.');
+            }
+
+            if (! $account->is_active) {
+                throw new \InvalidArgumentException('Cannot repay from an inactive account.');
+            }
+
+            $normalized = bcadd($amount, '0', 2);
+            if (bccomp($normalized, '0', 2) !== 1) {
+                throw new \InvalidArgumentException('Repayment amount must be greater than zero.');
+            }
+
+            if (bccomp((string) $account->balance, $normalized, 2) === -1) {
+                throw new \InvalidArgumentException(
+                    "Insufficient company account balance ({$account->balance}). Need {$normalized}."
+                );
+            }
+
+            $balance = bcsub((string) $account->balance, $normalized, 2);
             $account->update(['balance' => $balance]);
 
             return AccountTransaction::create([
                 'money_account_id' => $account->id,
-                'type' => AccountTransactionType::Deposit,
+                'type' => AccountTransactionType::DebtRepayment,
                 'amount' => $normalized,
                 'balance_after' => $balance,
-                'description' => $opts['description'] ?? 'Deposit',
+                'description' => $opts['description'] ?? 'Debt repayment',
                 'reference_no' => $opts['reference_no'] ?? null,
                 'method' => $opts['method'] ?? null,
+                'reference_entity_type' => $opts['reference_entity_type'] ?? 'company_debt',
+                'reference_entity_id' => $opts['reference_entity_id'] ?? null,
                 'recorded_by' => $actor->id,
                 'occurred_at' => $opts['occurred_at'] ?? now(),
             ]);
@@ -304,6 +422,159 @@ class MoneyAccountService
         });
     }
 
+    /**
+     * Reverse a receivable collection (or loss collection) on a company account.
+     * Debits the manager account by the original collection amount.
+     */
+    public function reverseReceivablePayment(AccountTransaction $transaction, User $actor, string $reason): AccountTransaction
+    {
+        return DB::transaction(function () use ($transaction, $actor, $reason) {
+            if ($transaction->type !== AccountTransactionType::ReceivablePayment) {
+                throw new \InvalidArgumentException('Only receivable-payment transactions can be reversed this way.');
+            }
+
+            $account = MoneyAccount::lockForUpdate()->findOrFail($transaction->money_account_id);
+            if (! $account->isManagerAccount()) {
+                throw new \InvalidArgumentException('Receivable payment reversals must target a company account.');
+            }
+
+            $amount = bcadd((string) $transaction->amount, '0', 2);
+            // Original credit (+X) → reverse by -X; original loss debit (-X) → reverse by +X.
+            $delta = bcmul($amount, '-1', 2);
+            $balance = bcadd((string) $account->balance, $delta, 2);
+
+            if (bccomp($balance, '0', 2) === -1) {
+                throw new \InvalidArgumentException(
+                    "Cannot reverse receivable collection: {$account->name} would go negative ({$balance})."
+                );
+            }
+
+            $account->update(['balance' => $balance]);
+
+            return AccountTransaction::create([
+                'money_account_id' => $account->id,
+                'type' => AccountTransactionType::Adjustment,
+                'amount' => $delta,
+                'balance_after' => $balance,
+                'description' => $reason,
+                'reference_entity_type' => $transaction->reference_entity_type,
+                'reference_entity_id' => $transaction->reference_entity_id,
+                'recorded_by' => $actor->id,
+                'occurred_at' => now(),
+            ]);
+        });
+    }
+
+    /**
+     * Reverse a manager deposit (e.g. retention release) by debiting the company account.
+     */
+    public function reverseDeposit(AccountTransaction $transaction, User $actor, string $reason): AccountTransaction
+    {
+        return DB::transaction(function () use ($transaction, $actor, $reason) {
+            if ($transaction->type !== AccountTransactionType::Deposit) {
+                throw new \InvalidArgumentException('Only deposit transactions can be reversed this way.');
+            }
+
+            $account = MoneyAccount::lockForUpdate()->findOrFail($transaction->money_account_id);
+            if (! $account->isManagerAccount()) {
+                throw new \InvalidArgumentException('Deposit reversals must target a company account.');
+            }
+
+            $amount = bcadd((string) $transaction->amount, '0', 2);
+            if (bccomp((string) $account->balance, $amount, 2) < 0) {
+                throw new \InvalidArgumentException(
+                    "Cannot reverse deposit: insufficient balance in {$account->name} ({$account->balance}). Need {$amount}."
+                );
+            }
+
+            $balance = bcsub((string) $account->balance, $amount, 2);
+            $account->update(['balance' => $balance]);
+
+            return AccountTransaction::create([
+                'money_account_id' => $account->id,
+                'type' => AccountTransactionType::Adjustment,
+                'amount' => bcmul($amount, '-1', 2),
+                'balance_after' => $balance,
+                'description' => $reason,
+                'reference_entity_type' => $transaction->reference_entity_type,
+                'reference_entity_id' => $transaction->reference_entity_id,
+                'recorded_by' => $actor->id,
+                'occurred_at' => now(),
+            ]);
+        });
+    }
+
+    /**
+     * Undo an approved fund request transfer (finance → company account).
+     *
+     * @return array{out: AccountTransaction, in: AccountTransaction}
+     */
+    public function reverseTransferToFinance(CashAllocation $allocation, User $actor, string $reason): array
+    {
+        return DB::transaction(function () use ($allocation, $actor, $reason) {
+            $in = AccountTransaction::query()
+                ->where('type', AccountTransactionType::TransferIn)
+                ->where('reference_entity_type', 'cash_allocation')
+                ->where('reference_entity_id', $allocation->id)
+                ->orderByDesc('id')
+                ->first();
+
+            $out = AccountTransaction::query()
+                ->where('type', AccountTransactionType::TransferOut)
+                ->where('reference_entity_type', 'cash_allocation')
+                ->where('reference_entity_id', $allocation->id)
+                ->orderByDesc('id')
+                ->first();
+
+            if (! $in || ! $out) {
+                throw new \InvalidArgumentException('Fund request transfer pair not found for reversal.');
+            }
+
+            $amount = bcadd((string) $in->amount, '0', 2);
+            $finance = MoneyAccount::lockForUpdate()->findOrFail($in->money_account_id);
+            $manager = MoneyAccount::lockForUpdate()->findOrFail($out->money_account_id);
+
+            if (bccomp((string) $finance->balance, $amount, 2) < 0) {
+                throw new \InvalidArgumentException(
+                    "Cannot reverse fund request: insufficient finance balance ({$finance->balance}). Need {$amount}."
+                );
+            }
+
+            $financeBalance = bcsub((string) $finance->balance, $amount, 2);
+            $managerBalance = bcadd((string) $manager->balance, $amount, 2);
+            $finance->update(['balance' => $financeBalance]);
+            $manager->update(['balance' => $managerBalance]);
+
+            $financeOut = AccountTransaction::create([
+                'money_account_id' => $finance->id,
+                'type' => AccountTransactionType::TransferOut,
+                'amount' => $amount,
+                'balance_after' => $financeBalance,
+                'description' => $reason,
+                'related_account_id' => $manager->id,
+                'reference_entity_type' => 'cash_allocation',
+                'reference_entity_id' => $allocation->id,
+                'recorded_by' => $actor->id,
+                'occurred_at' => now(),
+            ]);
+
+            $managerIn = AccountTransaction::create([
+                'money_account_id' => $manager->id,
+                'type' => AccountTransactionType::TransferIn,
+                'amount' => $amount,
+                'balance_after' => $managerBalance,
+                'description' => $reason,
+                'related_account_id' => $finance->id,
+                'reference_entity_type' => 'cash_allocation',
+                'reference_entity_id' => $allocation->id,
+                'recorded_by' => $actor->id,
+                'occurred_at' => now(),
+            ]);
+
+            return ['out' => $financeOut, 'in' => $managerIn];
+        });
+    }
+
     public function financeBalance(): string
     {
         $account = MoneyAccount::query()
@@ -365,6 +636,8 @@ class MoneyAccountService
             'id' => $tx->id,
             'money_account_id' => $tx->money_account_id,
             'type' => $tx->type->value,
+            'deposit_source' => $tx->deposit_source?->value,
+            'deposit_source_label' => $tx->deposit_source?->label(),
             'amount' => (string) $tx->amount,
             'balance_after' => (string) $tx->balance_after,
             'description' => $tx->description,

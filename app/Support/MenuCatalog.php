@@ -2,6 +2,8 @@
 
 namespace App\Support;
 
+use Spatie\Permission\Models\Role;
+
 /**
  * Canonical navigation catalog. Visibility is gated by permissions;
  * tenant admins may hide items per role (presentation only).
@@ -85,11 +87,13 @@ class MenuCatalog
                 'children' => [
                     ['key' => 'finance.overview', 'label' => 'Finance Overview', 'href' => '/finance/overview', 'permission' => null],
                     ['key' => 'finance.accounts', 'label' => 'Accounts', 'href' => '/finance/accounts', 'permission' => null],
+                    ['key' => 'finance.debts', 'label' => 'Debts', 'href' => '/finance/debts', 'permission' => null],
                     ['key' => 'finance.approvals', 'label' => 'Fund Approvals', 'href' => '/finance/approvals', 'permission' => null],
                     ['key' => 'finance.manager_transactions', 'label' => 'Company Transactions', 'href' => '/finance/manager-transactions', 'permission' => null],
                     ['key' => 'finance.finance_transactions', 'label' => 'Finance Transactions', 'href' => '/finance/finance-transactions', 'permission' => null],
                     ['key' => 'finance.expenses', 'label' => 'Expenses', 'href' => '/finance/expenses', 'permission' => null],
                     ['key' => 'finance.overhead', 'label' => 'Overhead', 'href' => '/finance/overhead', 'permission' => null],
+                    ['key' => 'finance.income_statement', 'label' => 'Income Statement', 'href' => '/finance/income-statement', 'permission' => null],
                 ],
             ],
             [
@@ -149,7 +153,22 @@ class MenuCatalog
             ],
             ['key' => 'reports', 'label' => 'Reports', 'href' => '/reports', 'permission' => 'reports:read', 'group' => 'Insights'],
             ['key' => 'audit', 'label' => 'Audit', 'href' => '/audit', 'permission' => 'audit:read', 'group' => 'Insights'],
-            ['key' => 'admin', 'label' => 'Admin', 'href' => '/admin/users', 'permission' => 'auth:read', 'group' => 'Administration'],
+            [
+                'key' => 'admin',
+                'label' => 'Admin',
+                'href' => '/admin/users',
+                'active_path' => '/admin',
+                'permission' => 'auth:read',
+                'group' => 'Administration',
+                'children' => [
+                    ['key' => 'admin.users', 'label' => 'Users', 'href' => '/admin/users', 'permission' => null],
+                    ['key' => 'admin.staff', 'label' => 'Staff', 'href' => '/admin/staff', 'permission' => null],
+                    ['key' => 'admin.payroll', 'label' => 'Payroll', 'href' => '/payroll/runs', 'permission' => 'payroll:read'],
+                    ['key' => 'admin.permissions', 'label' => 'Permissions', 'href' => '/admin/permissions', 'permission' => null],
+                    ['key' => 'admin.menu', 'label' => 'Menu', 'href' => '/admin/menu', 'permission' => null],
+                    ['key' => 'admin.branding', 'label' => 'Branding', 'href' => '/settings/ui', 'permission' => 'settings:read'],
+                ],
+            ],
         ];
     }
 
@@ -205,30 +224,52 @@ class MenuCatalog
     }
 
     /** @return list<string> */
+    public static function lockedRoleNames(): array
+    {
+        return ['Platform Admin', 'System Administrator'];
+    }
+
+    public static function isLockedRole(string $role): bool
+    {
+        return in_array($role, self::lockedRoleNames(), true);
+    }
+
+    /**
+     * Live tenant roles from Spatie (excludes Platform Admin).
+     *
+     * @return list<string>
+     */
     public static function tenantRoles(): array
     {
-        return array_keys(array_filter(
-            ModulePermission::matrix(),
-            fn (string $role) => $role !== 'Platform Admin',
-            ARRAY_FILTER_USE_KEY,
-        ));
+        return Role::query()
+            ->where('guard_name', 'web')
+            ->where('name', '!=', 'Platform Admin')
+            ->orderBy('name')
+            ->pluck('name')
+            ->values()
+            ->all();
     }
 
-    /** @return list<string> */
+    /**
+     * Roles that can be assigned to tenant users (all tenant roles, including System Administrator).
+     *
+     * @return list<string>
+     */
     public static function assignableRoles(): array
     {
-        return array_values(array_filter(
-            self::tenantRoles(),
-            fn (string $role) => $role !== 'Platform Admin',
-        ));
+        return self::tenantRoles();
     }
 
-    /** @return list<string> */
+    /**
+     * Roles whose permission matrix can be edited (excludes locked system roles).
+     *
+     * @return list<string>
+     */
     public static function editablePermissionRoles(): array
     {
         return array_values(array_filter(
             self::tenantRoles(),
-            fn (string $role) => ! in_array($role, ['Platform Admin', 'System Administrator'], true),
+            fn (string $role) => ! self::isLockedRole($role),
         ));
     }
 }

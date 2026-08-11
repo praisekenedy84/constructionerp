@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\ComplianceCalculationType;
 use App\Enums\ComplianceRuleType;
 use App\Enums\ExpenseCategory;
+use App\Enums\RetentionStatus;
 use App\Enums\ValuationStatus;
 use App\Models\ComplianceRule;
 use App\Models\Expense;
@@ -165,8 +166,7 @@ class ValuationService
         ProjectPhase $phase,
         string $phaseAmount,
         array $complianceItems
-    ): void
-    {
+    ): void {
         $totalDeductions = '0.00';
         $seenRuleIds = [];
         $retentionHeld = '0.00';
@@ -224,12 +224,13 @@ class ValuationService
         $phase->update([
             'retention_held_amount' => $retentionHeld,
             'retention_released_amount' => '0.00',
+            'retention_receivable_amount' => '0.00',
             'retention_forfeited_amount' => '0.00',
             'retention_released_at' => null,
             'retention_forfeited_at' => null,
             'retention_status' => bccomp($retentionHeld, '0', 2) === 1
-                ? \App\Enums\RetentionStatus::Held
-                : \App\Enums\RetentionStatus::None,
+                ? RetentionStatus::Held
+                : RetentionStatus::None,
         ]);
 
         // total_deductions = this IPC's compliance total; net_value mirrors it (no separate gross).
@@ -253,6 +254,14 @@ class ValuationService
 
         foreach ($valuation->deductions as $deduction) {
             if (bccomp((string) $deduction->amount, '0', 2) <= 0) {
+                continue;
+            }
+
+            // Retention is a hold → later cash release / receivable, not a project expense.
+            $ruleType = $deduction->rule_type;
+            if ($ruleType === ComplianceRuleType::Retention->value
+                || $ruleType === ComplianceRuleType::Retention
+            ) {
                 continue;
             }
 

@@ -2,10 +2,11 @@
 
 namespace Tests\Feature;
 
+use App\Models\Employee;
+use App\Models\Project;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Services\AuthService;
-use App\Services\PermissionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
@@ -109,5 +110,70 @@ class TenantAdminManagementTest extends TestCase
                 ->component('Error')
                 ->where('status', 403)
             );
+    }
+
+    public function test_tenant_admin_can_create_user_and_staff_together(): void
+    {
+        $this->loginAsTenantAdmin();
+
+        $tenant = Tenant::where('slug', 'admin-co')->firstOrFail();
+        $projectId = null;
+
+        $tenant->run(function () use (&$projectId): void {
+            $projectId = Project::create([
+                'code' => 'PRJ-ADM',
+                'name' => 'Admin Site',
+                'client' => 'Client',
+                'location' => 'Dar',
+                'contract_amount' => '1000000',
+                'wht_percentage' => '5',
+                'net_budget' => '950000',
+                'physical_progress_pct' => '0',
+                'start_date' => now()->toDateString(),
+                'end_date' => now()->addYear()->toDateString(),
+                'status' => 'active',
+            ])->id;
+        });
+
+        $this->post('/admin/people', [
+            'create_user' => true,
+            'create_staff' => true,
+            'name' => 'Combined Person',
+            'email' => 'combined@admin-co.local',
+            'password' => 'password',
+            'password_confirmation' => 'password',
+            'access_role' => 'Site Engineer',
+            'employee_no' => 'EMP-100',
+            'job_role' => 'Foreman',
+            'pay_structure' => 'monthly',
+            'monthly_salary' => '750000',
+            'project_id' => $projectId,
+        ])
+            ->assertRedirect()
+            ->assertSessionHas('success', 'User and staff member created.');
+
+        $tenant->run(function () use ($projectId): void {
+            $user = User::where('email', 'combined@admin-co.local')->first();
+            $this->assertNotNull($user);
+            $this->assertTrue($user->hasRole('Site Engineer'));
+
+            $employee = Employee::where('employee_no', 'EMP-100')->first();
+            $this->assertNotNull($employee);
+            $this->assertSame('Combined Person', $employee->name);
+            $this->assertSame('Foreman', $employee->role);
+            $this->assertSame($user->id, $employee->user_id);
+            $this->assertSame($projectId, $employee->project_id);
+        });
+    }
+
+    public function test_combined_create_requires_at_least_one_target(): void
+    {
+        $this->loginAsTenantAdmin();
+
+        $this->post('/admin/people', [
+            'create_user' => false,
+            'create_staff' => false,
+            'name' => 'Nobody',
+        ])->assertSessionHasErrors('create_user');
     }
 }

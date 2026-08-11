@@ -5,11 +5,16 @@ import { IconLink, LinkButton } from '@/Components/Shared/LinkButton';
 import PageHeader from '@/Components/Shared/PageHeader';
 import StatusBadge from '@/Components/Shared/StatusBadge';
 import { Button } from '@/Components/ui/button';
+import { Dialog } from '@/Components/ui/dialog';
+import { DialogFormActions } from '@/Components/ui/dialog-form';
+import { Input } from '@/Components/ui/input';
+import { Label } from '@/Components/ui/label';
 import { formatCurrency, formatDate, formatPercent } from '@/lib/formatters';
 import { hasPermission } from '@/lib/permissions';
 import { ListingFilters, PageProps, Paginated, Project } from '@/types';
-import { Head, Link, router, usePage } from '@inertiajs/react';
+import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import { Eye, Pencil, Plus, Trash2 } from 'lucide-react';
+import { FormEvent, useState } from 'react';
 
 interface ProjectsIndexProps extends PageProps {
     projects: Paginated<Project>;
@@ -23,12 +28,32 @@ export default function ProjectsIndex() {
     const canUpdate = hasPermission(auth.user, 'projects', 'update');
     const canDelete = hasPermission(auth.user, 'projects', 'delete-soft');
 
-    function archiveProject(project: Project) {
-        if (!confirm(`Archive project "${project.code} — ${project.name}"?`)) {
+    const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
+    const deleteForm = useForm({ confirmation_code: '' });
+
+    function openDeleteDialog(project: Project) {
+        deleteForm.clearErrors();
+        deleteForm.setData('confirmation_code', '');
+        setDeleteTarget(project);
+    }
+
+    function closeDeleteDialog() {
+        setDeleteTarget(null);
+        deleteForm.reset();
+        deleteForm.clearErrors();
+    }
+
+    function submitDelete(e: FormEvent) {
+        e.preventDefault();
+        if (!deleteTarget) {
             return;
         }
 
-        router.delete(`/projects/${project.id}`);
+        deleteForm.delete(`/projects/${deleteTarget.id}`, {
+            onSuccess: () => {
+                closeDeleteDialog();
+            },
+        });
     }
 
     return (
@@ -134,9 +159,9 @@ export default function ProjectsIndex() {
                                                         variant="ghost"
                                                         size="sm"
                                                         className="text-red-600 hover:bg-red-50 hover:text-red-700"
-                                                        title="Archive project"
-                                                        aria-label="Archive project"
-                                                        onClick={() => archiveProject(project)}
+                                                        title="Delete project"
+                                                        aria-label="Delete project"
+                                                        onClick={() => openDeleteDialog(project)}
                                                     >
                                                         <Trash2 className="h-4 w-4" />
                                                     </Button>
@@ -151,6 +176,52 @@ export default function ProjectsIndex() {
                     <PaginationLinks paginator={projects} />
                 </div>
             </div>
+
+            <Dialog
+                open={deleteTarget !== null}
+                onOpenChange={(next) => (next ? undefined : closeDeleteDialog())}
+                title="Delete project permanently"
+                description="This cannot be undone. All project data is removed (phases, BOQ, sales, requisitions, IPCs, and related records). Finance disbursements return to accountant cash on hand; company account collections and retention deposits for this project are reversed."
+            >
+                {deleteTarget && (
+                    <form onSubmit={submitDelete} className="space-y-5">
+                        <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                            Type the project code{' '}
+                            <span className="font-mono font-semibold">{deleteTarget.code}</span> to
+                            confirm.
+                        </p>
+
+                        <div className="space-y-2">
+                            <Label htmlFor="index_delete_confirmation_code">Project code</Label>
+                            <Input
+                                id="index_delete_confirmation_code"
+                                value={deleteForm.data.confirmation_code}
+                                onChange={(e) =>
+                                    deleteForm.setData('confirmation_code', e.target.value)
+                                }
+                                autoComplete="off"
+                                placeholder={deleteTarget.code}
+                                required
+                            />
+                            {deleteForm.errors.confirmation_code && (
+                                <p className="text-sm text-red-600">
+                                    {deleteForm.errors.confirmation_code}
+                                </p>
+                            )}
+                        </div>
+
+                        <DialogFormActions
+                            onCancel={closeDeleteDialog}
+                            processing={deleteForm.processing}
+                            submitLabel="Delete permanently"
+                            processingLabel="Deleting…"
+                            disabled={
+                                deleteForm.data.confirmation_code.trim() !== deleteTarget.code
+                            }
+                        />
+                    </form>
+                )}
+            </Dialog>
         </AppShell>
     );
 }

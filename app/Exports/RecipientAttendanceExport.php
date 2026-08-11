@@ -6,6 +6,7 @@ use Illuminate\Support\Collection;
 use Maatwebsite\Excel\Concerns\FromCollection;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithHeadings;
+use Maatwebsite\Excel\Concerns\WithMultipleSheets;
 use Maatwebsite\Excel\Concerns\WithStyles;
 use Maatwebsite\Excel\Concerns\WithTitle;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
@@ -13,11 +14,60 @@ use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
-class RecipientAttendanceExport implements FromCollection, ShouldAutoSize, WithHeadings, WithStyles, WithTitle
+class RecipientAttendanceExport implements WithMultipleSheets
+{
+    /** @param  Collection<int, array<int, string|int|float|null>>  $summaryRows */
+    /** @param  Collection<int, array<int, string|int|float|null>>  $detailRows */
+    public function __construct(
+        private Collection $summaryRows,
+        private Collection $detailRows,
+    ) {}
+
+    /** @return list<RecipientAttendanceSheetExport> */
+    public function sheets(): array
+    {
+        return [
+            new RecipientAttendanceSheetExport(
+                $this->summaryRows,
+                'Recipient Summary',
+                [
+                    'Recipient Name',
+                    'Recipient Phone',
+                    'Status',
+                    'Projects',
+                    'Staff Projects',
+                    'Requisition Projects',
+                    'Requisitions',
+                    'First Activity',
+                    'Last Activity',
+                ],
+            ),
+            new RecipientAttendanceSheetExport(
+                $this->detailRows,
+                'Project Breakdown',
+                [
+                    'Recipient Name',
+                    'Recipient Phone',
+                    'Project Code',
+                    'Project Name',
+                    'Project Staff',
+                    'Requisitions',
+                    'First Activity',
+                    'Last Activity',
+                ],
+            ),
+        ];
+    }
+}
+
+class RecipientAttendanceSheetExport implements FromCollection, ShouldAutoSize, WithHeadings, WithStyles, WithTitle
 {
     /** @param  Collection<int, array<int, string|int|float|null>>  $rows */
+    /** @param  list<string>  $headings */
     public function __construct(
         private Collection $rows,
+        private string $title,
+        private array $headings,
     ) {}
 
     public function collection(): Collection
@@ -28,26 +78,17 @@ class RecipientAttendanceExport implements FromCollection, ShouldAutoSize, WithH
     /** @return list<string> */
     public function headings(): array
     {
-        return [
-            'Recipient Name',
-            'Project Code',
-            'Project Name',
-            'Date',
-            'Check In',
-            'Check Out',
-            'Status',
-            'Notes',
-        ];
+        return $this->headings;
     }
 
     public function title(): string
     {
-        return 'Recipient Attendance';
+        return $this->title;
     }
 
     public function styles(Worksheet $sheet): array
     {
-        $lastColumn = 'H';
+        $lastColumn = chr(ord('A') + count($this->headings) - 1);
         $lastRow = max(2, $this->rows->count() + 1);
 
         return [

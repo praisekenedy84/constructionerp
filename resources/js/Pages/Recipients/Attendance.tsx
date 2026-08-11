@@ -4,34 +4,31 @@ import ListToolbar from '@/Components/Shared/ListToolbar';
 import PaginationLinks from '@/Components/Shared/PaginationLinks';
 import PageHeader from '@/Components/Shared/PageHeader';
 import { Button } from '@/Components/ui/button';
-import { Dialog } from '@/Components/ui/dialog';
-import { confirmDiscardIfDirty, DialogFormActions } from '@/Components/ui/dialog-form';
-import { Input } from '@/Components/ui/input';
-import { Label } from '@/Components/ui/label';
-import { hasPermission } from '@/lib/permissions';
 import {
     ListingFilters,
     PageProps,
     Paginated,
     Project,
     Recipient,
-    RecipientAttendance,
+    RecipientAttendanceSummary,
 } from '@/types';
-import { Head, router, useForm, usePage } from '@inertiajs/react';
-import { Download, Plus, Trash2 } from 'lucide-react';
-import { FormEvent, useMemo, useState } from 'react';
+import { Head, usePage } from '@inertiajs/react';
+import { ChevronDown, Download } from 'lucide-react';
+import { Fragment, useMemo, useState } from 'react';
 
 interface AttendancePageProps extends PageProps {
-    attendances: Paginated<RecipientAttendance>;
+    recipients: Paginated<RecipientAttendanceSummary>;
     filters: ListingFilters & {
         project_id?: string;
         recipient_id?: string;
-        status?: string;
     };
     summary: {
-        days_present: number;
-        days_absent: number;
-        total_records: number;
+        recipients: number;
+        projects: number;
+        associations: number;
+        requisitions: number;
+        staff_assignments: number;
+        requisition_inclusions: number;
     };
     filterOptions: {
         projects: Pick<Project, 'id' | 'code' | 'name'>[];
@@ -50,13 +47,16 @@ function exportHref(filters: Record<string, string | undefined>): string {
     return `/recipients/attendance/export${qs ? `?${qs}` : ''}`;
 }
 
+function statusClass(status: string | undefined): string {
+    return status === 'active'
+        ? 'bg-emerald-50 text-emerald-700 ring-emerald-600/20'
+        : 'bg-slate-100 text-slate-600 ring-slate-500/20';
+}
+
 export default function RecipientAttendancePage() {
-    const { attendances, filters, summary, filterOptions, auth } =
-        usePage<AttendancePageProps>().props;
-    const rows = attendances.data ?? [];
-    const canCreate = hasPermission(auth.user, 'requisitions', 'create');
-    const canUpdate = hasPermission(auth.user, 'requisitions', 'update');
-    const [open, setOpen] = useState(false);
+    const { recipients, filters, summary, filterOptions } = usePage<AttendancePageProps>().props;
+    const rows = recipients.data ?? [];
+    const [expandedIds, setExpandedIds] = useState<number[]>([]);
 
     const filterRecord = useMemo(
         () => ({
@@ -65,52 +65,18 @@ export default function RecipientAttendancePage() {
             to: filters.to,
             project_id: filters.project_id,
             recipient_id: filters.recipient_id,
-            status: filters.status,
             sort: filters.sort,
             direction: filters.direction,
         }),
         [filters],
     );
 
-    const { data, setData, post, processing, errors, reset, clearErrors, isDirty } = useForm({
-        recipient_id: '',
-        project_id: '',
-        date: new Date().toISOString().slice(0, 10),
-        check_in: '',
-        check_out: '',
-        status: 'present' as 'present' | 'absent',
-        notes: '',
-    });
-
-    function openDialog() {
-        clearErrors();
-        setOpen(true);
-    }
-
-    function closeDialog() {
-        if (!confirmDiscardIfDirty(isDirty)) {
-            return;
-        }
-        setOpen(false);
-        reset();
-        clearErrors();
-    }
-
-    function submit(e: FormEvent) {
-        e.preventDefault();
-        post('/recipients/attendance', {
-            onSuccess: () => {
-                reset();
-                setOpen(false);
-            },
-        });
-    }
-
-    function remove(id: number) {
-        if (!confirm('Delete this attendance record?')) {
-            return;
-        }
-        router.delete(`/recipients/attendance/${id}`);
+    function toggleExpanded(recipientId: number) {
+        setExpandedIds((current) =>
+            current.includes(recipientId)
+                ? current.filter((id) => id !== recipientId)
+                : [...current, recipientId],
+        );
     }
 
     return (
@@ -119,37 +85,43 @@ export default function RecipientAttendancePage() {
             <div className="space-y-6">
                 <PageHeader
                     title="Recipient Attendance"
-                    description="Track recipient attendance per project with check-in and check-out."
+                    description="Full picture of each recipient — project count, requisition involvement, staff assignments, and per-project breakdown."
                     actions={
-                        <div className="flex flex-wrap gap-2">
-                            <a href={exportHref(filterRecord)} target="_blank" rel="noreferrer">
-                                <Button type="button" variant="outline">
-                                    <Download className="mr-2 h-4 w-4" />
-                                    Export
-                                </Button>
-                            </a>
-                            {canCreate && (
-                                <Button onClick={openDialog}>
-                                    <Plus className="mr-2 h-4 w-4" />
-                                    Record Attendance
-                                </Button>
-                            )}
-                        </div>
+                        <a href={exportHref(filterRecord)} target="_blank" rel="noreferrer">
+                            <Button type="button" variant="outline">
+                                <Download className="mr-2 h-4 w-4" />
+                                Export
+                            </Button>
+                        </a>
                     }
                 />
 
-                <div className="grid gap-4 sm:grid-cols-3">
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
                     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                        <p className="text-xs text-slate-500">Days Present</p>
-                        <p className="mt-1 text-2xl font-semibold">{summary.days_present}</p>
+                        <p className="text-xs text-slate-500">Recipients</p>
+                        <p className="mt-1 text-2xl font-semibold">{summary.recipients}</p>
                     </div>
                     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                        <p className="text-xs text-slate-500">Days Absent</p>
-                        <p className="mt-1 text-2xl font-semibold">{summary.days_absent}</p>
+                        <p className="text-xs text-slate-500">Projects Linked</p>
+                        <p className="mt-1 text-2xl font-semibold">{summary.projects}</p>
                     </div>
                     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                        <p className="text-xs text-slate-500">Total Records</p>
-                        <p className="mt-1 text-2xl font-semibold">{summary.total_records}</p>
+                        <p className="text-xs text-slate-500">Associations</p>
+                        <p className="mt-1 text-2xl font-semibold">{summary.associations}</p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <p className="text-xs text-slate-500">Requisitions</p>
+                        <p className="mt-1 text-2xl font-semibold">{summary.requisitions}</p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <p className="text-xs text-slate-500">Staff Assignments</p>
+                        <p className="mt-1 text-2xl font-semibold">{summary.staff_assignments}</p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <p className="text-xs text-slate-500">Requisition Inclusions</p>
+                        <p className="mt-1 text-2xl font-semibold">
+                            {summary.requisition_inclusions}
+                        </p>
                     </div>
                 </div>
 
@@ -158,9 +130,12 @@ export default function RecipientAttendancePage() {
                     filters={filters}
                     searchPlaceholder="Search recipient, project…"
                     sortOptions={[
-                        { value: 'date', label: 'Date' },
-                        { value: 'status', label: 'Status' },
-                        { value: 'created_at', label: 'Created' },
+                        { value: 'last_seen', label: 'Last activity' },
+                        { value: 'first_seen', label: 'First activity' },
+                        { value: 'project_count', label: 'Projects' },
+                        { value: 'requisition_count', label: 'Requisitions' },
+                        { value: 'staff_project_count', label: 'Staff projects' },
+                        { value: 'recipient_name', label: 'Recipient' },
                     ]}
                     selectFilters={[
                         {
@@ -181,195 +156,177 @@ export default function RecipientAttendancePage() {
                                 label: recipient.name,
                             })),
                         },
-                        {
-                            key: 'status',
-                            label: 'Status',
-                            emptyLabel: 'All statuses',
-                            options: [
-                                { value: 'present', label: 'Present' },
-                                { value: 'absent', label: 'Absent' },
-                            ],
-                        },
                     ]}
                 />
 
-                <DataPanel title="Attendance Records" noPadding>
+                <DataPanel title="Recipients" noPadding>
                     <table className="w-full text-sm">
                         <thead>
                             <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs text-slate-500">
+                                <th className="w-10 px-4 py-3" />
                                 <th className="px-6 py-3 font-medium">Recipient</th>
-                                <th className="px-6 py-3 font-medium">Project</th>
-                                <th className="px-6 py-3 font-medium">Date</th>
-                                <th className="px-6 py-3 font-medium">Check In</th>
-                                <th className="px-6 py-3 font-medium">Check Out</th>
-                                <th className="px-6 py-3 font-medium">Status</th>
-                                {canUpdate && (
-                                    <th className="px-6 py-3 text-right font-medium">Actions</th>
-                                )}
+                                <th className="px-6 py-3 font-medium">Projects</th>
+                                <th className="px-6 py-3 font-medium">Requisitions</th>
+                                <th className="px-6 py-3 font-medium">Staff</th>
+                                <th className="px-6 py-3 font-medium">First Activity</th>
+                                <th className="px-6 py-3 font-medium">Last Activity</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {rows.length === 0 ? (
                                 <tr>
-                                    <td
-                                        colSpan={canUpdate ? 7 : 6}
-                                        className="px-6 py-12 text-center text-slate-500"
-                                    >
-                                        No attendance records match the current filters.
+                                    <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
+                                        No recipient associations match the current filters.
                                     </td>
                                 </tr>
                             ) : (
-                                rows.map((row) => (
-                                    <tr key={row.id}>
-                                        <td className="px-6 py-4 font-medium">
-                                            {row.recipient?.name ?? '—'}
-                                        </td>
-                                        <td className="px-6 py-4 text-slate-600">
-                                            {row.project
-                                                ? `${row.project.code} — ${row.project.name}`
-                                                : '—'}
-                                        </td>
-                                        <td className="px-6 py-4 text-slate-600">{row.date}</td>
-                                        <td className="px-6 py-4 text-slate-600">
-                                            {row.check_in ?? '—'}
-                                        </td>
-                                        <td className="px-6 py-4 text-slate-600">
-                                            {row.check_out ?? '—'}
-                                        </td>
-                                        <td className="px-6 py-4 capitalize text-slate-600">
-                                            {row.status}
-                                        </td>
-                                        {canUpdate && (
-                                            <td className="px-6 py-4 text-right">
-                                                <Button
-                                                    type="button"
-                                                    size="sm"
-                                                    variant="outline"
-                                                    onClick={() => remove(row.id)}
-                                                >
-                                                    <Trash2 className="h-3.5 w-3.5" />
-                                                </Button>
-                                            </td>
-                                        )}
-                                    </tr>
-                                ))
+                                rows.map((row) => {
+                                    const expanded = expandedIds.includes(row.recipient_id);
+                                    const recipient = row.recipient;
+
+                                    return (
+                                        <Fragment key={row.id}>
+                                            <tr className="bg-white">
+                                                <td className="px-4 py-4">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => toggleExpanded(row.recipient_id)}
+                                                        className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                                                        aria-expanded={expanded}
+                                                        aria-label={`Show projects for ${recipient?.name ?? 'recipient'}`}
+                                                    >
+                                                        <ChevronDown
+                                                            className={`h-4 w-4 transition-transform ${expanded ? 'rotate-180' : ''}`}
+                                                        />
+                                                    </button>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <div className="font-medium">
+                                                        {recipient?.name ?? '—'}
+                                                    </div>
+                                                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                                                        {recipient?.phone ? (
+                                                            <span>{recipient.phone}</span>
+                                                        ) : null}
+                                                        {recipient?.status ? (
+                                                            <span
+                                                                className={`inline-flex rounded-full px-2 py-0.5 font-medium ring-1 ring-inset ${statusClass(recipient.status)}`}
+                                                            >
+                                                                {recipient.status}
+                                                            </span>
+                                                        ) : null}
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4 font-medium text-slate-900">
+                                                    {row.project_count}
+                                                </td>
+                                                <td className="px-6 py-4 text-slate-600">
+                                                    {row.requisition_count}
+                                                </td>
+                                                <td className="px-6 py-4 text-slate-600">
+                                                    {row.staff_project_count}
+                                                </td>
+                                                <td className="px-6 py-4 text-slate-600">
+                                                    {row.first_seen ?? '—'}
+                                                </td>
+                                                <td className="px-6 py-4 text-slate-600">
+                                                    {row.last_seen ?? '—'}
+                                                </td>
+                                            </tr>
+                                            {expanded ? (
+                                                <tr className="bg-slate-50/80">
+                                                    <td colSpan={7} className="px-6 py-4">
+                                                        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                                                            <table className="w-full text-sm">
+                                                                <thead>
+                                                                    <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs text-slate-500">
+                                                                        <th className="px-4 py-2 font-medium">
+                                                                            Project
+                                                                        </th>
+                                                                        <th className="px-4 py-2 font-medium">
+                                                                            Link Type
+                                                                        </th>
+                                                                        <th className="px-4 py-2 font-medium">
+                                                                            Requisitions
+                                                                        </th>
+                                                                        <th className="px-4 py-2 font-medium">
+                                                                            First Activity
+                                                                        </th>
+                                                                        <th className="px-4 py-2 font-medium">
+                                                                            Last Activity
+                                                                        </th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody className="divide-y divide-slate-100">
+                                                                    {row.projects.length === 0 ? (
+                                                                        <tr>
+                                                                            <td
+                                                                                colSpan={5}
+                                                                                className="px-4 py-6 text-center text-slate-500"
+                                                                            >
+                                                                                No project links found.
+                                                                            </td>
+                                                                        </tr>
+                                                                    ) : (
+                                                                        row.projects.map((projectRow) => (
+                                                                            <tr key={projectRow.id}>
+                                                                                <td className="px-4 py-3 text-slate-700">
+                                                                                    {projectRow.project
+                                                                                        ? `${projectRow.project.code} — ${projectRow.project.name}`
+                                                                                        : '—'}
+                                                                                </td>
+                                                                                <td className="px-4 py-3">
+                                                                                    <div className="flex flex-wrap gap-1.5">
+                                                                                        {projectRow.is_staff ? (
+                                                                                            <span className="inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-600/20">
+                                                                                                Staff
+                                                                                            </span>
+                                                                                        ) : null}
+                                                                                        {projectRow.requisition_count >
+                                                                                        0 ? (
+                                                                                            <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20">
+                                                                                                Requisitions
+                                                                                            </span>
+                                                                                        ) : null}
+                                                                                        {!projectRow.is_staff &&
+                                                                                        projectRow.requisition_count ===
+                                                                                            0 ? (
+                                                                                            <span className="text-slate-500">
+                                                                                                —
+                                                                                            </span>
+                                                                                        ) : null}
+                                                                                    </div>
+                                                                                </td>
+                                                                                <td className="px-4 py-3 text-slate-600">
+                                                                                    {
+                                                                                        projectRow.requisition_count
+                                                                                    }
+                                                                                </td>
+                                                                                <td className="px-4 py-3 text-slate-600">
+                                                                                    {projectRow.first_seen ??
+                                                                                        '—'}
+                                                                                </td>
+                                                                                <td className="px-4 py-3 text-slate-600">
+                                                                                    {projectRow.last_seen ?? '—'}
+                                                                                </td>
+                                                                            </tr>
+                                                                        ))
+                                                                    )}
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ) : null}
+                                        </Fragment>
+                                    );
+                                })
                             )}
                         </tbody>
                     </table>
-                    <PaginationLinks paginator={attendances} />
+                    <PaginationLinks paginator={recipients} />
                 </DataPanel>
             </div>
-
-            <Dialog
-                open={open}
-                onOpenChange={(next) => (next ? openDialog() : closeDialog())}
-                title="Record Recipient Attendance"
-                description="Save attendance for a recipient on a project."
-            >
-                <form onSubmit={submit} className="space-y-4">
-                    <div className="space-y-2">
-                        <Label>Recipient</Label>
-                        <select
-                            className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
-                            value={data.recipient_id}
-                            onChange={(e) => setData('recipient_id', e.target.value)}
-                            required
-                        >
-                            <option value="">Select recipient</option>
-                            {filterOptions.recipients.map((recipient) => (
-                                <option key={recipient.id} value={recipient.id}>
-                                    {recipient.name}
-                                    {recipient.status !== 'active' ? ' (inactive)' : ''}
-                                </option>
-                            ))}
-                        </select>
-                        {errors.recipient_id && (
-                            <p className="text-sm text-red-600">{errors.recipient_id}</p>
-                        )}
-                    </div>
-                    <div className="space-y-2">
-                        <Label>Project</Label>
-                        <select
-                            className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
-                            value={data.project_id}
-                            onChange={(e) => setData('project_id', e.target.value)}
-                            required
-                        >
-                            <option value="">Select project</option>
-                            {filterOptions.projects.map((project) => (
-                                <option key={project.id} value={project.id}>
-                                    {project.code} — {project.name}
-                                </option>
-                            ))}
-                        </select>
-                        {errors.project_id && (
-                            <p className="text-sm text-red-600">{errors.project_id}</p>
-                        )}
-                    </div>
-                    <div className="space-y-2">
-                        <Label>Date</Label>
-                        <Input
-                            type="date"
-                            value={data.date}
-                            onChange={(e) => setData('date', e.target.value)}
-                            required
-                        />
-                        {errors.date && <p className="text-sm text-red-600">{errors.date}</p>}
-                    </div>
-                    <div className="space-y-2">
-                        <Label>Status</Label>
-                        <select
-                            className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
-                            value={data.status}
-                            onChange={(e) =>
-                                setData('status', e.target.value as 'present' | 'absent')
-                            }
-                        >
-                            <option value="present">Present</option>
-                            <option value="absent">Absent</option>
-                        </select>
-                    </div>
-                    {data.status === 'present' && (
-                        <div className="grid gap-4 sm:grid-cols-2">
-                            <div className="space-y-2">
-                                <Label>Check In</Label>
-                                <Input
-                                    type="time"
-                                    value={data.check_in}
-                                    onChange={(e) => setData('check_in', e.target.value)}
-                                />
-                                {errors.check_in && (
-                                    <p className="text-sm text-red-600">{errors.check_in}</p>
-                                )}
-                            </div>
-                            <div className="space-y-2">
-                                <Label>Check Out</Label>
-                                <Input
-                                    type="time"
-                                    value={data.check_out}
-                                    onChange={(e) => setData('check_out', e.target.value)}
-                                />
-                                {errors.check_out && (
-                                    <p className="text-sm text-red-600">{errors.check_out}</p>
-                                )}
-                            </div>
-                        </div>
-                    )}
-                    <div className="space-y-2">
-                        <Label>Notes</Label>
-                        <Input
-                            value={data.notes}
-                            onChange={(e) => setData('notes', e.target.value)}
-                        />
-                    </div>
-                    <DialogFormActions
-                        onCancel={closeDialog}
-                        processing={processing}
-                        submitLabel="Save Attendance"
-                        processingLabel="Saving…"
-                    />
-                </form>
-            </Dialog>
         </AppShell>
     );
 }

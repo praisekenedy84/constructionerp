@@ -440,15 +440,39 @@ export interface Recipient {
     status: 'active' | 'inactive';
 }
 
-export interface RecipientAttendance {
+/** Per-project link for a recipient (requisitions and/or project staff). */
+export interface RecipientProjectAssociation {
+    id: string;
+    project_id: number;
+    requisition_count: number;
+    is_staff: boolean;
+    first_seen: string | null;
+    last_seen: string | null;
+    project?: Pick<Project, 'id' | 'code' | 'name'> | null;
+}
+
+/** Recipient rollup with nested project associations. */
+export interface RecipientAttendanceSummary {
     id: number;
     recipient_id: number;
+    project_count: number;
+    requisition_count: number;
+    staff_project_count: number;
+    requisition_project_count: number;
+    first_seen: string | null;
+    last_seen: string | null;
+    recipient?: Pick<Recipient, 'id' | 'name' | 'phone' | 'status'> | null;
+    projects: RecipientProjectAssociation[];
+}
+
+/** @deprecated Use RecipientProjectAssociation for flat pair rows. */
+export interface RecipientAttendance {
+    id: string;
+    recipient_id: number;
     project_id: number;
-    date: string;
-    check_in?: string | null;
-    check_out?: string | null;
-    status: 'present' | 'absent';
-    notes?: string | null;
+    requisition_count: number;
+    first_seen: string | null;
+    last_seen: string | null;
     recipient?: Pick<Recipient, 'id' | 'name' | 'phone' | 'status'> | null;
     project?: Pick<Project, 'id' | 'code' | 'name'> | null;
 }

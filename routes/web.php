@@ -132,8 +132,6 @@ Route::middleware('auth')->group(function () {
     Route::delete('/recipients/{id}', [RecipientController::class, 'destroy'])->name('recipients.destroy');
     Route::get('/recipients/attendance/export', [RecipientAttendanceController::class, 'export'])->name('recipients.attendance.export');
     Route::get('/recipients/attendance', [RecipientAttendanceController::class, 'index'])->name('recipients.attendance.index');
-    Route::post('/recipients/attendance', [RecipientAttendanceController::class, 'store'])->name('recipients.attendance.store');
-    Route::delete('/recipients/attendance/{id}', [RecipientAttendanceController::class, 'destroy'])->name('recipients.attendance.destroy');
     Route::get('/requisitions/create', [RequisitionController::class, 'create'])->name('requisitions.create');
     Route::post('/requisitions', [RequisitionController::class, 'store'])->name('requisitions.store');
     Route::get('/requisitions/review-queue', [RequisitionController::class, 'reviewQueue'])->name('requisitions.review-queue');

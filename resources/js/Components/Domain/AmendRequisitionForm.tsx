@@ -126,8 +126,8 @@ export default function AmendRequisitionForm({
                             key={item.id ?? `new-${index}`}
                             className="rounded-md border border-slate-200 p-3 space-y-3"
                         >
-                            <div className="flex items-start justify-between gap-2">
-                                <div className="flex-1 space-y-2">
+                            <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                <div className="min-w-0 flex-1 space-y-2">
                                     <Label>Description</Label>
                                     <Input
                                         value={item.description}
@@ -141,15 +141,15 @@ export default function AmendRequisitionForm({
                                     <Button
                                         type="button"
                                         variant="outline"
-                                        className="mt-7 text-red-700"
+                                        className="self-start text-red-700 sm:mt-7"
                                         onClick={() => removeLine(index)}
                                     >
                                         Remove
                                     </Button>
                                 )}
                             </div>
-                            <div className="grid gap-3 sm:grid-cols-5">
-                                <div className="space-y-2">
+                            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                                <div className="min-w-0 space-y-2">
                                     <Label>Unit</Label>
                                     <select
                                         className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
@@ -177,7 +177,7 @@ export default function AmendRequisitionForm({
                                             )}
                                     </select>
                                 </div>
-                                <div className="space-y-2">
+                                <div className="min-w-0 space-y-2">
                                     <Label>Qty</Label>
                                     <AmountInput
                                         value={item.quantity}
@@ -185,7 +185,7 @@ export default function AmendRequisitionForm({
                                         required
                                     />
                                 </div>
-                                <div className="space-y-2">
+                                <div className="min-w-0 space-y-2">
                                     <Label>Days (optional)</Label>
                                     <Input
                                         type="number"
@@ -196,7 +196,7 @@ export default function AmendRequisitionForm({
                                         onChange={(e) => updateLine(index, { days: e.target.value })}
                                     />
                                 </div>
-                                <div className="space-y-2">
+                                <div className="min-w-0 space-y-2">
                                     <Label>Unit cost</Label>
                                     <AmountInput
                                         value={item.unit_cost}
@@ -204,7 +204,7 @@ export default function AmendRequisitionForm({
                                         required
                                     />
                                 </div>
-                                <div className="space-y-2">
+                                <div className="min-w-0 space-y-2">
                                     <Label>Line total</Label>
                                     <p className="flex h-10 items-center text-sm font-medium text-slate-900">
                                         {formatCurrency(total)}

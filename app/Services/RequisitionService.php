@@ -1313,8 +1313,12 @@ class RequisitionService
      *     exceeds: bool,
      * }|null
      */
-    public function cashAvailability(Requisition $req, ?string $amount = null): ?array
-    {
+    public function cashAvailability(
+        Requisition $req,
+        ?string $amount = null,
+        ?string $committedElsewhere = null,
+        ?string $cashOnHand = null,
+    ): ?array {
         if (! $this->spendsCashFloat($req)) {
             return null;
         }
@@ -1326,10 +1330,27 @@ class RequisitionService
         );
 
         // Shared Finance Wallet — any approved finance requisition commits against it.
-        $cashOnHand = $this->moneyAccountService->financeBalance();
+        $cashOnHand ??= $this->moneyAccountService->financeBalance();
 
-        $committedQuery = Requisition::query()
-            ->where('id', '!=', $req->id)
+        $committedElsewhere ??= $this->cashCommitmentTotal($req->id);
+
+        $available = bcsub($cashOnHand, $committedElsewhere, 2);
+
+        return [
+            'spends_cash' => true,
+            'scope' => 'finance_wallet',
+            'cash_on_hand' => $cashOnHand,
+            'committed' => $committedElsewhere,
+            'available' => $available,
+            'required' => $required,
+            'exceeds' => bccomp($required, $available, 2) === 1,
+        ];
+    }
+
+    public function cashCommitmentTotal(?int $excludeRequisitionId = null): string
+    {
+        $committed = Requisition::query()
+            ->when($excludeRequisitionId, fn ($query, $id) => $query->where('id', '!=', $id))
             ->whereIn('status', [
                 RequisitionStatus::Approved,
                 RequisitionStatus::Amended,
@@ -1344,31 +1365,23 @@ class RequisitionService
                                 FulfillmentType::DirectSupplierPayment->value,
                             ]);
                     });
-            });
+            })
+            ->selectRaw(
+                'COALESCE(SUM(COALESCE(amended_amount, original_amount) - COALESCE(fulfilled_amount, 0)), 0) as aggregate'
+            )
+            ->value('aggregate');
 
-        $committedElsewhere = '0';
-        foreach ($committedQuery->get() as $other) {
-            $committedElsewhere = bcadd(
-                $committedElsewhere,
-                bcsub(
-                    (string) ($other->amended_amount ?? $other->original_amount),
-                    (string) $other->fulfilled_amount,
-                    2
-                ),
-                2
-            );
-        }
+        return bcadd((string) $committed, '0', 2);
+    }
 
-        $available = bcsub($cashOnHand, $committedElsewhere, 2);
-
+    /**
+     * @return array{cash_on_hand: string, committed: string}
+     */
+    public function cashAvailabilityContext(): array
+    {
         return [
-            'spends_cash' => true,
-            'scope' => 'finance_wallet',
-            'cash_on_hand' => $cashOnHand,
-            'committed' => $committedElsewhere,
-            'available' => $available,
-            'required' => $required,
-            'exceeds' => bccomp($required, $available, 2) === 1,
+            'cash_on_hand' => $this->moneyAccountService->financeBalance(),
+            'committed' => $this->cashCommitmentTotal(),
         ];
     }
 

@@ -7,8 +7,9 @@ use App\Enums\ExpenseCategory;
 use App\Enums\PaymentMethod;
 use App\Exceptions\InsufficientCashException;
 use App\Exports\ExpenseExport;
-use App\Models\CashDisbursement;
+use App\Models\AccountTransaction;
 use App\Models\BudgetTransaction;
+use App\Models\CashDisbursement;
 use App\Models\Expense;
 use App\Models\Project;
 use App\Models\Recipient;
@@ -18,6 +19,7 @@ use App\Models\User;
 use App\Support\ListingQuery;
 use App\Support\OrganizationFundUse;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Maatwebsite\Excel\Facades\Excel;
@@ -184,7 +186,7 @@ class ExpenseService
 
             foreach ($oldDisbursements as $disbursement) {
                 if ($disbursement->account_transaction_id) {
-                    $tx = \App\Models\AccountTransaction::find($disbursement->account_transaction_id);
+                    $tx = AccountTransaction::find($disbursement->account_transaction_id);
                     if ($tx) {
                         $this->moneyAccountService->reverseFinanceDisbursement(
                             $tx,
@@ -240,7 +242,7 @@ class ExpenseService
 
             foreach ($disbursements as $disbursement) {
                 if ($disbursement->account_transaction_id) {
-                    $tx = \App\Models\AccountTransaction::find($disbursement->account_transaction_id);
+                    $tx = AccountTransaction::find($disbursement->account_transaction_id);
                     if ($tx) {
                         $this->moneyAccountService->reverseFinanceDisbursement(
                             $tx,
@@ -298,9 +300,9 @@ class ExpenseService
     }
 
     /**
-     * @return \Illuminate\Database\Eloquent\Collection<int, Expense>
+     * @return Collection<int, Expense>
      */
-    public function list(array $filters = []): \Illuminate\Database\Eloquent\Collection
+    public function list(array $filters = []): Collection
     {
         return Expense::query()
             ->with('project')
@@ -314,9 +316,9 @@ class ExpenseService
     }
 
     /**
-     * @return \Illuminate\Database\Eloquent\Collection<int, Expense>
+     * @return Collection<int, Expense>
      */
-    public function overhead(array $filters = []): \Illuminate\Database\Eloquent\Collection
+    public function overhead(array $filters = []): Collection
     {
         return Expense::query()
             ->where('category', ExpenseCategory::Indirect)
@@ -330,13 +332,14 @@ class ExpenseService
 
     public function overheadTotal(array $filters = []): string
     {
-        $total = '0';
+        $total = Expense::query()
+            ->where('category', ExpenseCategory::Indirect)
+            ->when($filters['sub_type'] ?? null, fn ($q, $type) => $q->where('sub_type', $type))
+            ->when($filters['from'] ?? null, fn ($q, $from) => $q->whereDate('expense_date', '>=', $from))
+            ->when($filters['to'] ?? null, fn ($q, $to) => $q->whereDate('expense_date', '<=', $to))
+            ->sum('amount');
 
-        foreach ($this->overhead($filters) as $expense) {
-            $total = bcadd($total, (string) $expense->amount, 2);
-        }
-
-        return $total;
+        return bcadd((string) $total, '0', 2);
     }
 
     /**

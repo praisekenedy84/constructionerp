@@ -56,9 +56,10 @@ class ReportService
         $projects = Project::query()
             ->when($filters['project_id'] ?? null, fn ($q, $id) => $q->where('id', $id))
             ->get();
+        $budgetSummaries = $this->budgetService->summaries($projects);
 
-        $projectSummaries = $projects->map(function (Project $project) {
-            $budget = $this->budgetService->summary($project);
+        $projectSummaries = $projects->map(function (Project $project) use ($budgetSummaries) {
+            $budget = $budgetSummaries[$project->id];
 
             return [
                 'id' => $project->id,
@@ -95,6 +96,31 @@ class ReportService
     public function dashboardStats(array $filters = []): array
     {
         $executive = $this->executiveDashboard($filters);
+
+        return $this->dashboardStatsFrom($executive, $filters);
+    }
+
+    /**
+     * Build both dashboard payloads without repeating portfolio queries.
+     *
+     * @return array{stats: array<string, mixed>, charts: array<string, mixed>}
+     */
+    public function dashboardOverview(array $filters = []): array
+    {
+        $executive = $this->executiveDashboard($filters);
+        $pipeline = $this->requisitionPipeline($filters);
+
+        return [
+            'stats' => $this->dashboardStatsFrom($executive, $filters),
+            'charts' => $this->dashboardChartsFrom($executive, $pipeline),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $executive
+     */
+    private function dashboardStatsFrom(array $executive, array $filters): array
+    {
         $activeProjects = collect($executive['projects'])
             ->where('status', ProjectStatus::Active->value);
 
@@ -131,6 +157,15 @@ class ReportService
         $executive = $this->executiveDashboard($filters);
         $pipeline = $this->requisitionPipeline($filters);
 
+        return $this->dashboardChartsFrom($executive, $pipeline);
+    }
+
+    /**
+     * @param  array<string, mixed>  $executive
+     * @param  array<string, mixed>  $pipeline
+     */
+    private function dashboardChartsFrom(array $executive, array $pipeline): array
+    {
         $projectBudget = collect($executive['projects'])
             ->where('status', ProjectStatus::Active->value)
             ->sortByDesc(fn (array $project) => (float) $project['utilization_pct'])
@@ -243,7 +278,7 @@ class ReportService
         ];
     }
 
-    public function cashPosition(array $filters = []): array
+    public function cashPosition(array $filters = [], bool $includeAllocations = true): array
     {
         $scope = $filters['scope'] ?? null;
         $projectId = $filters['project_id'] ?? null;
@@ -255,10 +290,12 @@ class ReportService
         // committed / disbursed breakdowns for reporting.
         $cashOnHand = $this->moneyAccountService->financeBalance();
 
-        $receivedAllocations = CashAllocation::query()
-            ->where('status', CashAllocationStatus::Received)
-            ->get();
-        $received = $this->sumDecimal($receivedAllocations->pluck('received_amount')->map(fn ($v) => (string) $v)->all());
+        $receivedQuery = CashAllocation::query()
+            ->where('status', CashAllocationStatus::Received);
+        $received = bcadd((string) (clone $receivedQuery)->sum('received_amount'), '0', 2);
+        $receivedAllocations = $includeAllocations
+            ? (clone $receivedQuery)->get()
+            : collect();
         $utilized = bcsub($received, $cashOnHand, 2);
         if (bccomp($utilized, '0', 2) < 0) {
             $utilized = '0.00';
@@ -280,13 +317,15 @@ class ReportService
                                 FulfillmentType::DirectSupplierPayment->value,
                             ]);
                     });
-            })
-            ->get();
+            });
 
-        $committed = '0';
-        foreach ($committedReqs as $requisition) {
-            $committed = bcadd($committed, (string) ($requisition->amended_amount ?? $requisition->original_amount), 2);
-        }
+        $committed = bcadd(
+            (string) (clone $committedReqs)
+                ->selectRaw('COALESCE(SUM(COALESCE(amended_amount, original_amount)), 0) as aggregate')
+                ->value('aggregate'),
+            '0',
+            2,
+        );
 
         $finance = $this->moneyAccountService->ensureFinanceAccount();
 
@@ -305,12 +344,13 @@ class ReportService
             ->when(! $organizationOnly && ! $projectId, fn ($q) => $q->where('money_account_id', $finance->id))
             ->sum('amount');
 
-        $paidAgainstCommitted = '0.00';
-        if ($committedReqs->isNotEmpty()) {
-            $paidAgainstCommitted = (string) CashDisbursement::query()
-                ->whereIn('requisition_id', $committedReqs->modelKeys())
-                ->sum('amount');
-        }
+        $paidAgainstCommitted = bcadd(
+            (string) CashDisbursement::query()
+                ->whereIn('requisition_id', (clone $committedReqs)->select('id'))
+                ->sum('amount'),
+            '0',
+            2,
+        );
 
         $outstanding = bcsub($committed, $paidAgainstCommitted, 2);
 

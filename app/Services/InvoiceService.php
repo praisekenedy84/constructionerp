@@ -129,6 +129,41 @@ class InvoiceService
         });
     }
 
+    public function deletePayment(Invoice $invoice, int $paymentId): Invoice
+    {
+        return DB::transaction(function () use ($invoice, $paymentId): Invoice {
+            $locked = Invoice::query()->lockForUpdate()->findOrFail($invoice->id);
+            $payment = $locked->payments()
+                ->whereKey($paymentId)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $receiptFile = $payment->receipt_file;
+
+            $payment->delete();
+
+            $locked->loadSum('payments', 'amount_paid');
+            $hasPayments = bccomp($locked->paid_amount, '0', 2) === 1;
+            $paid = bccomp($locked->paid_amount, (string) $locked->total_amount, 2) >= 0;
+
+            $locked->update([
+                'status' => $paid
+                    ? InvoiceStatus::Paid
+                    : ($hasPayments
+                        ? InvoiceStatus::PartiallyPaid
+                        : ($locked->printed_at ? InvoiceStatus::Printed : InvoiceStatus::Issued)),
+                'paid_at' => $paid
+                    ? $locked->payments()->max('payment_date')
+                    : null,
+            ]);
+
+            if ($receiptFile) {
+                Storage::disk('public')->delete($receiptFile);
+            }
+
+            return $locked->refresh();
+        });
+    }
+
     /** @param array<string, mixed> $data */
     public function storeSignature(Invoice $invoice, array $data, User $user): void
     {

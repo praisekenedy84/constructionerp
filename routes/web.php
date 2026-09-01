@@ -161,6 +161,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/invoices', [InvoiceController::class, 'store'])->name('invoices.store');
     Route::post('/invoices/{id}/issue', [InvoiceController::class, 'issue'])->whereNumber('id')->name('invoices.issue');
     Route::post('/invoices/{id}/payments', [InvoiceController::class, 'recordPayment'])->whereNumber('id')->name('invoices.payments.store');
+    Route::delete('/invoices/{id}/payments/{paymentId}', [InvoiceController::class, 'destroyPayment'])->whereNumber(['id', 'paymentId'])->name('invoices.payments.destroy');
     Route::post('/invoices/{id}/signatures', [InvoiceController::class, 'storeSignature'])->whereNumber('id')->name('invoices.signatures.store');
     Route::get('/invoices/{id}/pdf', [InvoiceController::class, 'pdf'])->whereNumber('id')->name('invoices.pdf');
     Route::get('/finance/overview', [FinanceController::class, 'overview'])->name('finance.overview');

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Enums\InventoryItemCategory;
 use App\Enums\RequisitionStatus;
 use App\Exceptions\BOQLimitExceededException;
+use App\Exceptions\InsufficientCashException;
 use App\Exceptions\InvalidTransitionException;
 use App\Http\Requests\AddRequisitionAttachmentRequest;
 use App\Http\Requests\StoreRequisitionRequest;
@@ -22,6 +23,7 @@ use App\Models\RequisitionCategory;
 use App\Models\StockLocation;
 use App\Models\Unit;
 use App\Services\MoneyAccountService;
+use App\Services\PayrollService;
 use App\Services\ReportService;
 use App\Services\RequisitionRegisterService;
 use App\Services\RequisitionService;
@@ -237,7 +239,7 @@ class RequisitionController extends Controller
             return back()->withErrors(['to_status' => $e->getMessage()]);
         } catch (AuthorizationException $e) {
             return back()->with('error', $e->getMessage());
-        } catch (BOQLimitExceededException|\App\Exceptions\InsufficientCashException|\App\Exceptions\InsufficientStockException|\InvalidArgumentException $e) {
+        } catch (BOQLimitExceededException|InsufficientCashException|\App\Exceptions\InsufficientStockException|\InvalidArgumentException $e) {
             return back()->with('error', $e->getMessage());
         } catch (ValidationException $e) {
             throw $e;
@@ -299,13 +301,18 @@ class RequisitionController extends Controller
         $approvalSteps = $listing->paginate(25);
 
         $cashByRequisitionId = [];
+        $cashContext = $this->requisitionService->cashAvailabilityContext();
         foreach ($approvalSteps->getCollection() as $step) {
             $requisition = $step->requisition;
             if (! $requisition || isset($cashByRequisitionId[$requisition->id])) {
                 continue;
             }
 
-            $availability = $this->requisitionService->cashAvailability($requisition);
+            $availability = $this->requisitionService->cashAvailability(
+                $requisition,
+                committedElsewhere: $cashContext['committed'],
+                cashOnHand: $cashContext['cash_on_hand'],
+            );
             if ($availability !== null) {
                 $cashByRequisitionId[$requisition->id] = $availability;
             }
@@ -417,8 +424,8 @@ class RequisitionController extends Controller
             ]);
 
         // Ensure Salaries exists so administrative payroll requisitions can use it.
-        app(\App\Services\PayrollService::class)->ensureSalariesCategory();
-        app(\App\Services\PayrollService::class)->ensurePayrollDepartment();
+        app(PayrollService::class)->ensureSalariesCategory();
+        app(PayrollService::class)->ensurePayrollDepartment();
 
         $categories = RequisitionCategory::query()
             ->active()
@@ -572,6 +579,7 @@ class RequisitionController extends Controller
                     'description' => $current->description,
                     'is_active' => $current->is_active,
                 ])->values();
+
                 continue;
             }
 

@@ -19,10 +19,15 @@ export default function DataPanel({
     noPadding = false,
 }: DataPanelProps) {
     return (
-        <div className={cn('rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900', className)}>
+        <section
+            className={cn(
+                'min-w-0 rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900',
+                className,
+            )}
+        >
             {(title || actions) && (
-                <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 dark:border-slate-800">
-                    <div>
+                <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 dark:border-slate-800">
+                    <div className="min-w-0">
                         {title && (
                             <h3 className="text-sm font-semibold text-slate-900 dark:text-white">{title}</h3>
                         )}
@@ -30,10 +35,14 @@ export default function DataPanel({
                             <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{description}</p>
                         )}
                     </div>
-                    {actions && <div className="flex items-center gap-2">{actions}</div>}
+                    {actions && (
+                        <div className="flex min-w-0 flex-wrap items-center gap-2 sm:shrink-0">
+                            {actions}
+                        </div>
+                    )}
                 </div>
             )}
-            <div className={cn(!noPadding && 'p-6')}>{children}</div>
-        </div>
+            <div className={cn('min-w-0', !noPadding && 'p-4 sm:p-6')}>{children}</div>
+        </section>
     );
 }

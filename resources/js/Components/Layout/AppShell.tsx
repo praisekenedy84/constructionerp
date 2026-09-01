@@ -133,7 +133,7 @@ export default function AppShell({ title, children }: AppShellProps) {
                 </nav>
             </aside>
 
-            <div className={cn('md:pl-64', isImpersonating && 'pt-10')}>
+            <div className={cn('min-w-0 md:pl-64', isImpersonating && 'pt-10')}>
                 <header className="sticky top-0 z-20 flex h-16 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 sm:px-8 dark:border-slate-800 dark:bg-slate-900/80 dark:backdrop-blur">
                     <div className="flex min-w-0 items-center gap-3">
                         <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
@@ -200,7 +200,7 @@ export default function AppShell({ title, children }: AppShellProps) {
                         </Link>
                     </div>
                 </header>
-                <main className="p-4 sm:p-8">
+                <main className="min-w-0 overflow-x-hidden p-4 sm:p-6 lg:p-8">
                     {(flash?.success || flash?.error) && (
                         <div className="mb-6 space-y-2">
                             {flash.success && (

@@ -7,6 +7,7 @@ use App\Enums\ComplianceAllocationLevel;
 use App\Models\BudgetTransaction;
 use App\Models\Project;
 use App\Models\ProjectComplianceItem;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 class BudgetService
@@ -29,35 +30,98 @@ class BudgetService
      */
     public function summary(Project $project): array
     {
+        return $this->summaries(collect([$project]))[$project->id];
+    }
+
+    /**
+     * Build budget summaries with a fixed number of aggregate queries.
+     *
+     * @param  Collection<int, Project>  $projects
+     * @return array<int, array{
+     *     gross_budget: string,
+     *     ipc_deductions: string,
+     *     ledger_spend: string,
+     *     utilized_budget: string,
+     *     remaining_budget: string,
+     *     utilization_percentage: string,
+     *     contract_amount: string,
+     *     contract_compliance_total: string,
+     *     remaining_contract_value: string,
+     *     phase_allocated: string,
+     *     unallocated_contract_value: string,
+     *     has_phases: bool
+     * }>
+     */
+    public function summaries(Collection $projects): array
+    {
+        if ($projects->isEmpty()) {
+            return [];
+        }
+
+        $projectIds = $projects->pluck('id')->all();
+
+        $contractCompliance = ProjectComplianceItem::query()
+            ->whereIn('project_id', $projectIds)
+            ->where('allocation_level', ComplianceAllocationLevel::Contract)
+            ->selectRaw('project_id, SUM(amount) as total')
+            ->groupBy('project_id')
+            ->pluck('total', 'project_id');
+
+        $phases = DB::table('project_phases')
+            ->whereIn('project_id', $projectIds)
+            ->selectRaw('project_id, SUM(disbursed_amount) as allocated, COUNT(*) as phase_count')
+            ->groupBy('project_id')
+            ->get()
+            ->keyBy('project_id');
+
+        $ledgerSpend = BudgetTransaction::query()
+            ->whereIn('project_id', $projectIds)
+            ->selectRaw('project_id, SUM(amount) as total')
+            ->groupBy('project_id')
+            ->pluck('total', 'project_id');
+
+        return $projects->mapWithKeys(function (Project $project) use ($contractCompliance, $phases, $ledgerSpend) {
+            $phase = $phases->get($project->id);
+
+            return [
+                $project->id => $this->buildSummary(
+                    $project,
+                    (string) ($contractCompliance->get($project->id) ?? '0'),
+                    (string) ($phase->allocated ?? '0'),
+                    (int) ($phase->phase_count ?? 0) > 0,
+                    (string) ($ledgerSpend->get($project->id) ?? '0'),
+                ),
+            ];
+        })->all();
+    }
+
+    /**
+     * @return array<string, string|bool>
+     */
+    private function buildSummary(
+        Project $project,
+        string $contractComplianceTotal,
+        string $phaseAllocatedTotal,
+        bool $hasPhases,
+        string $ledgerSpendTotal,
+    ): array {
         $contractAmount = bcadd((string) $project->contract_amount, '0', 2);
-        $contractCompliance = bcadd(
-            (string) ProjectComplianceItem::query()
-                ->where('project_id', $project->id)
-                ->where('allocation_level', ComplianceAllocationLevel::Contract)
-                ->sum('amount'),
-            '0',
-            2,
-        );
+        $contractCompliance = bcadd($contractComplianceTotal, '0', 2);
         $remainingContract = bcsub($contractAmount, $contractCompliance, 2);
         if (bccomp($remainingContract, '0', 2) === -1) {
             $remainingContract = '0.00';
         }
 
-        $phaseAllocated = bcadd((string) $project->phases()->sum('disbursed_amount'), '0', 2);
+        $phaseAllocated = bcadd($phaseAllocatedTotal, '0', 2);
         $unallocatedContract = bcsub($contractAmount, $phaseAllocated, 2);
         if (bccomp($unallocatedContract, '0', 2) === -1) {
             $unallocatedContract = '0.00';
         }
-        $hasPhases = $project->phases()->exists();
 
         // Before phases: gross tracks remaining contract value after compliance.
         $grossBudget = $hasPhases ? $phaseAllocated : $remainingContract;
         $netBudget = bcadd((string) $project->net_budget, '0', 2);
-        $ledgerSpend = bcadd(
-            (string) BudgetTransaction::where('project_id', $project->id)->sum('amount'),
-            '0',
-            2,
-        );
+        $ledgerSpend = bcadd($ledgerSpendTotal, '0', 2);
         $ipcDeductions = $hasPhases
             ? bcsub($grossBudget, $netBudget, 2)
             : $contractCompliance;

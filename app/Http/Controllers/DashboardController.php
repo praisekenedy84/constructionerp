@@ -12,9 +12,11 @@ class DashboardController extends Controller
 
     public function index(): Response
     {
+        $dashboard = $this->reportService->dashboardOverview();
+
         return Inertia::render('Dashboard', [
-            'stats' => $this->reportService->dashboardStats(),
-            'charts' => $this->reportService->dashboardCharts(),
+            'stats' => $dashboard['stats'],
+            'charts' => $dashboard['charts'],
         ]);
     }
 }

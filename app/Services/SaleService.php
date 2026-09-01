@@ -512,6 +512,31 @@ class SaleService
     }
 
     /**
+     * @param  array<int, int>  $projectIds
+     * @return array<int, string>
+     */
+    public function recognizedProfitForProjects(array $projectIds): array
+    {
+        if ($projectIds === []) {
+            return [];
+        }
+
+        return Sale::query()
+            ->whereIn('project_id', $projectIds)
+            ->whereNotNull('phase_id')
+            ->whereIn('status', [
+                SaleStatus::Receivable,
+                SaleStatus::PartiallyPaid,
+                SaleStatus::Paid,
+            ])
+            ->selectRaw('project_id, SUM(profit_amount) as total')
+            ->groupBy('project_id')
+            ->pluck('total', 'project_id')
+            ->map(fn ($total) => bcadd((string) $total, '0', 2))
+            ->all();
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function formatSale(Sale $sale, ?string $liveProfit = null): array

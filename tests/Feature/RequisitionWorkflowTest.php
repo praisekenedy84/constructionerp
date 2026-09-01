@@ -19,6 +19,7 @@ use App\Models\WorkflowConfig;
 use App\Services\AuthService;
 use App\Services\PermissionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class RequisitionWorkflowTest extends TestCase
@@ -489,6 +490,64 @@ class RequisitionWorkflowTest extends TestCase
             ->component('Requisitions/Review')
             ->has('approvalSteps.data', 1)
             ->has('cashByRequisitionId')
+        );
+
+        $tenant = Tenant::where('slug', 'workflow-co')->first();
+        $tenant->run(function () {
+            Requisition::first()->update([
+                'fulfillment_type' => 'cash_disbursement',
+                'addressed_to' => 'finance',
+            ]);
+        });
+
+        $queryCount = 0;
+        $captureQueries = false;
+        DB::listen(function () use (&$queryCount, &$captureQueries) {
+            if ($captureQueries) {
+                $queryCount++;
+            }
+        });
+        $measure = function (callable $callback) use (&$queryCount, &$captureQueries): int {
+            $queryCount = 0;
+            $captureQueries = true;
+            try {
+                $callback();
+            } finally {
+                $captureQueries = false;
+            }
+
+            return $queryCount;
+        };
+
+        $singleApprovalQueries = $measure(
+            fn () => $this->get('/requisitions/review-queue')->assertOk()
+        );
+
+        $tenant->run(function () {
+            $source = Requisition::first();
+            foreach (range(2, 7) as $number) {
+                $requisition = $source->replicate();
+                $requisition->requisition_no = "REQ-2026-QUEUE-{$number}";
+                $requisition->save();
+
+                ApprovalStep::create([
+                    'requisition_id' => $requisition->id,
+                    'level' => 1,
+                    'required_role' => 'Finance Manager',
+                    'status' => 'pending',
+                    'assigned_at' => now(),
+                ]);
+            }
+        });
+
+        $manyApprovalQueries = $measure(
+            fn () => $this->get('/requisitions/review-queue')->assertOk()
+        );
+
+        $this->assertLessThanOrEqual(
+            $singleApprovalQueries + 1,
+            $manyApprovalQueries,
+            'Review queue query count should not grow with each approval row.',
         );
     }
 }

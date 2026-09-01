@@ -35,28 +35,32 @@ class FinanceController extends Controller
         $this->authorizePermission($request->user(), 'budgets', 'read');
 
         $this->moneyAccountService->ensureFinanceAccount($request->user());
-        $projectCash = $this->reportService->cashPosition([]);
-        $orgOverview = $this->cashService->organizationOverview();
-        $stats = $this->reportService->dashboardStats();
-        $charts = $this->reportService->dashboardCharts();
+        $projectCash = $this->reportService->cashPosition([], false);
+        $orgOverview = $this->cashService->organizationOverview($projectCash);
+        $dashboard = $this->reportService->dashboardOverview();
+        $stats = $dashboard['stats'];
+        $charts = $dashboard['charts'];
 
         $managerBalance = $this->moneyAccountService->managerBalance();
 
+        $fundCounts = CashAllocation::query()
+            ->selectRaw('status, COUNT(*) as aggregate')
+            ->groupBy('status')
+            ->pluck('aggregate', 'status');
         $fundPipeline = [
-            'pending' => CashAllocation::where('status', CashAllocationStatus::Pending)->count(),
-            'approved' => CashAllocation::where('status', CashAllocationStatus::Approved)->count(),
-            'received' => CashAllocation::where('status', CashAllocationStatus::Received)->count(),
-            'rejected' => CashAllocation::where('status', CashAllocationStatus::Rejected)->count(),
+            'pending' => (int) $fundCounts->get(CashAllocationStatus::Pending->value, 0),
+            'approved' => (int) $fundCounts->get(CashAllocationStatus::Approved->value, 0),
+            'received' => (int) $fundCounts->get(CashAllocationStatus::Received->value, 0),
+            'rejected' => (int) $fundCounts->get(CashAllocationStatus::Rejected->value, 0),
         ];
 
-        $pendingFundAmount = '0.00';
-        foreach (
-            CashAllocation::query()
+        $pendingFundAmount = bcadd(
+            (string) CashAllocation::query()
                 ->where('status', CashAllocationStatus::Pending)
-                ->get(['requested_amount']) as $row
-        ) {
-            $pendingFundAmount = bcadd($pendingFundAmount, (string) $row->requested_amount, 2);
-        }
+                ->sum('requested_amount'),
+            '0',
+            2,
+        );
 
         $directExpensesTotal = bcadd(
             (string) Expense::query()

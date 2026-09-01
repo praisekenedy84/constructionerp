@@ -571,9 +571,10 @@ export default function RequisitionsShow() {
                     </DataPanel>
                 </div>
 
-                <div className="grid gap-6 lg:grid-cols-2">
+                <div className="space-y-6">
                     <DataPanel title="Line Items">
-                        <table className="w-full text-sm">
+                        <div className="overflow-x-auto">
+                        <table className="w-full min-w-[960px] text-sm">
                             <thead>
                                 <tr className="text-left text-xs text-slate-500">
                                     <th className="pb-2 font-medium">Description</th>
@@ -702,6 +703,7 @@ export default function RequisitionsShow() {
                                 )}
                             </tfoot>
                         </table>
+                        </div>
                     </DataPanel>
 
                     <DataPanel title="BOQ Impact">
@@ -984,8 +986,8 @@ export default function RequisitionsShow() {
                                             </label>
                                             {payment.selected && (
                                                 <>
-                                                <div className="overflow-hidden rounded-md border border-slate-200">
-                                                    <table className="w-full text-sm">
+                                                <div className="overflow-x-auto rounded-md border border-slate-200">
+                                                    <table className="w-full min-w-[640px] text-sm">
                                                         <thead className="bg-slate-50 text-left text-xs text-slate-500">
                                                             <tr>
                                                                 <th className="px-3 py-2 font-medium">
@@ -1259,8 +1261,8 @@ export default function RequisitionsShow() {
                             </div>
 
                             {transitionForm.data.fulfillment_scope === 'items' && (
-                                <div className="overflow-hidden rounded-md border border-slate-200">
-                                    <table className="w-full text-sm">
+                                <div className="overflow-x-auto rounded-md border border-slate-200">
+                                    <table className="w-full min-w-[640px] text-sm">
                                         <thead className="bg-slate-50 text-left text-xs text-slate-500">
                                             <tr>
                                                 <th className="px-3 py-2 font-medium">Item</th>

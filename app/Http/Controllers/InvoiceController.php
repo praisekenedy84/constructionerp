@@ -111,6 +111,15 @@ class InvoiceController extends Controller
         return back()->with('success', "Payment recorded for {$invoice->invoice_number}.");
     }
 
+    public function destroyPayment(Request $request, int $id, int $paymentId): RedirectResponse
+    {
+        $this->authorizePermission($request->user(), 'invoices', 'collect');
+        $invoice = Invoice::findOrFail($id);
+        $this->invoiceService->deletePayment($invoice, $paymentId);
+
+        return back()->with('success', "Payment deleted from {$invoice->invoice_number}.");
+    }
+
     public function storeSignature(StoreInvoiceSignatureRequest $request, int $id): RedirectResponse
     {
         $this->authorizePermission($request->user(), 'invoices', 'sign');

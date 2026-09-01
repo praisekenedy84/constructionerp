@@ -126,7 +126,7 @@ export default function ListToolbar({
     }
 
     return (
-        <form onSubmit={submit} className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <form onSubmit={submit} className="min-w-0 space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <div className="grid gap-3 lg:grid-cols-[1fr_auto_auto_auto] lg:items-end">
                 <div className="space-y-2">
                     <Label htmlFor="list-search">Search</Label>
@@ -159,23 +159,23 @@ export default function ListToolbar({
                 </div>
 
                 <div className="flex gap-2">
-                    <Button type="submit">
+                    <Button type="submit" className="flex-1 lg:flex-none">
                         <Search className="mr-2 h-4 w-4" />
                         Search
                     </Button>
-                    <Button type="button" variant="outline" onClick={clearFilters}>
+                    <Button type="button" variant="outline" className="flex-1 lg:flex-none" onClick={clearFilters}>
                         Clear
                     </Button>
                 </div>
             </div>
 
-            <div className="flex flex-wrap items-end gap-3">
-                <div className="space-y-2">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+                <div className="w-full space-y-2 sm:w-auto">
                     <Label htmlFor="list-sort">Sort by</Label>
                     <div className="flex gap-2">
                         <select
                             id="list-sort"
-                            className="h-10 rounded-md border border-slate-200 px-3 text-sm"
+                            className="h-10 min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-3 text-sm sm:flex-none dark:border-slate-700 dark:bg-slate-800"
                             value={sort}
                             onChange={(e) => setSort(e.target.value)}
                         >
@@ -201,11 +201,11 @@ export default function ListToolbar({
                 </div>
 
                 {selectFilters.map((filter) => (
-                    <div key={filter.key} className="space-y-2">
+                    <div key={filter.key} className="w-full space-y-2 sm:w-auto">
                         <Label htmlFor={`filter-${filter.key}`}>{filter.label}</Label>
                         <select
                             id={`filter-${filter.key}`}
-                            className="h-10 rounded-md border border-slate-200 px-3 text-sm"
+                            className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-800"
                             value={extras[filter.key] ?? ''}
                             onChange={(e) => setExtra(filter.key, e.target.value)}
                         >
@@ -220,14 +220,14 @@ export default function ListToolbar({
                 ))}
 
                 {textFilters.map((filter) => (
-                    <div key={filter.key} className="space-y-2">
+                    <div key={filter.key} className="w-full space-y-2 sm:w-auto">
                         <Label htmlFor={`filter-${filter.key}`}>{filter.label}</Label>
                         <Input
                             id={`filter-${filter.key}`}
                             placeholder={filter.placeholder}
                             value={extras[filter.key] ?? ''}
                             onChange={(e) => setExtra(filter.key, e.target.value)}
-                            className="w-40"
+                            className="w-full sm:w-40"
                         />
                     </div>
                 ))}

@@ -18,7 +18,7 @@ class InvoiceModuleTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_invoice_uses_phase_amount_and_tracks_partial_and_full_payment(): void
+    public function test_invoice_tracks_payments_and_recalculates_status_when_they_are_deleted(): void
     {
         $tenant = Tenant::create([
             'name' => 'Invoice Co',
@@ -107,6 +107,26 @@ class InvoiceModuleTest extends TestCase
             $this->assertSame(InvoiceStatus::Paid, $invoice->status);
             $this->assertSame('0.00', $invoice->outstanding_amount);
             $this->assertNotNull($invoice->paid_at);
+
+            $secondPayment = $invoice->payments()
+                ->where('receipt_number', 'RCPT-002')
+                ->firstOrFail();
+            $service->deletePayment($invoice, $secondPayment->id);
+
+            $invoice = Invoice::findOrFail($invoice->id);
+            $this->assertSame(InvoiceStatus::PartiallyPaid, $invoice->status);
+            $this->assertSame('920.00', $invoice->outstanding_amount);
+            $this->assertNull($invoice->paid_at);
+
+            $firstPayment = $invoice->payments()
+                ->where('receipt_number', 'RCPT-001')
+                ->firstOrFail();
+            $service->deletePayment($invoice, $firstPayment->id);
+
+            $invoice = Invoice::findOrFail($invoice->id);
+            $this->assertSame(InvoiceStatus::Issued, $invoice->status);
+            $this->assertSame('1120.00', $invoice->outstanding_amount);
+            $this->assertCount(0, $invoice->payments);
         });
     }
 

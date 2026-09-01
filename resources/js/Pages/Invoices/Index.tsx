@@ -14,6 +14,7 @@ import { formatCurrency, formatDate } from '@/lib/formatters';
 import {
     Customer,
     Invoice,
+    InvoicePayment,
     InvoiceStatus,
     ListingFilters,
     PageProps,
@@ -22,7 +23,7 @@ import {
     ProjectPhase,
 } from '@/types';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
-import { Banknote, FileSignature, Plus, Printer, Receipt, Send } from 'lucide-react';
+import { Banknote, FileSignature, Plus, Printer, Receipt, Send, Trash2 } from 'lucide-react';
 import { FormEvent, useMemo, useState } from 'react';
 
 interface ProjectWithPhases extends Project {
@@ -176,6 +177,18 @@ export default function InvoiceIndex() {
                 paymentForm.reset();
             },
         });
+    }
+
+    function deletePayment(invoice: Invoice, payment: InvoicePayment) {
+        if (
+            !confirm(
+                `Delete payment ${payment.receipt_number} of ${formatCurrency(payment.amount_paid)}? The invoice outstanding amount will increase.`,
+            )
+        ) {
+            return;
+        }
+
+        router.delete(`/invoices/${invoice.id}/payments/${payment.id}`);
     }
 
     function openSignature(invoice: Invoice) {
@@ -360,18 +373,39 @@ export default function InvoiceIndex() {
                                                 )}
                                             </div>
                                             {(invoice.payments?.length ?? 0) > 0 && (
-                                                <div className="mt-2 flex justify-end gap-2">
-                                                    {invoice.payments?.filter((payment) => payment.receipt_url).map((payment) => (
-                                                        <a
-                                                            key={payment.id}
-                                                            href={payment.receipt_url ?? '#'}
-                                                            target="_blank"
-                                                            rel="noreferrer"
-                                                            className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
-                                                        >
-                                                            <Receipt className="h-3 w-3" />
-                                                            {payment.receipt_number}
-                                                        </a>
+                                                <div className="mt-2 space-y-1">
+                                                    {invoice.payments?.map((payment) => (
+                                                        <div key={payment.id} className="flex items-center justify-end gap-2 text-xs">
+                                                            <span className="text-slate-500">
+                                                                {formatDate(payment.payment_date)} · {formatCurrency(payment.amount_paid)}
+                                                            </span>
+                                                            {payment.receipt_url ? (
+                                                                <a
+                                                                    href={payment.receipt_url}
+                                                                    target="_blank"
+                                                                    rel="noreferrer"
+                                                                    className="inline-flex items-center gap-1 text-blue-600 hover:underline"
+                                                                    title="View receipt"
+                                                                >
+                                                                    <Receipt className="h-3 w-3" />
+                                                                    {payment.receipt_number}
+                                                                </a>
+                                                            ) : (
+                                                                <span>{payment.receipt_number}</span>
+                                                            )}
+                                                            {can('invoices:collect') && (
+                                                                <Button
+                                                                    size="sm"
+                                                                    variant="ghost"
+                                                                    className="h-7 px-2 text-red-600 hover:text-red-700"
+                                                                    onClick={() => deletePayment(invoice, payment)}
+                                                                    title="Delete payment"
+                                                                    aria-label={`Delete payment ${payment.receipt_number}`}
+                                                                >
+                                                                    <Trash2 className="h-3.5 w-3.5" />
+                                                                </Button>
+                                                            )}
+                                                        </div>
                                                     ))}
                                                 </div>
                                             )}

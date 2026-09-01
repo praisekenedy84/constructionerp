@@ -10,6 +10,7 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Services\AuthService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class ProjectOverviewTest extends TestCase
@@ -92,5 +93,52 @@ class ProjectOverviewTest extends TestCase
                 ->where('projects.data.0.profit_percentage', '60.00')
                 ->where('projects.data.0.utilization_percentage', '40.00')
             );
+
+        $queryCount = 0;
+        $captureQueries = false;
+        DB::listen(function () use (&$queryCount, &$captureQueries) {
+            if ($captureQueries) {
+                $queryCount++;
+            }
+        });
+        $measure = function (callable $callback) use (&$queryCount, &$captureQueries): int {
+            $queryCount = 0;
+            $captureQueries = true;
+            try {
+                $callback();
+            } finally {
+                $captureQueries = false;
+            }
+
+            return $queryCount;
+        };
+
+        $singleProjectQueries = $measure(fn () => $this->get('/projects')->assertOk());
+
+        $tenant->run(function () {
+            foreach (range(2, 8) as $number) {
+                Project::create([
+                    'code' => "PRJ-OVERVIEW-{$number}",
+                    'name' => "Overview Project {$number}",
+                    'client' => 'Test Client',
+                    'location' => 'Mbeya',
+                    'contract_amount' => '1000.00',
+                    'wht_percentage' => '0',
+                    'net_budget' => '1000.00',
+                    'physical_progress_pct' => '0',
+                    'start_date' => '2026-01-01',
+                    'end_date' => '2026-12-31',
+                    'status' => 'active',
+                ]);
+            }
+        });
+
+        $manyProjectQueries = $measure(fn () => $this->get('/projects')->assertOk());
+
+        $this->assertLessThanOrEqual(
+            $singleProjectQueries + 1,
+            $manyProjectQueries,
+            'Project index query count should not grow with each project row.',
+        );
     }
 }

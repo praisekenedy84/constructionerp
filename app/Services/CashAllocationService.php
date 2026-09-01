@@ -4,10 +4,12 @@ namespace App\Services;
 
 use App\Enums\CashAllocationStatus;
 use App\Models\CashAllocation;
+use App\Models\CashDisbursement;
 use App\Models\MoneyAccount;
 use App\Models\Project;
 use App\Models\User;
 use App\Support\OrganizationFundUse;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 
 class CashAllocationService
@@ -188,7 +190,7 @@ class CashAllocationService
     /**
      * @return array{
      *     reconciliation: array<string, string>,
-     *     recent_allocations: \Illuminate\Database\Eloquent\Collection<int, CashAllocation>,
+     *     recent_allocations: Collection<int, CashAllocation>,
      * }
      */
     public function dashboard(Project $project): array
@@ -218,23 +220,27 @@ class CashAllocationService
      *     use_breakdown: list<array{bucket: string, label: string, amount: string}>,
      * }
      */
-    public function organizationOverview(): array
+    public function organizationOverview(?array $position = null): array
     {
-        $position = $this->reportService->cashPosition([]);
+        $position ??= $this->reportService->cashPosition([], false);
 
         $pending = CashAllocation::query()
             ->where('status', CashAllocationStatus::Pending)
-            ->get(['requested_amount']);
-
-        $pendingAmount = '0.00';
-        foreach ($pending as $row) {
-            $pendingAmount = bcadd($pendingAmount, (string) $row->requested_amount, 2);
-        }
+            ->selectRaw('COUNT(*) as aggregate_count, COALESCE(SUM(requested_amount), 0) as aggregate_amount')
+            ->first();
+        $pendingAmount = bcadd((string) ($pending?->aggregate_amount ?? '0'), '0', 2);
 
         $finance = $this->moneyAccountService->ensureFinanceAccount();
-        $disbursements = \App\Models\CashDisbursement::query()
-            ->where('money_account_id', $finance->id)
-            ->with('expense:id,category,sub_type,description')
+        $disbursements = DB::table('cash_disbursements as disbursements')
+            ->leftJoin('expenses', 'expenses.id', '=', 'disbursements.expense_id')
+            ->where('disbursements.money_account_id', $finance->id)
+            ->select([
+                'expenses.category',
+                'expenses.sub_type',
+                'expenses.project_id',
+            ])
+            ->selectRaw('SUM(disbursements.amount) as total_amount')
+            ->groupBy('expenses.category', 'expenses.sub_type', 'expenses.project_id')
             ->get();
 
         $useTotals = [
@@ -247,14 +253,14 @@ class CashAllocationService
         ];
 
         foreach ($disbursements as $disbursement) {
-            if ($disbursement->expense?->category?->value === 'direct'
-                || ($disbursement->expense && $disbursement->expense->project_id)) {
-                $useTotals['project'] = bcadd($useTotals['project'], (string) $disbursement->amount, 2);
+            if ($disbursement->category === 'direct' || $disbursement->project_id) {
+                $useTotals['project'] = bcadd($useTotals['project'], (string) $disbursement->total_amount, 2);
+
                 continue;
             }
 
-            $bucket = OrganizationFundUse::bucket($disbursement->expense?->sub_type);
-            $useTotals[$bucket] = bcadd($useTotals[$bucket], (string) $disbursement->amount, 2);
+            $bucket = OrganizationFundUse::bucket($disbursement->sub_type);
+            $useTotals[$bucket] = bcadd($useTotals[$bucket], (string) $disbursement->total_amount, 2);
         }
 
         $useBreakdown = [];
@@ -273,7 +279,7 @@ class CashAllocationService
 
         return [
             'summary' => [
-                'pending_count' => $pending->count(),
+                'pending_count' => (int) ($pending?->aggregate_count ?? 0),
                 'pending_amount' => $pendingAmount,
                 'received' => $position['received'],
                 'utilized' => $position['utilized'],
@@ -364,7 +370,7 @@ class CashAllocationService
     /**
      * @return array<string, mixed>
      */
-    public function formatOrganizationUse(\App\Models\CashDisbursement $disbursement): array
+    public function formatOrganizationUse(CashDisbursement $disbursement): array
     {
         $disbursement->loadMissing([
             'expense:id,category,sub_type,description,project_id',

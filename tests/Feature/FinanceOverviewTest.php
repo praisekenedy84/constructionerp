@@ -2,9 +2,11 @@
 
 namespace Tests\Feature;
 
+use App\Models\Project;
 use App\Models\Tenant;
 use App\Services\AuthService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class FinanceOverviewTest extends TestCase
@@ -45,5 +47,52 @@ class FinanceOverviewTest extends TestCase
                 ->has('awaiting_fulfillment.data')
                 ->has('active_projects.data')
             );
+
+        $queryCount = 0;
+        $captureQueries = false;
+        DB::listen(function () use (&$queryCount, &$captureQueries) {
+            if ($captureQueries) {
+                $queryCount++;
+            }
+        });
+        $measure = function (callable $callback) use (&$queryCount, &$captureQueries): int {
+            $queryCount = 0;
+            $captureQueries = true;
+            try {
+                $callback();
+            } finally {
+                $captureQueries = false;
+            }
+
+            return $queryCount;
+        };
+
+        $emptyPortfolioQueries = $measure(fn () => $this->get('/finance/overview')->assertOk());
+
+        $tenant->run(function () {
+            foreach (range(1, 6) as $number) {
+                Project::create([
+                    'code' => "FIN-{$number}",
+                    'name' => "Finance Project {$number}",
+                    'client' => 'Client',
+                    'location' => 'Site',
+                    'contract_amount' => '100000.00',
+                    'wht_percentage' => '0',
+                    'net_budget' => '100000.00',
+                    'physical_progress_pct' => '0',
+                    'start_date' => '2026-01-01',
+                    'end_date' => '2026-12-31',
+                    'status' => 'active',
+                ]);
+            }
+        });
+
+        $portfolioQueries = $measure(fn () => $this->get('/finance/overview')->assertOk());
+
+        $this->assertLessThanOrEqual(
+            $emptyPortfolioQueries + 4,
+            $portfolioQueries,
+            'Finance overview may add the fixed portfolio aggregates, but not per-project queries.',
+        );
     }
 }

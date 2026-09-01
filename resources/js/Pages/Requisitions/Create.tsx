@@ -379,7 +379,7 @@ export default function RequisitionsCreate() {
     return (
         <AppShell title={isEditing ? 'Edit Requisition' : 'New Requisition'}>
             <Head title={isEditing ? `Edit ${requisition?.requisition_no}` : 'New Requisition'} />
-            <div className="mx-auto max-w-3xl space-y-6">
+            <div className="mx-auto max-w-5xl space-y-6">
                 <PageHeader
                     title={isEditing ? `Edit ${requisition?.requisition_no}` : 'Create Requisition'}
                     description={
@@ -833,8 +833,8 @@ export default function RequisitionsCreate() {
                                         </div>
                                     )}
 
-                                    <div className="grid gap-3 sm:grid-cols-12">
-                                        <div className="space-y-2 sm:col-span-4">
+                                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-12">
+                                        <div className="space-y-2 sm:col-span-2 xl:col-span-4">
                                             <Label>Description</Label>
                                             <Input
                                                 placeholder="What is needed"
@@ -845,7 +845,7 @@ export default function RequisitionsCreate() {
                                                 required
                                             />
                                         </div>
-                                        <div className="space-y-2 sm:col-span-2">
+                                        <div className="min-w-0 space-y-2 xl:col-span-2">
                                             <Label>Unit</Label>
                                             <select
                                                 className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
@@ -875,7 +875,7 @@ export default function RequisitionsCreate() {
                                                     )}
                                             </select>
                                         </div>
-                                        <div className="space-y-2 sm:col-span-2">
+                                        <div className="min-w-0 space-y-2 xl:col-span-2">
                                             <Label>Qty</Label>
                                             <Input
                                                 type="number"
@@ -887,7 +887,7 @@ export default function RequisitionsCreate() {
                                                 required
                                             />
                                         </div>
-                                        <div className="space-y-2 sm:col-span-2">
+                                        <div className="min-w-0 space-y-2 xl:col-span-2">
                                             <Label>Days (optional)</Label>
                                             <Input
                                                 type="number"
@@ -900,7 +900,7 @@ export default function RequisitionsCreate() {
                                                 }
                                             />
                                         </div>
-                                        <div className="space-y-2 sm:col-span-2">
+                                        <div className="min-w-0 space-y-2 xl:col-span-2">
                                             <Label>Unit cost</Label>
                                             <AmountInput
                                                 value={item.unit_cost}
@@ -910,7 +910,7 @@ export default function RequisitionsCreate() {
                                                 required
                                             />
                                         </div>
-                                        <div className="space-y-2 sm:col-span-12">
+                                        <div className="space-y-2 sm:col-span-2 xl:col-span-12">
                                             <Label>Estimated line cost</Label>
                                             <p className="flex h-10 items-center rounded-md border border-slate-100 bg-slate-50 px-3 text-sm font-medium text-slate-900">
                                                 {formatCurrency(lineEstimate(item))}

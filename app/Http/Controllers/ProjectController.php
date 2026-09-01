@@ -50,7 +50,14 @@ class ProjectController extends Controller
             ->sort(['name', 'code', 'client', 'status', 'net_budget', 'created_at']);
 
         $projects = $listing->paginate(ListingQuery::PER_PAGE);
-        $projects->getCollection()->transform(fn (Project $project) => $this->withBudgetSummary($project));
+        $projectCollection = $projects->getCollection();
+        $budgetSummaries = $this->budgetService->summaries($projectCollection);
+        $recognizedProfit = $this->saleService->recognizedProfitForProjects($projectCollection->modelKeys());
+        $projectCollection->transform(fn (Project $project) => $this->withBudgetSummary(
+            $project,
+            $budgetSummaries[$project->id],
+            $recognizedProfit[$project->id] ?? '0.00',
+        ));
 
         return Inertia::render('Projects/Index', [
             'projects' => $projects,
@@ -357,15 +364,19 @@ class ProjectController extends Controller
             ->with('success', 'Project marked as a loss. Collect the negative receivable against a company account.');
     }
 
-    private function withBudgetSummary(Project $project, ?array $budget = null): Project
-    {
+    private function withBudgetSummary(
+        Project $project,
+        ?array $budget = null,
+        ?string $recognizedProfit = null,
+    ): Project {
         $budget ??= $this->budgetService->summary($project);
         $remainingBudget = $budget['remaining_budget'];
         $profitPercentage = bccomp((string) $project->net_budget, '0', 2) === 0
             ? '0.00'
             : bcmul(bcdiv($remainingBudget, (string) $project->net_budget, 4), '100', 2);
 
-        $liveRemaining = $this->saleService->liveRemaining($project);
+        $recognizedProfit ??= $this->saleService->recognizedProfitForProject($project);
+        $liveRemaining = bcsub($remainingBudget, $recognizedProfit, 2);
         $pendingDeficit = bcadd((string) $project->pending_deficit, '0', 2);
         $canMarkLoss = $project->status !== ProjectStatus::Loss
             && (

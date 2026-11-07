@@ -27,6 +27,8 @@ function initialData(
         create_user: defaultCreateUser,
         create_staff: defaultCreateStaff,
         name: '',
+        username: '',
+        phone: '',
         email: '',
         password: '',
         password_confirmation: '',
@@ -189,6 +191,11 @@ export default function PersonCreateDialog({
                             Login account
                         </p>
                         <div className="space-y-2">
+                            <Label htmlFor="person-username">Username</Label>
+                            <Input id="person-username" value={form.data.username} onChange={e => form.setData('username', e.target.value)} autoComplete="username" required minLength={3} />
+                            {form.errors.username && <p className="text-sm text-red-600">{form.errors.username}</p>}
+                            <Label htmlFor="person-phone">Phone</Label>
+                            <Input id="person-phone" type="tel" value={form.data.phone} onChange={e => form.setData('phone', e.target.value)} />
                             <Label htmlFor="person-email">Email</Label>
                             <Input
                                 id="person-email"

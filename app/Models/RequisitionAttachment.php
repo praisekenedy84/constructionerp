@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\RequisitionAttachmentDocumentType;
+use App\Services\CompanyAccessService;
 use App\Traits\LogsActivity;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -29,6 +30,11 @@ class RequisitionAttachment extends Model
             'document_type' => RequisitionAttachmentDocumentType::class,
             'created_at' => 'datetime',
         ];
+    }
+
+    public function getFileUrlAttribute($value): ?string
+    {
+        return CompanyAccessService::visiting() ? null : url('/requisition-files/'.$this->id);
     }
 
     public function requisition(): BelongsTo

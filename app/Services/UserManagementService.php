@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Models\CentralUser;
-use App\Models\Tenant;
 use App\Models\User;
 use App\Support\MenuCatalog;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -35,18 +34,26 @@ class UserManagementService
                 $updates['name'] = $data['name'];
             }
 
-            if (isset($data['email']) && $data['email'] !== $target->email) {
-                $this->assertEmailAvailable($data['email'], $target->id);
-                $this->updateCentralEmail($target->email, $data['email']);
-                $updates['email'] = $data['email'];
+            $identity = CentralUser::where('tenant_id', tenant('id'))->where('tenant_user_id', $target->id)->firstOrFail();
+            if (isset($data['username'])) {
+                $username = strtolower(trim($data['username']));
+                if (CentralUser::where('tenant_id', tenant('id'))->where('username', $username)->where('id', '!=', $identity->id)->exists()) {
+                    throw ValidationException::withMessages(['username' => 'This username is already in use in this company.']);
+                }
+                $updates['username'] = $username;
             }
-
+            foreach (['email', 'phone'] as $field) {
+                if (array_key_exists($field, $data)) {
+                    $updates[$field] = $data[$field];
+                }
+            }
             if (! empty($data['password'])) {
                 $updates['password'] = Hash::make($data['password']);
             }
 
             if ($updates !== []) {
                 $target->update($updates);
+                $identity->update(['username' => $target->username, 'email' => $target->email]);
             }
 
             if (isset($data['role'])) {
@@ -84,15 +91,16 @@ class UserManagementService
             throw new AuthorizationException('Cannot delete the last System Administrator.');
         }
 
-        DB::transaction(function () use ($actor, $target) {
+        $tenantId = tenant('id');
+        DB::transaction(function () use ($actor, $target, $tenantId) {
             $before = [
                 'name' => $target->name,
                 'email' => $target->email,
                 'roles' => $target->getRoleNames()->values()->all(),
             ];
 
-            tenancy()->central(function () use ($target) {
-                CentralUser::where('email', $target->email)->delete();
+            tenancy()->central(function () use ($target, $tenantId) {
+                CentralUser::where('tenant_id', $tenantId)->where('tenant_user_id', $target->id)->delete();
             });
 
             $target->delete();
@@ -147,35 +155,6 @@ class UserManagementService
                 'role' => ['This role cannot be assigned.'],
             ]);
         }
-    }
-
-    private function assertEmailAvailable(string $email, int $exceptUserId): void
-    {
-        if (User::where('email', $email)->where('id', '!=', $exceptUserId)->exists()) {
-            throw ValidationException::withMessages([
-                'email' => ['This email is already in use within your organization.'],
-            ]);
-        }
-
-        $tenantId = session('tenant_id');
-        $existsInCentral = tenancy()->central(
-            fn () => CentralUser::where('email', $email)
-                ->where('tenant_id', '!=', $tenantId)
-                ->exists()
-        );
-
-        if ($existsInCentral) {
-            throw ValidationException::withMessages([
-                'email' => ['This email is already registered to another organization.'],
-            ]);
-        }
-    }
-
-    private function updateCentralEmail(string $oldEmail, string $newEmail): void
-    {
-        tenancy()->central(function () use ($oldEmail, $newEmail) {
-            CentralUser::where('email', $oldEmail)->update(['email' => $newEmail]);
-        });
     }
 
     private function countRoleHolders(string $role): int

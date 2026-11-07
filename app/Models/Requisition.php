@@ -6,6 +6,7 @@ use App\Enums\FulfillmentType;
 use App\Enums\RequisitionAddressedTo;
 use App\Enums\RequisitionResourceType;
 use App\Enums\RequisitionStatus;
+use App\Services\CompanyAccessService;
 use App\Traits\LogsActivity;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -81,6 +82,9 @@ class Requisition extends Model
      */
     public function scopeVisibleTo(Builder $query, User $user): Builder
     {
+        if (CompanyAccessService::visiting()) {
+            return $query->where('status', '!=', RequisitionStatus::Draft);
+        }
         if ($user->isSuperUser()) {
             return $query;
         }
@@ -93,6 +97,9 @@ class Requisition extends Model
 
     public function isVisibleTo(User $user): bool
     {
+        if (CompanyAccessService::visiting()) {
+            return $this->status !== RequisitionStatus::Draft;
+        }
         if ($user->isSuperUser()) {
             return true;
         }
@@ -106,6 +113,10 @@ class Requisition extends Model
 
     public function isOwnedBy(User $user): bool
     {
+        if (CompanyAccessService::visiting()) {
+            return false;
+        }
+
         return (int) $this->requestor_id === (int) $user->id;
     }
 

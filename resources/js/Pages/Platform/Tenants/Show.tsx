@@ -1,3 +1,4 @@
+import TenantUsersPanel, { TenantUsersPanelProps } from '@/Components/Admin/TenantUsersPanel';
 import PlatformShell from '@/Components/Layout/PlatformShell';
 import DataPanel from '@/Components/Shared/DataPanel';
 import StatusBadge from '@/Components/Shared/StatusBadge';
@@ -5,7 +6,7 @@ import { Button } from '@/Components/ui/button';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
 import { PageProps } from '@/types';
-import { Head, Link, router, useForm } from '@inertiajs/react';
+import { Head, router, useForm } from '@inertiajs/react';
 import { FormEvent, useState } from 'react';
 
 interface TenantDetail {
@@ -20,11 +21,12 @@ interface TenantDetail {
     locked_users: number;
 }
 
-interface PlatformTenantShowProps extends PageProps {
+interface PlatformTenantShowProps extends PageProps, TenantUsersPanelProps {
     tenant: TenantDetail;
 }
 
-export default function PlatformTenantShow({ tenant }: PlatformTenantShowProps) {
+export default function PlatformTenantShow(props: PlatformTenantShowProps) {
+    const { tenant } = props;
     const [showSuspendForm, setShowSuspendForm] = useState(false);
     const suspendForm = useForm({ reason: '' });
 
@@ -52,28 +54,7 @@ export default function PlatformTenantShow({ tenant }: PlatformTenantShowProps) 
                         </div>
                         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{tenant.slug}</p>
                     </div>
-                    <Link href={`/platform/tenants/${tenant.id}/users`}>
-                        <Button className="bg-violet-600 hover:bg-violet-700">Manage users</Button>
-                    </Link>
-                </div>
 
-                <div className="grid gap-4 sm:grid-cols-3">
-                    <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-                        <p className="text-sm text-slate-500 dark:text-slate-400">Total users</p>
-                        <p className="mt-1 text-2xl font-bold text-slate-900 dark:text-white">{tenant.total_users}</p>
-                    </div>
-                    <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-                        <p className="text-sm text-slate-500 dark:text-slate-400">Locked users</p>
-                        <p className="mt-1 text-2xl font-bold text-amber-600 dark:text-amber-400">{tenant.locked_users}</p>
-                    </div>
-                    <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-                        <p className="text-sm text-slate-500 dark:text-slate-400">Created</p>
-                        <p className="mt-1 text-sm text-slate-900 dark:text-white">
-                            {tenant.created_at
-                                ? new Date(tenant.created_at).toLocaleDateString()
-                                : '—'}
-                        </p>
-                    </div>
                 </div>
 
                 <DataPanel title="Tenant control">
@@ -142,6 +123,29 @@ export default function PlatformTenantShow({ tenant }: PlatformTenantShowProps) 
                         </div>
                     )}
                 </DataPanel>
+
+                <div className="grid gap-4 sm:grid-cols-3">
+                    <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                        <p className="text-sm text-slate-500 dark:text-slate-400">Total users</p>
+                        <p className="mt-1 text-2xl font-bold text-slate-900 dark:text-white">{tenant.total_users}</p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                        <p className="text-sm text-slate-500 dark:text-slate-400">Locked users</p>
+                        <p className="mt-1 text-2xl font-bold text-amber-600 dark:text-amber-400">{tenant.locked_users}</p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                        <p className="text-sm text-slate-500 dark:text-slate-400">Created</p>
+                        <p className="mt-1 text-sm text-slate-900 dark:text-white">
+                            {tenant.created_at
+                                ? new Date(tenant.created_at).toLocaleDateString()
+                                : '—'}
+                        </p>
+                    </div>
+                </div>
+
+                <TenantUsersPanel {...props} />
+
+
             </div>
         </PlatformShell>
     );

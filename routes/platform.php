@@ -13,6 +13,7 @@ Route::prefix('platform')->name('platform.')->group(function () {
     });
 
     Route::middleware('platform.admin')->group(function () {
+        Route::put('/tenants/{tenantId}/users/{userId}/company-access', [UserController::class, 'companyAccess'])->name('tenants.users.company-access');
         Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
         Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 
@@ -24,6 +25,8 @@ Route::prefix('platform')->name('platform.')->group(function () {
         Route::post('/tenants/{tenantId}/reactivate', [TenantController::class, 'reactivate'])->name('tenants.reactivate');
 
         Route::get('/tenants/{tenantId}/users', [UserController::class, 'index'])->name('tenants.users');
+        Route::post('/tenants/{tenantId}/users', [UserController::class, 'store'])->name('tenants.users.store');
+        Route::patch('/tenants/{tenantId}/users/{userId}', [UserController::class, 'update'])->name('tenants.users.update');
         Route::post('/tenants/{tenantId}/users/{userId}/lock', [UserController::class, 'lock'])->name('tenants.users.lock');
         Route::post('/tenants/{tenantId}/users/{userId}/unlock', [UserController::class, 'unlock'])->name('tenants.users.unlock');
         Route::post('/tenants/{tenantId}/users/{userId}/impersonate', [UserController::class, 'impersonate'])->name('tenants.users.impersonate');

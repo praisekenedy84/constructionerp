@@ -3,11 +3,20 @@
 declare(strict_types=1);
 
 use App\Models\Tenant;
+use Stancl\Tenancy\Bootstrappers\CacheTenancyBootstrapper;
+use Stancl\Tenancy\Bootstrappers\DatabaseTenancyBootstrapper;
+use Stancl\Tenancy\Bootstrappers\FilesystemTenancyBootstrapper;
+use Stancl\Tenancy\Bootstrappers\QueueTenancyBootstrapper;
 use Stancl\Tenancy\Database\Models\Domain;
+use Stancl\Tenancy\TenantDatabaseManagers\MySQLDatabaseManager;
+use Stancl\Tenancy\TenantDatabaseManagers\PostgreSQLDatabaseManager;
+use Stancl\Tenancy\TenantDatabaseManagers\PostgreSQLSchemaManager;
+use Stancl\Tenancy\TenantDatabaseManagers\SQLiteDatabaseManager;
+use Stancl\Tenancy\UUIDGenerator;
 
 return [
     'tenant_model' => Tenant::class,
-    'id_generator' => Stancl\Tenancy\UUIDGenerator::class,
+    'id_generator' => UUIDGenerator::class,
 
     'domain_model' => Domain::class,
 
@@ -28,10 +37,10 @@ return [
      * To configure their behavior, see the config keys below.
      */
     'bootstrappers' => [
-        Stancl\Tenancy\Bootstrappers\DatabaseTenancyBootstrapper::class,
-        Stancl\Tenancy\Bootstrappers\CacheTenancyBootstrapper::class,
-        Stancl\Tenancy\Bootstrappers\FilesystemTenancyBootstrapper::class,
-        Stancl\Tenancy\Bootstrappers\QueueTenancyBootstrapper::class,
+        DatabaseTenancyBootstrapper::class,
+        CacheTenancyBootstrapper::class,
+        FilesystemTenancyBootstrapper::class,
+        QueueTenancyBootstrapper::class,
         // Stancl\Tenancy\Bootstrappers\RedisTenancyBootstrapper::class, // Note: phpredis is needed
     ],
 
@@ -58,12 +67,12 @@ return [
          * TenantDatabaseManagers are classes that handle the creation & deletion of tenant databases.
          */
         'managers' => [
-            'sqlite' => Stancl\Tenancy\TenantDatabaseManagers\SQLiteDatabaseManager::class,
-            'mysql' => Stancl\Tenancy\TenantDatabaseManagers\MySQLDatabaseManager::class,
-            'mariadb' => Stancl\Tenancy\TenantDatabaseManagers\MySQLDatabaseManager::class,
+            'sqlite' => SQLiteDatabaseManager::class,
+            'mysql' => MySQLDatabaseManager::class,
+            'mariadb' => MySQLDatabaseManager::class,
             'pgsql' => env('TENANCY_USE_SCHEMAS', false)
-                ? Stancl\Tenancy\TenantDatabaseManagers\PostgreSQLSchemaManager::class
-                : Stancl\Tenancy\TenantDatabaseManagers\PostgreSQLDatabaseManager::class,
+                ? PostgreSQLSchemaManager::class
+                : PostgreSQLDatabaseManager::class,
         ],
     ],
 
@@ -126,7 +135,8 @@ return [
          * disable asset() helper tenancy and explicitly use tenant_asset() calls in places
          * where you want to use tenant-specific assets (product images, avatars, etc).
          */
-        'asset_helper_tenancy' => true,
+        // Application JS/CSS are shared public assets. Tenant documents use authenticated delivery routes.
+        'asset_helper_tenancy' => false,
     ],
 
     /**

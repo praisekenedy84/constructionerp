@@ -12,6 +12,7 @@ class ProvisionTenantCommand extends Command
                             {slug : URL-safe slug}
                             {--admin-name=Admin : First admin user name}
                             {--admin-email= : Admin email address}
+                            {--admin-username= : Company login username}
                             {--admin-password=password : Admin password}';
 
     protected $description = 'Create a tenant with schema, seed defaults, and admin user';
@@ -25,11 +26,12 @@ class ProvisionTenantCommand extends Command
             'slug' => $this->argument('slug'),
             'admin_name' => $this->option('admin-name'),
             'admin_email' => $email,
+            'admin_username' => $this->option('admin-username') ?: $email,
             'admin_password' => $this->option('admin-password'),
         ]);
 
         $this->info("Tenant [{$tenant->name}] created (ID: {$tenant->id}).");
-        $this->info("Admin user created: {$email}");
+        $this->info('Admin username: '.strtolower(trim($this->option('admin-username') ?: $email)));
 
         return self::SUCCESS;
     }

@@ -17,6 +17,10 @@ class TenantManagementService
      */
     public function provision(array $data): Tenant
     {
+        $username = strtolower(trim($data['admin_username'] ?? $data['admin_email']));
+        if (! preg_match('/^[a-z0-9][a-z0-9._@+\-]{2,254}$/', $username)) {
+            throw ValidationException::withMessages(['admin_username' => 'Choose a valid administrator username.']);
+        }
         $slug = Str::slug($data['slug']);
 
         if (Tenant::where('slug', $slug)->exists()) {
@@ -36,6 +40,7 @@ class TenantManagementService
         $this->authService->createUser($tenant, [
             'name' => $data['admin_name'],
             'email' => $data['admin_email'],
+            'username' => $data['admin_username'] ?? $data['admin_email'],
             'password' => $data['admin_password'],
             'role' => 'System Administrator',
         ]);

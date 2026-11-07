@@ -30,6 +30,8 @@ class StoreAdminPersonRequest extends FormRequest
         return [
             'create_user' => ['required', 'boolean'],
             'create_staff' => ['required', 'boolean'],
+            'username' => ['exclude_unless:create_user,true', 'sometimes', 'required', 'string', 'min:3', 'max:255', 'regex:/^[a-zA-Z0-9][a-zA-Z0-9._@+\-]+$/'],
+            'phone' => ['nullable', 'string', 'max:50'],
             'name' => ['required', 'string', 'max:255'],
 
             'email' => [
@@ -37,7 +39,6 @@ class StoreAdminPersonRequest extends FormRequest
                 'required_if:create_user,true',
                 'email',
                 'max:255',
-                'unique:users,email',
             ],
             'password' => [
                 'nullable',

@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Auth\TenantAwareUserProvider;
 use App\Services\AuthService;
+use App\Services\CompanyAccessService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Vite;
@@ -33,6 +34,9 @@ class AppServiceProvider extends ServiceProvider
         });
 
         Gate::before(function ($user, $ability) {
+            if (CompanyAccessService::visiting()) {
+                return false;
+            }
             if (! method_exists($user, 'isPlatformAdmin')) {
                 return null;
             }

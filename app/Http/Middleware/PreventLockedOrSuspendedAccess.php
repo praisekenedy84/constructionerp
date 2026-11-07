@@ -14,7 +14,7 @@ class PreventLockedOrSuspendedAccess
 
     public function handle(Request $request, Closure $next): Response
     {
-        if ($request->is('platform', 'platform/*')) {
+        if ($request->is('platform', 'platform/*', 'auth/reset-session')) {
             return $next($request);
         }
 
@@ -29,7 +29,7 @@ class PreventLockedOrSuspendedAccess
             $request->session()->forget(['tenant_id', 'impersonator_id', 'platform_impersonator_id']);
 
             return redirect()->route('login')
-                ->withErrors(['email' => 'Your account has been locked. Contact your administrator.']);
+                ->withErrors(['username' => 'Your account has been locked. Contact your administrator.']);
         }
 
         $tenant = tenant();
@@ -39,7 +39,7 @@ class PreventLockedOrSuspendedAccess
             $request->session()->forget(['tenant_id', 'impersonator_id', 'platform_impersonator_id']);
 
             return redirect()->route('login')
-                ->withErrors(['email' => 'This company account has been suspended.']);
+                ->withErrors(['username' => 'This company account has been suspended.']);
         }
 
         return $next($request);

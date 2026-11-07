@@ -29,19 +29,24 @@ class AuthController extends Controller
 
     public function login(Request $request): RedirectResponse
     {
+        $request->merge(['username' => strtolower(trim($request->input('username', $request->input('email', ''))))]);
         $credentials = $request->validate([
-            'email' => ['required', 'email'],
+            'username' => ['required', 'string'],
             'password' => ['required', 'string'],
             'remember' => ['boolean'],
         ]);
 
         $this->authService->login(
-            $credentials['email'],
+            $credentials['username'],
             $credentials['password'],
             $credentials['remember'] ?? false,
         );
 
         $request->session()->regenerate();
+
+        if (session('company_selection_required')) {
+            return redirect('/auth/companies');
+        }
 
         return redirect()->intended(route('dashboard'));
     }
@@ -51,6 +56,13 @@ class AuthController extends Controller
         $this->authService->logout();
 
         return redirect()->route('login');
+    }
+
+    public function resetSession(): RedirectResponse
+    {
+        $this->authService->clearTenantSession();
+
+        return redirect()->route('login')->with('error', 'Please sign in again.');
     }
 
     public function me(Request $request): Response
@@ -88,6 +100,7 @@ class AuthController extends Controller
             $request->user()->id,
         );
 
+        session()->forget(['home_tenant_id', 'central_identity_id', 'company_selection_required', 'verified_company_accounts']);
         session(['impersonator_id' => $request->user()->id]);
         Auth::login($target);
 

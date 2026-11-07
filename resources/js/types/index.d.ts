@@ -1,4 +1,8 @@
 export interface User {
+    username?: string;
+    phone?: string | null;
+    read_only?: boolean;
+    read_only_companies?: string[];
     id: number;
     name: string;
     email: string;

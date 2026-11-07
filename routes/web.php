@@ -9,6 +9,7 @@ use App\Http\Controllers\BOQController;
 use App\Http\Controllers\BOQRevisionController;
 use App\Http\Controllers\BudgetController;
 use App\Http\Controllers\CashController;
+use App\Http\Controllers\CompanyAccessController;
 use App\Http\Controllers\CompanyDebtController;
 use App\Http\Controllers\ComplianceRuleController;
 use App\Http\Controllers\DashboardController;
@@ -40,9 +41,14 @@ use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\UnitController;
 use App\Http\Controllers\ValuationController;
+use App\Models\RequisitionAttachment;
+use App\Services\CompanyAccessService;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Storage;
 
 Route::get('/', fn () => redirect()->route('login'));
+Route::post('/auth/reset-session', [AuthController::class, 'resetSession'])->name('auth.reset-session');
 
 Route::middleware('guest')->group(function () {
     Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
@@ -50,6 +56,20 @@ Route::middleware('guest')->group(function () {
 });
 
 Route::middleware('auth')->group(function () {
+    Route::get('/requisition-files/{id}', function (Request $request, int $id) {
+        abort_if(CompanyAccessService::visiting(), 403);
+        abort_unless($request->user()->hasModulePermission('requisitions', 'read'), 403);
+        $attachment = RequisitionAttachment::findOrFail($id);
+        abort_unless($attachment->requisition->isVisibleTo($request->user()), 403);
+        $raw = $attachment->getRawOriginal('file_url');
+        abort_unless(str_starts_with($raw, 'private:'), 404, 'Attachment migration required.');
+        $path = substr($raw, 8);
+        abort_if(str_contains($path, '..') || ! str_starts_with($path, 'requisitions/'), 404);
+
+        return Storage::disk('local')->download($path);
+    })->name('requisition-files.show');
+    Route::get('/auth/companies', [CompanyAccessController::class, 'index'])->name('companies.index');
+    Route::post('/auth/company', [CompanyAccessController::class, 'select'])->name('companies.select');
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
     Route::get('/me', [AuthController::class, 'me'])->name('me');

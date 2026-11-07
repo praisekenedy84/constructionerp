@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Platform;
 use App\Enums\TenantStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Tenant;
+use App\Services\PlatformUserService;
 use App\Services\TenantManagementService;
 use App\Support\ListingQuery;
 use Illuminate\Http\RedirectResponse;
@@ -61,6 +62,7 @@ class TenantController extends Controller
             'slug' => ['required', 'string', 'max:100', 'alpha_dash'],
             'admin_name' => ['required', 'string', 'max:255'],
             'admin_email' => ['required', 'email', 'max:255'],
+            'admin_username' => ['sometimes', 'required', 'string', 'min:3', 'max:255', 'regex:/^[a-zA-Z0-9][a-zA-Z0-9._@+\-]+$/'],
             'admin_password' => ['required', 'string', 'min:8', 'confirmed'],
         ]);
 
@@ -69,6 +71,7 @@ class TenantController extends Controller
             'slug' => $data['slug'],
             'admin_name' => $data['admin_name'],
             'admin_email' => $data['admin_email'],
+            'admin_username' => $data['admin_username'] ?? $data['admin_email'],
             'admin_password' => $data['admin_password'],
         ]);
 
@@ -77,12 +80,13 @@ class TenantController extends Controller
             ->with('success', "Tenant \"{$tenant->name}\" provisioned successfully.");
     }
 
-    public function show(string $tenantId): Response
+    public function show(Request $request, string $tenantId): Response
     {
         $tenant = Tenant::findOrFail($tenantId);
         $stats = $this->tenantManagement->tenantStats($tenant);
 
         return Inertia::render('Platform/Tenants/Show', [
+            ...app(PlatformUserService::class)->managementData($tenant, $request),
             'tenant' => [
                 'id' => $tenant->id,
                 'name' => $tenant->name,

@@ -86,8 +86,9 @@ class SeedDemoUsersCommand extends Command
 
             foreach ($this->accounts as $account) {
                 $user = User::firstOrCreate(
-                    ['email' => $account['email']],
+                    ['username' => strtolower($account['email'])],
                     [
+                        'email' => $account['email'],
                         'name' => $account['name'],
                         'password' => Hash::make('password'),
                     ],
@@ -100,10 +101,10 @@ class SeedDemoUsersCommand extends Command
 
                 $user->syncRoles([$account['role']]);
 
-                tenancy()->central(function () use ($tenant, $account) {
+                tenancy()->central(function () use ($tenant, $account, $user) {
                     CentralUser::firstOrCreate(
-                        ['email' => $account['email']],
-                        ['tenant_id' => $tenant->id],
+                        ['username' => strtolower($account['email']), 'tenant_id' => $tenant->id],
+                        ['tenant_id' => $tenant->id, 'tenant_user_id' => $user->id, 'email' => $account['email']],
                     );
                 });
 

@@ -5,7 +5,6 @@ namespace App\Http\Middleware;
 use App\Services\AuthService;
 use Closure;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Symfony\Component\HttpFoundation\Response;
 
 class InitializeTenancyFromSession
@@ -14,15 +13,21 @@ class InitializeTenancyFromSession
 
     public function handle(Request $request, Closure $next): Response
     {
-        if ($request->is('platform', 'platform/*')) {
+        if ($request->is('platform', 'platform/*', 'auth/reset-session')) {
             return $next($request);
+        }
+
+        if (session()->has('home_tenant_id') && (session('auth_context_version') !== 2
+            || ! is_array(session('verified_company_accounts')))) {
+            $this->authService->clearTenantSession();
+
+            return redirect()->route('login')->withErrors(['username' => 'Please sign in again to continue with the updated application.']);
         }
 
         if (session()->has('tenant_id')) {
             $this->authService->initializeTenancyFromSession();
         } elseif ($this->hasStaleAuthSession($request)) {
-            Auth::guard('web')->logout();
-            $request->session()->forget(['tenant_id', 'impersonator_id', 'platform_impersonator_id']);
+            $this->authService->clearTenantSession();
         }
 
         return $next($request);

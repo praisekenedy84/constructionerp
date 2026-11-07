@@ -28,6 +28,8 @@ export default function AdminUsers() {
 
     const editForm = useForm({
         name: '',
+        username: '',
+        phone: '',
         email: '',
         password: '',
         password_confirmation: '',
@@ -38,6 +40,8 @@ export default function AdminUsers() {
         setEditingId(user.id);
         editForm.setData({
             name: user.name,
+            username: user.username ?? '',
+            phone: user.phone ?? '',
             email: user.email,
             password: '',
             password_confirmation: '',
@@ -90,6 +94,11 @@ export default function AdminUsers() {
                                 />
                             </div>
                             <div className="space-y-2">
+                                <Label>Username</Label>
+                                <Input value={editForm.data.username} onChange={e => editForm.setData('username', e.target.value)} required minLength={3} />
+                                {editForm.errors.username && <p className="text-sm text-red-600">{editForm.errors.username}</p>}
+                                <Label>Phone</Label>
+                                <Input type="tel" value={editForm.data.phone} onChange={e => editForm.setData('phone', e.target.value)} />
                                 <Label>Email</Label>
                                 <Input
                                     type="email"
@@ -174,7 +183,7 @@ export default function AdminUsers() {
                                             <span className="ml-2 text-xs text-slate-400">(you)</span>
                                         )}
                                     </td>
-                                    <td className="px-6 py-4 text-slate-600">{user.email}</td>
+                                    <td className="px-6 py-4 text-slate-600">{user.username && <p className="font-medium">{user.username}</p>}{user.email}{!!user.read_only_companies?.length && <p className="text-xs text-slate-500">Read-only: {user.read_only_companies.join(', ')}</p>}</td>
                                     <td className="px-6 py-4 text-slate-600">
                                         {user.roles.join(', ')}
                                     </td>

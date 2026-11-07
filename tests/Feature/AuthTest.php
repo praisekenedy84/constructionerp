@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Models\CentralUser;
 use App\Models\Tenant;
 use App\Services\AuthService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -45,7 +44,7 @@ class AuthTest extends TestCase
             'password' => 'wrong',
         ]);
 
-        $response->assertSessionHasErrors('email');
+        $response->assertSessionHasErrors('username');
         $this->assertGuest();
     }
 }

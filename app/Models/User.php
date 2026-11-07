@@ -2,11 +2,12 @@
 
 namespace App\Models;
 
+use App\Services\CompanyAccessService;
 use App\Support\ModulePermission;
 use App\Traits\LogsActivity;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Spatie\Permission\Traits\HasRoles;
@@ -18,6 +19,8 @@ class User extends Authenticatable
     protected $fillable = [
         'name',
         'email',
+        'username',
+        'phone',
         'password',
         'locked_at',
         'locked_reason',
@@ -44,6 +47,10 @@ class User extends Authenticatable
 
     public function isSuperUser(): bool
     {
+        if (CompanyAccessService::visiting()) {
+            return false;
+        }
+
         return $this->hasRole([
             'Platform Admin',
             'System Administrator',
@@ -63,7 +70,7 @@ class User extends Authenticatable
 
     public function canImpersonate(): bool
     {
-        return $this->isPlatformAdmin() && ! session()->has('impersonator_id');
+        return ! CompanyAccessService::visiting() && $this->isPlatformAdmin() && ! session()->has('impersonator_id');
     }
 
     public function canManagePlatform(): bool
@@ -77,6 +84,9 @@ class User extends Authenticatable
 
     public function hasModulePermission(string $module, string $action): bool
     {
+        if (CompanyAccessService::visiting()) {
+            return $action === 'read' && in_array($module.':read', request()->attributes->get('home_permissions', []), true);
+        }
         // Platform Admin and System Administrator can perform every tenant action.
         if ($this->isPlatformAdmin() || $this->isSystemAdministrator()) {
             return true;
@@ -88,6 +98,9 @@ class User extends Authenticatable
     /** @return list<string> */
     public function modulePermissions(): array
     {
+        if (CompanyAccessService::visiting() && request()->attributes->has('home_permissions')) {
+            return array_values(array_filter(request()->attributes->get('home_permissions'), fn ($permission) => str_ends_with($permission, ':read')));
+        }
         if ($this->isPlatformAdmin() || $this->isSystemAdministrator()) {
             return ModulePermission::allPermissionNames();
         }

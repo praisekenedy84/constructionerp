@@ -6,6 +6,7 @@ use App\Services\AuthService;
 use Illuminate\Auth\EloquentUserProvider;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Hashing\Hasher;
+use Illuminate\Support\Facades\Auth;
 
 class TenantAwareUserProvider extends EloquentUserProvider
 {
@@ -23,12 +24,16 @@ class TenantAwareUserProvider extends EloquentUserProvider
             return null;
         }
 
-        return parent::retrieveById($identifier);
+        return session('central_identity_id') ? Auth::guard('web')->getUser() : parent::retrieveById($identifier);
     }
 
     public function retrieveByToken($identifier, $token): ?Authenticatable
     {
         if (! $this->ensureTenancy()) {
+            return null;
+        }
+
+        if (session('central_identity_id')) {
             return null;
         }
 

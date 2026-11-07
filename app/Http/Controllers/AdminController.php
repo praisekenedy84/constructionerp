@@ -19,17 +19,20 @@ use App\Models\Project;
 use App\Models\SystemSetting;
 use App\Models\Tenant;
 use App\Models\User;
-use App\Services\AuthService;
 use App\Services\AuditService;
+use App\Services\AuthService;
+use App\Services\CompanyAccessService;
 use App\Services\PermissionService;
 use App\Services\UserManagementService;
+use App\Support\ListingQuery;
 use App\Support\MenuCatalog;
 use App\Support\ModulePermission;
-use App\Support\ListingQuery;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use Spatie\Permission\Models\Role;
@@ -48,13 +51,19 @@ class AdminController extends Controller
         $this->authorizeTenantAdmin($request->user());
 
         $listing = ListingQuery::for(User::query(), $request)
-            ->search(['name', 'email'])
+            ->search(['name', 'email', 'username', 'phone'])
             ->dateRange('created_at')
             ->sort(['name', 'email', 'created_at']);
 
         $users = $listing->paginate(25);
 
         $users->getCollection()->transform(function (User $user) use ($request) {
+            $grants = app(CompanyAccessService::class)->central()->table('company_access_grants')
+                ->join('central_users', 'central_users.id', '=', 'company_access_grants.central_user_id')
+                ->join('tenants', 'tenants.id', '=', 'company_access_grants.tenant_id')
+                ->where('central_users.tenant_user_id', $user->id)->where('central_users.tenant_id', session('tenant_id'))
+                ->pluck('tenants.name')->all();
+            $user->setAttribute('read_only_companies', $grants);
             $user->unsetRelation('roles');
             $user->setAttribute('roles', $user->getRoleNames()->values()->all());
             $user->setAttribute('is_self', $user->id === $request->user()->id);
@@ -88,6 +97,8 @@ class AdminController extends Controller
                 $user = $this->authService->createUser($tenant, [
                     'name' => $validated['name'],
                     'email' => $validated['email'],
+                    'username' => $validated['username'] ?? $validated['email'],
+                    'phone' => $validated['phone'] ?? null,
                     'password' => $validated['password'],
                     'role' => $validated['access_role'],
                 ]);
@@ -168,6 +179,8 @@ class AdminController extends Controller
         $user = $this->authService->createUser($tenant, [
             'name' => $request->validated('name'),
             'email' => $request->validated('email'),
+            'username' => $request->validated('username') ?? $request->validated('email'),
+            'phone' => $request->validated('phone'),
             'password' => $request->validated('password'),
             'role' => $request->validated('role'),
         ]);
@@ -446,9 +459,9 @@ class AdminController extends Controller
 
         try {
             $updated = $this->permissionService->renameRole($from, $to);
-        } catch (\Illuminate\Validation\ValidationException $e) {
+        } catch (ValidationException $e) {
             throw $e;
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+        } catch (ModelNotFoundException $e) {
             return back()->withErrors(['name' => 'Role not found.']);
         }
 
@@ -474,9 +487,9 @@ class AdminController extends Controller
 
         try {
             $this->permissionService->deleteRole($name);
-        } catch (\Illuminate\Validation\ValidationException $e) {
+        } catch (ValidationException $e) {
             throw $e;
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+        } catch (ModelNotFoundException $e) {
             return back()->withErrors(['role' => 'Role not found.']);
         }
 
@@ -579,7 +592,7 @@ class AdminController extends Controller
     {
         DB::transaction(function () use ($user): void {
             tenancy()->central(function () use ($user): void {
-                CentralUser::where('email', $user->email)->delete();
+                CentralUser::where('tenant_id', session('tenant_id'))->where('tenant_user_id', $user->id)->delete();
             });
 
             $user->delete();

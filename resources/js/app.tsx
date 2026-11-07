@@ -1,23 +1,28 @@
 import '../css/app.css';
 import AppErrorBoundary from '@/Components/Shared/AppErrorBoundary';
-import { createInertiaApp } from '@inertiajs/react';
+import { createInertiaApp, router } from '@inertiajs/react';
+let companyContext = '';
+let accountContext = '';
+router.on('navigate', event => { accountContext = String((event.detail.page.props.companyContext as { account_id?: number } | undefined)?.account_id ?? ''); companyContext = String(event.detail.page.props.companyContext && (event.detail.page.props.companyContext as { id: string }).id || ''); });
+router.on('before', event => { if (companyContext) event.detail.visit.headers['X-Company-Context'] = companyContext; if (accountContext) event.detail.visit.headers['X-Account-Context'] = accountContext; });
 import { createRoot } from 'react-dom/client';
-import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
+import type { ComponentType } from 'react';
 
 const appName = import.meta.env.VITE_APP_NAME || 'CRF-ERP';
-const RELOAD_KEY = 'crf:asset-reload';
+const RELOAD_KEY = 'crf:asset-reload:' + (document.querySelector<HTMLMetaElement>('meta[name="app-build"]')?.content ?? 'unknown');
 
 function hardReloadOnce(): void {
     try {
         const lastReload = sessionStorage.getItem(RELOAD_KEY);
         const now = Date.now();
 
-        if (!lastReload || now - Number(lastReload) > 15_000) {
+        if (!lastReload) {
             sessionStorage.setItem(RELOAD_KEY, String(now));
             window.location.reload();
         }
     } catch {
-        window.location.reload();
+        // Without a persistent retry marker, automatic reloads can loop forever.
+        // The server-rendered recovery controls remain available instead.
     }
 }
 
@@ -39,17 +44,22 @@ window.addEventListener('unhandledrejection', (event) => {
 
 createInertiaApp({
     title: (title) => (title ? `${title} — ${appName}` : appName),
-    resolve: (name) =>
-        resolvePageComponent(
-            `./Pages/${name}.tsx`,
-            import.meta.glob('./Pages/**/*.tsx'),
-        ),
+    resolve: async (name) => {
+        const pages = import.meta.glob<{ default: ComponentType }>('./Pages/**/*.tsx');
+        const load = pages[`./Pages/${name}.tsx`];
+        if (!load) throw new Error(`Page not found: ${name}`);
+        return (await load()).default;
+    },
     setup({ el, App, props }) {
+        accountContext = String((props.initialPage.props.companyContext as { account_id?: number } | undefined)?.account_id ?? '');
+        companyContext = String((props.initialPage.props.companyContext as { id?: string } | undefined)?.id ?? '');
+        if (!el) throw new Error('Missing application root');
         createRoot(el).render(
             <AppErrorBoundary>
                 <App {...props} />
             </AppErrorBoundary>,
         );
+        document.getElementById('app-bootstrap-status')?.remove();
     },
     progress: {
         color: '#1e40af',

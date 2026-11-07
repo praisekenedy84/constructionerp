@@ -4,12 +4,14 @@ const SUPER_ROLES = ['Platform Admin', 'System Administrator', 'Managing Directo
 
 export function isSuperUser(user: User | null): boolean {
     if (!user) return false;
+    if (user.read_only) return false;
 
     return (user.roles ?? []).some((role) => SUPER_ROLES.includes(role));
 }
 
 export function hasRole(user: User | null, roles: string | string[]): boolean {
     if (!user) return false;
+    if (user.read_only) return false;
     if (isSuperUser(user)) return true;
 
     const required = Array.isArray(roles) ? roles : [roles];
@@ -19,6 +21,7 @@ export function hasRole(user: User | null, roles: string | string[]): boolean {
 
 export function hasPermission(user: User | null, module: string, action: string): boolean {
     if (!user) return false;
+    if (user.read_only) return action === 'read' && (user.permissions ?? []).includes(`${module}:read`);
 
     // Full-access tenant/platform admins bypass the checkbox matrix.
     const roles = user.roles ?? [];

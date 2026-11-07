@@ -5,7 +5,6 @@ import { Button } from '@/Components/ui/button';
 import { Input } from '@/Components/ui/input';
 import { PasswordInput } from '@/Components/ui/password-input';
 import { Label } from '@/Components/ui/label';
-import { PageProps } from '@/types';
 import { Head, useForm } from '@inertiajs/react';
 import { FormEvent } from 'react';
 
@@ -14,6 +13,7 @@ export default function PlatformTenantsCreate() {
         name: '',
         slug: '',
         admin_name: '',
+        admin_username: '',
         admin_email: '',
         admin_password: '',
         admin_password_confirmation: '',
@@ -66,6 +66,9 @@ export default function PlatformTenantsCreate() {
                             />
                         </div>
                         <div className="space-y-2">
+                            <Label>Admin username</Label>
+                            <Input value={form.data.admin_username} onChange={e => form.setData('admin_username', e.target.value)} required minLength={3} />
+                            {form.errors.admin_username && <p className="text-sm text-red-600">{form.errors.admin_username}</p>}
                             <Label>Administrator email</Label>
                             <Input
                                 type="email"

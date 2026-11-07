@@ -39,6 +39,20 @@ interface AppShellProps {
 export default function AppShell({ title, children }: AppShellProps) {
     const page = usePage<PageProps>();
     const { auth, uiSettings, navigation, unreadNotificationCount, flash } = page.props;
+    const company = page.props.companyContext as { id: string; name: string; read_only: boolean } | undefined;
+    useEffect(() => {
+        if (!company?.read_only) return;
+        const restrict = () => {
+            document.querySelectorAll<HTMLButtonElement>('form button, button[type="submit"]').forEach(button => { button.disabled = true; });
+            document.querySelectorAll<HTMLAnchorElement>('a[href]').forEach(link => {
+                if (/\/(export|pdf|print|create|edit|requisition-files)(\/|$)/.test(link.pathname)) link.hidden = true;
+            });
+        };
+        restrict();
+        const observer = new MutationObserver(restrict);
+        observer.observe(document.body, { childList: true, subtree: true });
+        return () => observer.disconnect();
+    }, [company?.read_only]);
     const { url } = page;
     const visibleNav = navigation ?? [];
     const isImpersonating = Boolean(auth.impersonator_id || auth.platform_impersonator_id);
@@ -100,6 +114,7 @@ export default function AppShell({ title, children }: AppShellProps) {
 
     return (
         <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
+            {company && <div className="border-b bg-amber-50 p-2 text-center text-sm text-slate-900">{company.name} ? {company.read_only ? 'Read-only' : 'Main company'} {!isImpersonating && <Link href="/auth/companies" className="ml-4 underline">Switch company</Link>}</div>}
             {isImpersonating && (
                 <div className="fixed inset-x-0 top-0 z-50 flex items-center justify-between bg-amber-500 px-6 py-2 text-sm text-white">
                     <span>

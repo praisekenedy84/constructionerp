@@ -8,7 +8,7 @@ interface State {
     hasError: boolean;
 }
 
-const RELOAD_KEY = 'crf:asset-reload';
+const RELOAD_KEY = 'crf:asset-reload:' + (document.querySelector<HTMLMetaElement>('meta[name="app-build"]')?.content ?? 'unknown');
 
 /**
  * After a deploy, stale JS often crashes when it receives a new page payload.
@@ -29,7 +29,7 @@ export default class AppErrorBoundary extends Component<Props, State> {
             const now = Date.now();
 
             // Avoid an infinite reload loop if the new bundle is also broken.
-            if (!lastReload || now - Number(lastReload) > 15_000) {
+            if (!lastReload) {
                 sessionStorage.setItem(RELOAD_KEY, String(now));
                 window.location.reload();
             }
@@ -56,7 +56,7 @@ export default class AppErrorBoundary extends Component<Props, State> {
             <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-slate-50 px-4 text-center text-slate-800">
                 <h1 className="text-lg font-semibold">The app needs a refresh</h1>
                 <p className="max-w-md text-sm text-slate-600">
-                    A newer version was deployed. Reload to continue — your session is kept.
+                    This page could not be displayed. Reload to try again, or reset your sign-in session.
                 </p>
                 <button
                     type="button"
@@ -65,6 +65,10 @@ export default class AppErrorBoundary extends Component<Props, State> {
                 >
                     Reload app
                 </button>
+                <form method="post" action="/auth/reset-session">
+                    <input type="hidden" name="_token" value={document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content ?? ''} />
+                    <button type="submit" className="text-sm text-blue-700 underline">Reset sign-in session</button>
+                </form>
             </div>
         );
     }

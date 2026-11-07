@@ -16,15 +16,14 @@ class UpdateUserRequest extends FormRequest
 
     public function rules(): array
     {
-        $userId = (int) $this->route('id');
-
         return [
+            'username' => ['sometimes', 'required', 'string', 'min:3', 'max:255', 'regex:/^[a-zA-Z0-9][a-zA-Z0-9._@+\-]+$/'],
+            'phone' => ['nullable', 'string', 'max:50'],
             'name' => ['required', 'string', 'max:255'],
             'email' => [
                 'required',
                 'email',
                 'max:255',
-                Rule::unique('users', 'email')->ignore($userId),
             ],
             'password' => ['nullable', 'confirmed', Password::defaults()],
             'role' => ['required', 'string', Rule::in(MenuCatalog::assignableRoles())],

@@ -12,7 +12,7 @@ import { FormEvent } from 'react';
 export default function Login() {
     const { uiSettings } = usePage<PageProps>().props;
     const { data, setData, post, processing, errors } = useForm({
-        email: '',
+        username: '',
         password: '',
         remember: false,
     });
@@ -60,24 +60,24 @@ export default function Login() {
                         <div>
                             <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Sign in</h1>
                             <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                                Enter your email and password to access your account.
+                                Enter your username or email and password to access your account.
                             </p>
                         </div>
 
                         <form onSubmit={submit} className="space-y-6">
                             <div className="space-y-2">
-                                <Label htmlFor="email">Email</Label>
+                                <Label htmlFor="username">Username or email</Label>
                                 <Input
-                                    id="email"
-                                    type="email"
-                                    value={data.email}
-                                    onChange={(e) => setData('email', e.target.value)}
-                                    autoComplete="email"
+                                    id="username"
+                                    type="text"
+                                    value={data.username}
+                                    onChange={(e) => setData('username', e.target.value)}
+                                    autoComplete="username"
                                     autoFocus
                                     required
                                 />
-                                {errors.email && (
-                                    <p className="text-sm text-red-600">{errors.email}</p>
+                                {errors.username && (
+                                    <p className="text-sm text-red-600">{errors.username}</p>
                                 )}
                             </div>
 

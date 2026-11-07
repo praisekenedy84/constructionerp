@@ -26,6 +26,10 @@ class MoneyAccountService
             return $existing;
         }
 
+        if (CompanyAccessService::visiting()) {
+            return new MoneyAccount(['name' => 'Finance Wallet', 'type' => MoneyAccountType::Finance, 'balance' => '0.00']);
+        }
+
         return MoneyAccount::create([
             'name' => 'Finance Wallet',
             'type' => MoneyAccountType::Finance,

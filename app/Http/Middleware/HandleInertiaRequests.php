@@ -6,6 +6,7 @@ use App\Models\Notification;
 use App\Models\PlatformAdmin;
 use App\Models\Project;
 use App\Models\SystemSetting;
+use App\Services\CompanyAccessService;
 use App\Services\MenuService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -15,17 +16,27 @@ class HandleInertiaRequests extends Middleware
 {
     protected $rootView = 'app';
 
+    public function handle(Request $request, \Closure $next)
+    {
+        if ($request->is('auth/reset-session')) {
+            return $next($request);
+        }
+        $response = parent::handle($request, $next);
+        $response->headers->set('Cache-Control', 'private, no-store, max-age=0');
+
+        return $response;
+    }
+
     public function version(Request $request): ?string
     {
         // Prefer an explicit deploy stamp so PHP-only releases still invalidate
         // stale browser tabs. Fall back to the Vite manifest hash.
         $deployVersion = config('app.asset_version');
 
-        if (is_string($deployVersion) && $deployVersion !== '') {
-            return $deployVersion;
-        }
+        $manifest = public_path('build/manifest.json');
+        $assets = is_file($manifest) ? hash_file('sha256', $manifest) : parent::version($request);
 
-        return parent::version($request);
+        return hash('sha256', (string) $deployVersion.'|'.(string) $assets);
     }
 
     public function share(Request $request): array
@@ -81,12 +92,15 @@ class HandleInertiaRequests extends Middleware
             ...parent::share($request),
             'auth' => [
                 'user' => $user ? [
+                    'read_only' => CompanyAccessService::visiting(),
                     'id' => $user->id,
                     'name' => $user->name,
                     'email' => $user->email,
+                    'username' => $user->username,
+                    'phone' => $user->phone,
                     'roles' => $user->getRoleNames()->values()->all(),
                     'permissions' => $user->modulePermissions(),
-                    'can_manage_platform' => $user->canManagePlatform(),
+                    'can_manage_platform' => ! CompanyAccessService::visiting() && $user->canManagePlatform(),
                     'can_impersonate' => $user->canImpersonate(),
                 ] : null,
                 'platform_admin' => $platformAdmin instanceof PlatformAdmin ? [
@@ -97,8 +111,9 @@ class HandleInertiaRequests extends Middleware
                 'impersonator_id' => session('impersonator_id'),
                 'platform_impersonator_id' => session('platform_impersonator_id'),
             ],
+            'companyContext' => ['id' => session('tenant_id'), 'name' => tenant('name'), 'account_id' => session('central_identity_id'), 'read_only' => CompanyAccessService::visiting()],
             'currentProject' => $currentProjectId,
-            'unreadNotificationCount' => $user && tenancy()->initialized
+            'unreadNotificationCount' => $user && ! CompanyAccessService::visiting() && tenancy()->initialized
                 ? Notification::where('user_id', $user->id)->whereNull('read_at')->count()
                 : 0,
             'uiSettings' => $uiSettings,

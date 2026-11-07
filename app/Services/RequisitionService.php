@@ -30,7 +30,6 @@ use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 class RequisitionService
@@ -428,11 +427,11 @@ class RequisitionService
         string $documentType,
         User $actor,
     ): RequisitionAttachment {
-        $path = $file->store("requisitions/{$req->id}", 'public');
+        $path = $file->store("requisitions/{$req->id}", 'local');
 
         return RequisitionAttachment::create([
             'requisition_id' => $req->id,
-            'file_url' => Storage::disk('public')->url($path),
+            'file_url' => 'private:'.$path,
             'document_type' => $documentType,
             'uploaded_by' => $actor->id,
             'created_at' => now(),

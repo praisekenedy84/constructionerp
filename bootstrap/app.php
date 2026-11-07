@@ -1,12 +1,17 @@
 <?php
 
+use App\Http\Middleware\EnforceCompanyAccess;
+use App\Http\Middleware\EnsurePlatformAdmin;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\InitializeTenancyFromSession;
+use App\Http\Middleware\PreventLockedOrSuspendedAccess;
+use App\Http\Middleware\SetCurrentProject;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use Illuminate\View\Middleware\ShareErrorsFromSession;
 use Inertia\Inertia;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -21,15 +26,18 @@ return Application::configure(basePath: dirname(__DIR__))
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Restore or discard tenant identity before Laravel resolves the authenticated user.
+        $middleware->appendToPriorityList(ShareErrorsFromSession::class, InitializeTenancyFromSession::class);
         $middleware->alias([
-            'project.context' => \App\Http\Middleware\SetCurrentProject::class,
-            'platform.admin' => \App\Http\Middleware\EnsurePlatformAdmin::class,
+            'project.context' => SetCurrentProject::class,
+            'platform.admin' => EnsurePlatformAdmin::class,
         ]);
 
         $middleware->web(append: [
             InitializeTenancyFromSession::class,
-            \App\Http\Middleware\PreventLockedOrSuspendedAccess::class,
+            PreventLockedOrSuspendedAccess::class,
             HandleInertiaRequests::class,
+            EnforceCompanyAccess::class,
         ]);
 
         $middleware->redirectGuestsTo(fn ($request) => $request->is('platform', 'platform/*')
@@ -41,6 +49,16 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->respond(function (Response $response, Throwable $exception, Request $request) {
+            if ($response->getStatusCode() === 419 || ($response->getStatusCode() === 409 && $request->header('X-Inertia'))) {
+                $platform = $request->is('platform', 'platform/*');
+                $destination = $response->getStatusCode() === 419
+                    ? route($platform ? 'platform.login' : 'login')
+                    : route($platform ? 'platform.dashboard' : 'dashboard');
+
+                return $request->header('X-Inertia')
+                    ? Inertia::location($destination)
+                    : redirect()->to($destination);
+            }
             // Keep users off POST-only URLs after failed Inertia submissions.
             if (
                 $request->header('X-Inertia')

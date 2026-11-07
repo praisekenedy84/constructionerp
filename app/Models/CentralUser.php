@@ -14,6 +14,8 @@ class CentralUser extends Model
 
     protected $fillable = [
         'email',
+        'username',
+        'tenant_user_id',
         'tenant_id',
     ];
 

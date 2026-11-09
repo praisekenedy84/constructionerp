@@ -344,6 +344,97 @@ class PlatformAdminTest extends TestCase
         $this->patch($url, [...$data, 'role' => 'System Administrator'])->assertForbidden();
     }
 
+    public function test_platform_admin_can_update_tenant_details(): void
+    {
+        $tenant = $this->provisionTenant('tenant-before');
+        $this->actingAs($this->createPlatformAdmin(), 'platform');
+
+        $this->from("/platform/tenants/{$tenant->id}")
+            ->patch("/platform/tenants/{$tenant->id}", [
+                'name' => 'Updated Company', 'slug' => 'tenant-after', 'status' => 'suspended',
+            ])->assertRedirect("/platform/tenants/{$tenant->id}");
+
+        $this->assertSame('Updated Company', $tenant->fresh()->name);
+        $this->assertSame('tenant-after', $tenant->fresh()->slug);
+        $this->assertSame('active', $tenant->fresh()->status);
+        $this->patch("/platform/tenants/{$tenant->id}", [
+            'name' => 'Updated Again', 'slug' => 'tenant-after',
+        ])->assertSessionHasNoErrors();
+    }
+
+    public function test_tenant_updates_reject_duplicate_and_invalid_slugs(): void
+    {
+        $tenant = $this->provisionTenant('tenant-validation');
+        $this->provisionTenant('taken-slug');
+        $this->actingAs($this->createPlatformAdmin(), 'platform');
+
+        foreach (['taken-slug', 'Invalid Slug', 'double--hyphen'] as $slug) {
+            $this->patch("/platform/tenants/{$tenant->id}", [
+                'name' => 'Changed', 'slug' => $slug,
+            ])->assertSessionHasErrors('slug');
+        }
+        $this->assertSame('tenant-validation', $tenant->fresh()->slug);
+        $this->assertSame('Acme Construction', $tenant->fresh()->name);
+    }
+
+    public function test_tenant_details_require_platform_authentication(): void
+    {
+        $tenant = $this->provisionTenant('tenant-protected');
+        $this->patch("/platform/tenants/{$tenant->id}", [
+            'name' => 'Changed', 'slug' => 'changed',
+        ])->assertRedirect('/platform/login');
+        $this->assertSame('tenant-protected', $tenant->fresh()->slug);
+    }
+
+    public function test_platform_admin_can_delete_tenant_and_its_database(): void
+    {
+        $tenant = $this->provisionTenant('delete-company');
+        $user = app(AuthService::class)->createUser($tenant, ['name' => 'Delete User', 'username' => 'delete.user', 'email' => 'delete@example.com', 'password' => 'password', 'role' => 'System Administrator']);
+        tenancy()->end();
+        $other = $this->provisionTenant('keep-company');
+        $admin = $this->createPlatformAdmin();
+        $identity = CentralUser::where('tenant_id', $tenant->id)->firstOrFail();
+        $central = app(CompanyAccessService::class)->central();
+        $central->table('company_access_grants')->insert(['central_user_id' => $identity->id, 'tenant_id' => $other->id, 'granted_by' => $admin->id, 'created_at' => now(), 'updated_at' => now()]);
+        $tenant->domains()->create(['domain' => 'delete.example.test']);
+        $databaseName = $tenant->database()->getName();
+        $manager = $tenant->database()->manager();
+        $this->assertTrue($manager->databaseExists($databaseName));
+
+        $this->actingAs($admin, 'platform')->delete("/platform/tenants/{$tenant->id}", [
+            'confirmation' => $tenant->slug,
+        ])->assertRedirect('/platform/tenants');
+
+        $this->assertNull(Tenant::find($tenant->id));
+        $this->assertFalse($manager->databaseExists($databaseName));
+        $this->assertNull(CentralUser::find($identity->id));
+        $this->assertSame(0, $central->table('company_access_grants')->where('central_user_id', $identity->id)->count());
+        $this->assertSame(0, $central->table('domains')->where('tenant_id', $tenant->id)->count());
+        $this->assertNotNull(Tenant::find($other->id));
+        $this->assertTrue($other->database()->manager()->databaseExists($other->database()->getName()));
+    }
+
+    public function test_tenant_deletion_requires_matching_confirmation(): void
+    {
+        $tenant = $this->provisionTenant('delete-confirmation');
+        $this->actingAs($this->createPlatformAdmin(), 'platform');
+        foreach ([[], ['confirmation' => 'wrong-slug']] as $data) {
+            $this->delete("/platform/tenants/{$tenant->id}", $data)->assertSessionHasErrors('confirmation');
+            $this->assertNotNull(Tenant::find($tenant->id));
+            $this->assertTrue($tenant->database()->manager()->databaseExists($tenant->database()->getName()));
+        }
+    }
+
+    public function test_tenant_user_cannot_delete_tenant_through_platform_route(): void
+    {
+        $tenant = $this->provisionTenant('delete-denied');
+        $user = app(AuthService::class)->createUser($tenant, ['name' => 'Admin', 'username' => 'delete.denied', 'email' => 'denied@example.com', 'password' => 'password', 'role' => 'System Administrator']);
+        tenancy()->end();
+        $this->delete("/platform/tenants/{$tenant->id}", ['confirmation' => $tenant->slug])->assertRedirect('/platform/login');
+        $this->actingAs($user, 'web')->delete("/platform/tenants/{$tenant->id}", ['confirmation' => $tenant->slug])->assertRedirect('/platform/login');
+        $this->assertNotNull(Tenant::find($tenant->id));
+    }
+
     public function test_tenant_user_cannot_edit_through_platform_route(): void
     {
         $tenant = $this->provisionTenant('platform-edit-denied');

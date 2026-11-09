@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\TenantStatus;
 use App\Models\Tenant;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -48,6 +49,18 @@ class TenantManagementService
         tenancy()->end();
 
         return $tenant;
+    }
+
+    public function delete(Tenant $tenant): void
+    {
+        // Release tenant connections before the deletion event drops its database.
+        if (tenancy()->initialized) {
+            tenancy()->end();
+        }
+        DB::purge('tenant');
+
+        // Use model deletion so Stancl's TenantDeleted database cleanup runs.
+        $tenant->delete();
     }
 
     public function suspend(Tenant $tenant, ?string $reason = null): Tenant

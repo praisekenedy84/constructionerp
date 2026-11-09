@@ -29,6 +29,9 @@ export default function PlatformTenantShow(props: PlatformTenantShowProps) {
     const { tenant } = props;
     const [showSuspendForm, setShowSuspendForm] = useState(false);
     const suspendForm = useForm({ reason: '' });
+    const detailsForm = useForm({ name: tenant.name, slug: tenant.slug });
+    const [showDeleteForm, setShowDeleteForm] = useState(false);
+    const deleteForm = useForm({ confirmation: '' });
 
     function submitSuspend(e: FormEvent) {
         e.preventDefault();
@@ -56,6 +59,26 @@ export default function PlatformTenantShow(props: PlatformTenantShowProps) {
                     </div>
 
                 </div>
+
+                <DataPanel title="Tenant details">
+                    <form onSubmit={event => {
+                        event.preventDefault();
+                        detailsForm.patch(`/platform/tenants/${tenant.id}`, { preserveScroll: true });
+                    }} className="max-w-lg space-y-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="tenant-name">Company name</Label>
+                            <Input id="tenant-name" value={detailsForm.data.name} onChange={event => detailsForm.setData('name', event.target.value)} required maxLength={255} />
+                            {detailsForm.errors.name && <p className="text-sm text-red-600">{detailsForm.errors.name}</p>}
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="tenant-slug">Company slug</Label>
+                            <Input id="tenant-slug" value={detailsForm.data.slug} onChange={event => detailsForm.setData('slug', event.target.value)} required maxLength={100} />
+                            <p className="text-sm text-slate-500">Use lowercase letters, numbers, and single hyphens.</p>
+                            {detailsForm.errors.slug && <p className="text-sm text-red-600">{detailsForm.errors.slug}</p>}
+                        </div>
+                        <Button type="submit" disabled={detailsForm.processing || !detailsForm.isDirty}>Save tenant details</Button>
+                    </form>
+                </DataPanel>
 
                 <DataPanel title="Tenant control">
                     {tenant.status === 'active' ? (
@@ -144,6 +167,28 @@ export default function PlatformTenantShow(props: PlatformTenantShowProps) {
                 </div>
 
                 <TenantUsersPanel {...props} />
+
+                <DataPanel title="Delete tenant">
+                    <div className="max-w-lg space-y-4">
+                        <p className="text-sm text-red-600 dark:text-red-400">Permanently delete this tenant, its database, user accounts, and company-access grants. This cannot be undone.</p>
+                        {showDeleteForm ? (
+                            <form onSubmit={event => {
+                                event.preventDefault();
+                                deleteForm.delete(`/platform/tenants/${tenant.id}`, { preserveScroll: true });
+                            }} className="space-y-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="delete-tenant-confirmation">Type {tenant.slug} to confirm</Label>
+                                    <Input id="delete-tenant-confirmation" autoComplete="off" value={deleteForm.data.confirmation} onChange={event => deleteForm.setData('confirmation', event.target.value)} required />
+                                    {deleteForm.errors.confirmation && <p className="text-sm text-red-600">{deleteForm.errors.confirmation}</p>}
+                                </div>
+                                <div className="flex gap-2">
+                                    <Button type="submit" className="bg-red-700 text-white hover:bg-red-800" disabled={deleteForm.processing || deleteForm.data.confirmation !== tenant.slug}>Permanently delete tenant</Button>
+                                    <Button type="button" variant="outline" disabled={deleteForm.processing} onClick={() => { setShowDeleteForm(false); deleteForm.reset(); deleteForm.clearErrors(); }}>Cancel</Button>
+                                </div>
+                            </form>
+                        ) : <Button className="bg-red-700 text-white hover:bg-red-800" onClick={() => setShowDeleteForm(true)}>Delete tenant</Button>}
+                    </div>
+                </DataPanel>
 
 
             </div>

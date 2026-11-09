@@ -10,6 +10,7 @@ use App\Services\TenantManagementService;
 use App\Support\ListingQuery;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -99,6 +100,33 @@ class TenantController extends Controller
                 'locked_users' => $stats['locked_users'],
             ],
         ]);
+    }
+
+    public function update(Request $request, string $tenantId): RedirectResponse
+    {
+        $tenant = Tenant::findOrFail($tenantId);
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'slug' => ['required', 'string', 'max:100', 'regex:/^[a-z0-9]+(?:-[a-z0-9]+)*$/', Rule::unique(Tenant::class, 'slug')->ignore($tenant->id)],
+        ]);
+
+        $tenant->update($data);
+
+        return back()->with('success', 'Tenant details updated.');
+    }
+
+    public function destroy(Request $request, string $tenantId): RedirectResponse
+    {
+        $tenant = Tenant::findOrFail($tenantId);
+        $request->validate([
+            'confirmation' => ['required', 'string', Rule::in([$tenant->slug])],
+        ], [
+            'confirmation.in' => 'Enter the tenant slug exactly to confirm deletion.',
+        ]);
+
+        $this->tenantManagement->delete($tenant);
+
+        return redirect()->route('platform.tenants.index')->with('success', 'Tenant deleted.');
     }
 
     public function suspend(Request $request, string $tenantId): RedirectResponse

@@ -22,7 +22,7 @@ export default function PlatformUserCreate({ tenantId, roles, user }: { tenantId
         else form.post(`/platform/tenants/${tenantId}/users`, options);
     }
     return <section className={user ? '' : 'rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900'}>
-        <Button size={user ? 'sm' : 'default'} variant={user ? 'outline' : 'default'} onClick={() => { form.setData(initial()); form.clearErrors(); setOpen(true); }}>{user ? 'Edit' : 'Add user'}</Button>
+        <Button size={user ? 'sm' : 'default'} variant={user ? 'outline' : 'default'} onClick={() => { form.setData(initial()); form.clearErrors(); setOpen(true); }}>{user ? 'Edit user / password' : 'Add user'}</Button>
         <Dialog open={open} onOpenChange={setOpen} title={user ? `Edit ${user.name}` : 'Add user'}><form onSubmit={submit} className="mt-4 grid gap-4 sm:grid-cols-2">
             <p className="text-sm text-slate-500 sm:col-span-2">{user ? 'Update this account. Leave the password blank to keep the current password.' : 'Create a login account in this company. Read-only access to other companies can be assigned after creation.'}</p>
             {(['name', 'username', 'email', 'phone'] as const).map(field => <div key={field} className="space-y-2">

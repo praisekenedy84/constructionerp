@@ -21,6 +21,8 @@ Route::prefix('platform')->name('platform.')->group(function () {
         Route::get('/tenants/create', [TenantController::class, 'create'])->name('tenants.create');
         Route::post('/tenants', [TenantController::class, 'store'])->name('tenants.store');
         Route::get('/tenants/{tenantId}', [TenantController::class, 'show'])->name('tenants.show');
+        Route::patch('/tenants/{tenantId}', [TenantController::class, 'update'])->name('tenants.update');
+        Route::delete('/tenants/{tenantId}', [TenantController::class, 'destroy'])->name('tenants.destroy');
         Route::post('/tenants/{tenantId}/suspend', [TenantController::class, 'suspend'])->name('tenants.suspend');
         Route::post('/tenants/{tenantId}/reactivate', [TenantController::class, 'reactivate'])->name('tenants.reactivate');
 

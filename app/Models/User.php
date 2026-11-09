@@ -92,7 +92,8 @@ class User extends Authenticatable
             return true;
         }
 
-        return $this->hasPermissionTo(ModulePermission::name($module, $action));
+        // An incomplete tenant permission catalog must deny access, not crash requests.
+        return $this->checkPermissionTo(ModulePermission::name($module, $action));
     }
 
     /** @return list<string> */

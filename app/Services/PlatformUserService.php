@@ -17,6 +17,19 @@ use Illuminate\Validation\ValidationException;
 
 class PlatformUserService
 {
+    public function updatePassword(Tenant $tenant, int $userId, string $password, int $adminId): void
+    {
+        abort_unless($tenant->isActive(), 403, 'Passwords cannot be updated in a suspended company.');
+        $tenant->run(function () use ($tenant, $userId, $password, $adminId) {
+            $user = User::findOrFail($userId);
+            abort_if($user->hasRole('Platform Admin'), 403, 'Platform accounts cannot be edited here.');
+            $identity = CentralUser::where('tenant_id', $tenant->id)->where('tenant_user_id', $userId)->firstOrFail();
+            // Keep password hashes out of tenant activity logs.
+            $user->withoutEvents(fn () => $user->update(['password' => Hash::make($password)]));
+            app(CompanyAccessService::class)->event('password_updated', $identity->id, $tenant->id, $adminId);
+        });
+    }
+
     public function update(Tenant $tenant, int $userId, array $data, int $adminId): void
     {
         if (! $tenant->isActive()) {

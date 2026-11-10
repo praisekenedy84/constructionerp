@@ -7,6 +7,7 @@ use App\Services\PlatformAuthService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -40,6 +41,23 @@ class AuthController extends Controller
         $request->session()->regenerate();
 
         return redirect()->intended(route('platform.dashboard'));
+    }
+
+    public function editPassword(): Response
+    {
+        return Inertia::render('Platform/Password');
+    }
+
+    public function updatePassword(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'current_password' => ['required', 'current_password:platform'],
+            'password' => ['required', 'confirmed', Password::defaults()],
+        ]);
+        Auth::guard('platform')->user()->update(['password' => $data['password']]);
+        $request->session()->regenerate();
+
+        return back()->with('success', 'Your password has been updated.');
     }
 
     public function logout(Request $request): RedirectResponse

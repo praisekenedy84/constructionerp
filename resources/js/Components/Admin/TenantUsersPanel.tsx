@@ -1,4 +1,5 @@
 import PlatformUserCreate from '@/Components/Admin/PlatformUserCreate';
+import UpdateUserPassword from '@/Components/Admin/UpdateUserPassword';
 import DataPanel from '@/Components/Shared/DataPanel';
 import ListToolbar from '@/Components/Shared/ListToolbar';
 import PaginationLinks from '@/Components/Shared/PaginationLinks';
@@ -134,6 +135,7 @@ export default function TenantUsersPanel({
                                                 router.put(`/platform/tenants/${tenant.id}/users/${user.id}/company-access`, { tenant_ids: ids });
                                             }} /> {company.name}</label>)}</details>
                                             <div className="flex justify-end gap-2">
+                                                {tenant.status === 'active' && <UpdateUserPassword tenantId={tenant.id} user={user} />}
                                                 {tenant.status === 'active' && <PlatformUserCreate tenantId={tenant.id} roles={assignable_roles} user={{ ...user, role: formatRoles(user.roles).split(', ')[0] }} />}
                                                 {tenant.status === 'active' && !user.is_locked && (
                                                     <Button

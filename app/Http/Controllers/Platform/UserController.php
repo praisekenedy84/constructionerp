@@ -98,6 +98,18 @@ class UserController extends Controller
         return back()->with('success', 'User updated.');
     }
 
+    public function password(Request $request, string $tenantId, int $userId): RedirectResponse
+    {
+        $tenant = Tenant::findOrFail($tenantId);
+        abort_unless($tenant->isActive(), 403, 'Passwords cannot be updated in a suspended company.');
+        $data = $request->validate([
+            'password' => ['required', 'confirmed', Password::defaults()],
+        ]);
+        $this->platformUsers->updatePassword($tenant, $userId, $data['password'], Auth::guard('platform')->id());
+
+        return back()->with('success', 'Password updated.');
+    }
+
     public function lock(Request $request, string $tenantId, int $userId): RedirectResponse
     {
         $tenant = Tenant::findOrFail($tenantId);

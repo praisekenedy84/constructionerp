@@ -22,6 +22,7 @@ interface PlatformShellProps {
 const navItems = [
     { label: 'Overview', href: '/platform', icon: LayoutDashboard },
     { label: 'Tenants', href: '/platform/tenants', icon: Building2 },
+    { label: 'Change password', href: '/platform/password', icon: Shield },
 ];
 
 export default function PlatformShell({ title, children }: PlatformShellProps) {
@@ -110,17 +111,18 @@ export default function PlatformShell({ title, children }: PlatformShellProps) {
                             <p className="text-sm font-medium text-slate-900 dark:text-slate-200">{admin?.name}</p>
                             <p className="text-xs text-slate-500 dark:text-slate-400">{admin?.email}</p>
                         </div>
-                        <Link href="/platform/logout" method="post" as="button">
-                            <Button
-                                size="sm"
-                                variant="outline"
-                                className="border-slate-200 bg-transparent px-2 text-slate-700 hover:bg-slate-100 sm:px-3 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-                                aria-label="Sign out"
-                            >
+                        <Button
+                            asChild
+                            size="sm"
+                            variant="outline"
+                            className="border-slate-200 bg-transparent px-2 text-slate-700 hover:bg-slate-100 sm:px-3 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                            aria-label="Sign out"
+                        >
+                            <Link href="/platform/logout" method="post" as="button">
                                 <LogOut className="h-4 w-4" />
                                 <span className="hidden sm:inline">Sign out</span>
-                            </Button>
-                        </Link>
+                            </Link>
+                        </Button>
                     </div>
                 </header>
 

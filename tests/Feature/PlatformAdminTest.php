@@ -17,6 +17,8 @@ class PlatformAdminTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected $connectionsToTransact = ['central'];
+
     private function createPlatformAdmin(string $email = 'platform@crf.local'): PlatformAdmin
     {
         return PlatformAdmin::create([
@@ -433,6 +435,64 @@ class PlatformAdminTest extends TestCase
         $this->delete("/platform/tenants/{$tenant->id}", ['confirmation' => $tenant->slug])->assertRedirect('/platform/login');
         $this->actingAs($user, 'web')->delete("/platform/tenants/{$tenant->id}", ['confirmation' => $tenant->slug])->assertRedirect('/platform/login');
         $this->assertNotNull(Tenant::find($tenant->id));
+    }
+
+    public function test_platform_admin_can_update_own_password(): void
+    {
+        $admin = $this->createPlatformAdmin();
+        $this->actingAs($admin, 'platform');
+        $this->get('/platform/password')->assertOk();
+        $this->from('/platform/password')->put('/platform/password', [
+            'current_password' => 'password', 'password' => 'replacement-password', 'password_confirmation' => 'replacement-password',
+        ])->assertRedirect('/platform/password')->assertSessionHasNoErrors();
+        $this->assertTrue(Hash::check('replacement-password', $admin->fresh()->password));
+        $this->assertAuthenticatedAs($admin, 'platform');
+    }
+
+    public function test_platform_password_update_validates_current_password_and_confirmation(): void
+    {
+        $admin = $this->createPlatformAdmin();
+        $this->actingAs($admin, 'platform');
+        $this->put('/platform/password', [
+            'current_password' => 'wrong', 'password' => 'replacement-password', 'password_confirmation' => 'replacement-password',
+        ])->assertSessionHasErrors('current_password');
+        $this->put('/platform/password', [
+            'current_password' => 'password', 'password' => 'replacement-password', 'password_confirmation' => 'different-password',
+        ])->assertSessionHasErrors('password');
+        $this->assertTrue(Hash::check('password', $admin->fresh()->password));
+    }
+
+    public function test_platform_admin_can_update_only_tenant_user_password(): void
+    {
+        $tenant = $this->provisionTenant('password-only');
+        $user = app(AuthService::class)->createUser($tenant, ['name' => 'Original', 'username' => 'password.only', 'email' => 'original@example.com', 'password' => 'original-password', 'role' => 'Site Engineer']);
+        tenancy()->end();
+        $admin = $this->createPlatformAdmin();
+        $this->actingAs($admin, 'platform');
+        $url = "/platform/tenants/{$tenant->id}/users/{$user->id}/password";
+        $this->put($url, ['password' => 'replacement-password', 'password_confirmation' => 'wrong'])->assertSessionHasErrors('password');
+        $tenant->run(fn () => $this->assertTrue(Hash::check('original-password', User::findOrFail($user->id)->password)));
+        $this->put($url, ['password' => 'replacement-password', 'password_confirmation' => 'replacement-password', 'name' => 'Unwanted change'])->assertRedirect()->assertSessionHasNoErrors();
+        $tenant->run(function () use ($user) {
+            $updated = User::findOrFail($user->id);
+            $this->assertTrue(Hash::check('replacement-password', $updated->password));
+            $this->assertSame('Original', $updated->name);
+            $this->assertTrue($updated->hasRole('Site Engineer'));
+        });
+        $this->assertFalse(tenancy()->initialized);
+        $this->assertSame(1, app(CompanyAccessService::class)->central()->table('company_access_events')->where('action', 'password_updated')->where('platform_admin_id', $admin->id)->count());
+        $tenant->update(['status' => 'suspended']);
+        $this->put($url, ['password' => 'another-password', 'password_confirmation' => 'another-password'])->assertForbidden();
+    }
+
+    public function test_password_updates_require_platform_authentication(): void
+    {
+        $tenant = $this->provisionTenant('password-denied');
+        $user = app(AuthService::class)->createUser($tenant, ['name' => 'Admin', 'username' => 'password.denied', 'email' => 'denied@example.com', 'password' => 'password', 'role' => 'System Administrator']);
+        tenancy()->end();
+        $this->get('/platform/password')->assertRedirect('/platform/login');
+        $this->put('/platform/password', [])->assertRedirect('/platform/login');
+        $this->actingAs($user, 'web')->put("/platform/tenants/{$tenant->id}/users/{$user->id}/password", [])->assertRedirect('/platform/login');
     }
 
     public function test_tenant_user_cannot_edit_through_platform_route(): void

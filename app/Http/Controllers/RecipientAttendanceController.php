@@ -9,6 +9,7 @@ use App\Support\ListingQuery;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -67,10 +68,10 @@ class RecipientAttendanceController extends Controller
             (int) $row->requisition_project_count,
             (int) $row->requisition_count,
             $row->first_seen
-                ? \Illuminate\Support\Carbon::parse($row->first_seen)->toDateString()
+                ? Carbon::parse($row->first_seen)->toDateString()
                 : null,
             $row->last_seen
-                ? \Illuminate\Support\Carbon::parse($row->last_seen)->toDateString()
+                ? Carbon::parse($row->last_seen)->toDateString()
                 : null,
         ]);
 
@@ -82,10 +83,10 @@ class RecipientAttendanceController extends Controller
             ((int) $row->is_staff) === 1 ? 'Yes' : 'No',
             (int) $row->requisition_count,
             $row->first_seen
-                ? \Illuminate\Support\Carbon::parse($row->first_seen)->toDateString()
+                ? Carbon::parse($row->first_seen)->toDateString()
                 : null,
             $row->last_seen
-                ? \Illuminate\Support\Carbon::parse($row->last_seen)->toDateString()
+                ? Carbon::parse($row->last_seen)->toDateString()
                 : null,
         ]);
 
@@ -140,13 +141,15 @@ class RecipientAttendanceController extends Controller
                 DB::raw('case when pr.recipient_id is not null then 1 else 0 end as is_staff'),
                 DB::raw('case
                     when req_stats.first_seen is not null and pr.created_at is not null
-                        then least(req_stats.first_seen, pr.created_at)
+                        then case when req_stats.first_seen < pr.created_at
+                            then req_stats.first_seen else pr.created_at end
                     when req_stats.first_seen is not null then req_stats.first_seen
                     else pr.created_at
                 end as first_seen'),
                 DB::raw('case
                     when req_stats.last_seen is not null and pr.updated_at is not null
-                        then greatest(req_stats.last_seen, pr.updated_at)
+                        then case when req_stats.last_seen > pr.updated_at
+                            then req_stats.last_seen else pr.updated_at end
                     when req_stats.last_seen is not null then req_stats.last_seen
                     else pr.updated_at
                 end as last_seen'),
@@ -384,10 +387,10 @@ class RecipientAttendanceController extends Controller
                     'staff_project_count' => (int) $row->staff_project_count,
                     'requisition_project_count' => (int) $row->requisition_project_count,
                     'first_seen' => $row->first_seen
-                        ? \Illuminate\Support\Carbon::parse($row->first_seen)->toDateString()
+                        ? Carbon::parse($row->first_seen)->toDateString()
                         : null,
                     'last_seen' => $row->last_seen
-                        ? \Illuminate\Support\Carbon::parse($row->last_seen)->toDateString()
+                        ? Carbon::parse($row->last_seen)->toDateString()
                         : null,
                     'recipient' => [
                         'id' => (int) $row->recipient_id,
@@ -401,10 +404,10 @@ class RecipientAttendanceController extends Controller
                         'requisition_count' => (int) $project->requisition_count,
                         'is_staff' => (bool) $project->is_staff,
                         'first_seen' => $project->first_seen
-                            ? \Illuminate\Support\Carbon::parse($project->first_seen)->toDateString()
+                            ? Carbon::parse($project->first_seen)->toDateString()
                             : null,
                         'last_seen' => $project->last_seen
-                            ? \Illuminate\Support\Carbon::parse($project->last_seen)->toDateString()
+                            ? Carbon::parse($project->last_seen)->toDateString()
                             : null,
                         'project' => [
                             'id' => (int) $project->project_id,

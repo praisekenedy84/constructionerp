@@ -4,9 +4,12 @@
     "type": "module",
     "scripts": {
         "build": "vite build",
-        "dev": "vite"
+        "dev": "vite",
+        "test:browser": "playwright test",
+        "test:browser:report": "playwright show-report"
     },
     "devDependencies": {
+        "@playwright/test": "^1.65.0",
         "@tailwindcss/vite": "^4.0.0",
         "@types/node": "^26.1.1",
         "axios": "^1.11.0",

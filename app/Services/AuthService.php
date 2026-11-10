@@ -141,15 +141,28 @@ class AuthService
 
                 return;
             }
-            if (! collect($access->companies())->contains(fn ($choice) => $choice['id'] === session('tenant_id') && (int) $choice['identity_id'] === (int) session('central_identity_id'))) {
-                session(['tenant_id' => session('home_tenant_id'), 'company_selection_required' => true]);
-                session()->forget('current_project_id');
+            // identity() already validates the home account. Check only the selected
+            // shared company instead of opening every verified account's database.
+            $target = null;
+            if (session('tenant_id') !== session('home_tenant_id')) {
+                $target = Tenant::whereKey(session('tenant_id'))->where('status', 'active')->first();
+                $granted = $target && $access->central()->table('company_access_grants')
+                    ->where('central_user_id', session('central_identity_id'))
+                    ->where('tenant_id', $target->id)->exists();
+                if (! $granted) {
+                    $target = null;
+                    session(['tenant_id' => session('home_tenant_id'), 'company_selection_required' => true]);
+                    session()->forget('current_project_id');
+                }
             }
             $permissions = $user->modulePermissions();
             request()->attributes->set('home_permissions', $permissions);
             Auth::guard('web')->setUser($user);
-            tenancy()->end();
-            tenancy()->initialize(Tenant::findOrFail(session('tenant_id')));
+            // Home tenancy is still initialized by identity(); keep its connection.
+            if ($target) {
+                tenancy()->end();
+                tenancy()->initialize($target);
+            }
 
             return;
         }

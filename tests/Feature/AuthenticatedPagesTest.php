@@ -11,6 +11,8 @@ class AuthenticatedPagesTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected $connectionsToTransact = ['central'];
+
     private function loginAsTenantAdmin(): Tenant
     {
         $tenant = Tenant::create([
@@ -76,13 +78,13 @@ class AuthenticatedPagesTest extends TestCase
     {
         $this->loginAsTenantAdmin();
 
-        $this->get('/finance')->assertRedirect('/finance/approvals');
+        $this->get('/finance')->assertRedirect('/finance/overview');
         $this->get('/payroll')->assertRedirect('/payroll/employees');
         $this->get('/procurement')->assertRedirect('/procurement/suppliers');
         $this->get('/inventory')->assertRedirect('/inventory/items');
 
         $this->get('/finance/approvals')->assertOk();
-        $this->get('/finance/organization-cash')->assertOk();
+        $this->get('/finance/organization-cash')->assertRedirect('/finance/finance-transactions');
         $this->get('/finance/expenses')->assertOk();
         $this->get('/finance/overhead')->assertOk();
     }

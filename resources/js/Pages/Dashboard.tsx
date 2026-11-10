@@ -1,11 +1,10 @@
 import AppShell from '@/Components/Layout/AppShell';
-import SimpleBarChart from '@/Components/Charts/SimpleBarChart';
-import SimplePieChart from '@/Components/Charts/SimplePieChart';
 import DataPanel from '@/Components/Shared/DataPanel';
 import { CHART_MUTED } from '@/lib/chart-colors';
 import { formatCurrency, formatPercent } from '@/lib/formatters';
 import { DashboardCharts, DashboardStats, PageProps } from '@/types';
 import { Head, Link, usePage } from '@inertiajs/react';
+import { lazy, Suspense } from 'react';
 import {
     Building2,
     ClipboardList,
@@ -13,6 +12,10 @@ import {
     TrendingUp,
     Wallet,
 } from 'lucide-react';
+
+const SimpleBarChart = lazy(() => import('@/Components/Charts/SimpleBarChart'));
+const SimplePieChart = lazy(() => import('@/Components/Charts/SimplePieChart'));
+const chartFallback = <div className="h-[280px] animate-pulse rounded bg-slate-100 dark:bg-slate-800" aria-label="Loading chart" />;
 
 interface DashboardPageProps extends PageProps {
     stats: DashboardStats;
@@ -119,7 +122,7 @@ export default function Dashboard() {
                         title="Budget by Active Project"
                         description="Spent vs remaining budget across active projects"
                     >
-                        <SimpleBarChart
+                        <Suspense fallback={chartFallback}><SimpleBarChart
                             data={charts.project_budget}
                             xKey="name"
                             series={[
@@ -127,20 +130,20 @@ export default function Dashboard() {
                                 { key: 'remaining', name: 'Remaining', color: CHART_MUTED },
                             ]}
                             stacked
-                        />
+                        /></Suspense>
                     </DataPanel>
 
                     <DataPanel
                         title="Requisition Pipeline"
                         description="Open requisitions grouped by status"
                     >
-                        <SimplePieChart
+                        <Suspense fallback={chartFallback}><SimplePieChart
                             data={charts.requisition_status.map((row) => ({
                                 name: row.name,
                                 value: row.count,
                             }))}
                             valueLabel="Requisitions"
-                        />
+                        /></Suspense>
                     </DataPanel>
                 </div>
 

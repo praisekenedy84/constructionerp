@@ -1,10 +1,13 @@
 <!DOCTYPE html>
+@php
+    $appBuild = is_file(public_path('build/manifest.json')) ? hash_file('sha256', public_path('build/manifest.json')) : 'development';
+@endphp
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="csrf-token" content="{{ csrf_token() }}">
-        <meta name="app-build" content="{{ is_file(public_path('build/manifest.json')) ? hash_file('sha256', public_path('build/manifest.json')) : 'development' }}">
+        <meta name="app-build" content="{{ $appBuild }}">
         <script>
             (function () {
                 var stored = localStorage.getItem('theme');
@@ -18,9 +21,9 @@
             })();
         </script>
         <link rel="preconnect" href="https://fonts.bunny.net">
-        <link href="https://fonts.bunny.net/css?family=poppins:400,500,600,700" rel="stylesheet" />
+        <link href="https://fonts.bunny.net/css?family=poppins:400,500,600,700&amp;display=swap" rel="preload" as="style" onload="this.onload=null;this.rel='stylesheet'" />
+        <noscript><link href="https://fonts.bunny.net/css?family=poppins:400,500,600,700&amp;display=swap" rel="stylesheet" /></noscript>
         <title inertia>{{ config('app.name', 'CRF-ERP') }}</title>
-        @routes
         @viteReactRefresh
         @vite(['resources/css/app.css', 'resources/js/app.tsx'])
         @inertiaHead
@@ -40,7 +43,7 @@
         </div>
         <script>
             (function () {
-                var version = @json(is_file(public_path('build/manifest.json')) ? hash_file('sha256', public_path('build/manifest.json')) : 'development');
+                var version = @json($appBuild);
                 function recover() {
                     if (!document.getElementById('app-bootstrap-status')) return;
                     document.getElementById('app-bootstrap-title').textContent = 'Unable to load the application';

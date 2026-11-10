@@ -81,13 +81,6 @@ class HandleInertiaRequests extends Middleware
             }
         }
 
-        // Share a scalar/array — never a Model — so serialization cannot hit a
-        // purged tenant connection after platform code calls tenancy()->end().
-        $currentProjectId = null;
-        if ($user && tenancy()->initialized && session('current_project_id')) {
-            $currentProjectId = Project::whereKey(session('current_project_id'))->value('id');
-        }
-
         return [
             ...parent::share($request),
             'auth' => [
@@ -112,12 +105,16 @@ class HandleInertiaRequests extends Middleware
                 'platform_impersonator_id' => session('platform_impersonator_id'),
             ],
             'companyContext' => ['id' => session('tenant_id'), 'name' => tenant('name'), 'account_id' => session('central_identity_id'), 'read_only' => CompanyAccessService::visiting()],
-            'currentProject' => $currentProjectId,
-            'unreadNotificationCount' => $user && ! CompanyAccessService::visiting() && tenancy()->initialized
+            // Resolve these only when included in the Inertia response. Redirects
+            // and partial reloads should not repeat unrelated shared queries.
+            'currentProject' => fn () => $user && tenancy()->initialized && session('current_project_id')
+                ? Project::whereKey(session('current_project_id'))->value('id')
+                : null,
+            'unreadNotificationCount' => fn () => $user && ! CompanyAccessService::visiting() && tenancy()->initialized
                 ? Notification::where('user_id', $user->id)->whereNull('read_at')->count()
                 : 0,
             'uiSettings' => $uiSettings,
-            'navigation' => $user && tenancy()->initialized
+            'navigation' => fn () => $user && tenancy()->initialized
                 ? app(MenuService::class)->visibleForUser($user, $uiSettings)
                 : [],
             'flash' => [
